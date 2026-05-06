@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+backend/uploads/
+*.db
+node_modules/
+frontend/dist/
+.DS_Store
+frontend/android/local.properties
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+*.pdf
+.claude/
