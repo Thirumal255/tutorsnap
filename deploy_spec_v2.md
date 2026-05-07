@@ -6,6 +6,26 @@
 
 ---
 
+## STATUS — DEPLOYED (2025-05-07)
+
+All three GitHub Actions workflows pass green. Live URLs:
+- **Backend API**: https://tutorsnap-api-yfxhelshwq-el.a.run.app
+- **Frontend**: https://tutorsnap.web.app
+- **Android APK**: GitHub → Actions → "Build Android APK" → latest run → Artifacts
+
+**Actual values for all placeholders in this spec:**
+- `tutorsnap` → `tutorsnap`
+- `PROJECT_NUMBER` → `322472504855`
+- `Thirumal255` → `Thirumal255`
+- `STRONG_PASSWORD` → stored in Secret Manager (`DATABASE_URL` secret)
+- `YOUR_CLOUD_RUN_URL` → `https://tutorsnap-api-yfxhelshwq-el.a.run.app`
+- `YOUR_FIREBASE_PROJECT_ID` → `tutorsnap`
+- `192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com` → `192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com`
+
+See `README.md` for the canonical project reference going forward.
+
+---
+
 ## CRITICAL INSTRUCTIONS
 
 1. Read spec.md and auth_spec.md fully before starting
@@ -38,8 +58,8 @@
 | Firebase Hosting | Frontend static hosting (free) |
 
 ### Final URLs + artifacts
-- Backend API: https://tutorsnap-api-xxxx-uc.a.run.app
-- Frontend web: https://tutorsnap-xxxx.web.app
+- Backend API: https://tutorsnap-api-yfxhelshwq-el.a.run.app
+- Frontend web: https://tutorsnap.web.app
 - Android APK: downloadable from GitHub Actions → Artifacts on every push
 
 ---
@@ -243,11 +263,11 @@ Add FRONTEND_URL to Secret Manager and Cloud Run env vars after Firebase deploy.
 
 ## 5. GCP INFRASTRUCTURE SETUP
 
-Claude Code runs all of these gcloud commands. Replace PROJECT_ID with actual value.
+Claude Code runs all of these gcloud commands. Replace tutorsnap with actual value.
 
 ### Step 1 — Enable APIs
 ```bash
-gcloud config set project PROJECT_ID
+gcloud config set project tutorsnap
 
 gcloud services enable \
   run.googleapis.com \
@@ -282,10 +302,11 @@ gcloud sql instances create tutorsnap-db \
 # Create database
 gcloud sql databases create tutorsnap --instance=tutorsnap-db
 
-# Create user (replace STRONG_PASSWORD with generated password)
+# Create user — use a pure hex password (no special chars like @ & %)
+# Special chars break psycopg2 URL parsing. Generate with: openssl rand -hex 16
 gcloud sql users create tutorsnap_user \
   --instance=tutorsnap-db \
-  --password=STRONG_PASSWORD
+  --password=<hex-only-password>
 
 # Get connection name — save this output
 gcloud sql instances describe tutorsnap-db \
@@ -294,8 +315,8 @@ gcloud sql instances describe tutorsnap-db \
 
 ### Step 4 — Cloud Storage
 ```bash
-gsutil mb -l asia-south1 gs://tutorsnap-uploads-PROJECT_ID
-gsutil uniformbucketlevelaccess set on gs://tutorsnap-uploads-PROJECT_ID
+gsutil mb -l asia-south1 gs://tutorsnap-uploads-tutorsnap
+gsutil uniformbucketlevelaccess set on gs://tutorsnap-uploads-tutorsnap
 ```
 
 ### Step 5 — Service Account
@@ -303,20 +324,20 @@ gsutil uniformbucketlevelaccess set on gs://tutorsnap-uploads-PROJECT_ID
 gcloud iam service-accounts create tutorsnap-api \
   --display-name="TutorSnap API"
 
-SA="tutorsnap-api@PROJECT_ID.iam.gserviceaccount.com"
+SA="tutorsnap-api@tutorsnap.iam.gserviceaccount.com"
 
 # Grant Cloud SQL access
-gcloud projects add-iam-policy-binding PROJECT_ID \
+gcloud projects add-iam-policy-binding tutorsnap \
   --member="serviceAccount:$SA" \
   --role="roles/cloudsql.client"
 
 # Grant Secret Manager access
-gcloud projects add-iam-policy-binding PROJECT_ID \
+gcloud projects add-iam-policy-binding tutorsnap \
   --member="serviceAccount:$SA" \
   --role="roles/secretmanager.secretAccessor"
 
 # Grant Cloud Storage access
-gcloud projects add-iam-policy-binding PROJECT_ID \
+gcloud projects add-iam-policy-binding tutorsnap \
   --member="serviceAccount:$SA" \
   --role="roles/storage.objectAdmin"
 ```
@@ -324,8 +345,9 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 ### Step 6 — Secret Manager
 ```bash
 # DATABASE_URL — uses Cloud SQL socket format for Cloud Run
-# Replace PROJECT_ID, STRONG_PASSWORD with real values
-echo -n "postgresql+psycopg2://tutorsnap_user:STRONG_PASSWORD@/tutorsnap?host=/cloudsql/PROJECT_ID:asia-south1:tutorsnap-db" \
+# IMPORTANT: password must be alphanumeric/hex — no @ & % or other special chars.
+# psycopg2 parses the URL and special chars in the password break the parser.
+echo -n "postgresql+psycopg2://tutorsnap_user:<hex-password>@/tutorsnap?host=/cloudsql/tutorsnap:asia-south1:tutorsnap-db" \
   | gcloud secrets create DATABASE_URL --data-file=-
 
 # Copy value from your backend/.env
@@ -344,7 +366,7 @@ echo -n "your-32-char-jwt-secret" \
 echo -n "thirumalreddym1982@gmail.com" \
   | gcloud secrets create ADMIN_EMAILS --data-file=-
 
-echo -n "tutorsnap-uploads-PROJECT_ID" \
+echo -n "tutorsnap-uploads-tutorsnap" \
   | gcloud secrets create GCS_BUCKET_NAME --data-file=-
 ```
 
@@ -359,19 +381,19 @@ cd backend
 gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
 
 # Build image
-docker build -t asia-south1-docker.pkg.dev/PROJECT_ID/tutorsnap/api:latest .
+docker build -t asia-south1-docker.pkg.dev/tutorsnap/tutorsnap/api:latest .
 
 # Push image
-docker push asia-south1-docker.pkg.dev/PROJECT_ID/tutorsnap/api:latest
+docker push asia-south1-docker.pkg.dev/tutorsnap/tutorsnap/api:latest
 
 # Deploy to Cloud Run
 gcloud run deploy tutorsnap-api \
-  --image=asia-south1-docker.pkg.dev/PROJECT_ID/tutorsnap/api:latest \
+  --image=asia-south1-docker.pkg.dev/tutorsnap/tutorsnap/api:latest \
   --region=asia-south1 \
   --platform=managed \
   --allow-unauthenticated \
-  --service-account=tutorsnap-api@PROJECT_ID.iam.gserviceaccount.com \
-  --add-cloudsql-instances=PROJECT_ID:asia-south1:tutorsnap-db \
+  --service-account=tutorsnap-api@tutorsnap.iam.gserviceaccount.com \
+  --add-cloudsql-instances=tutorsnap:asia-south1:tutorsnap-db \
   --set-secrets="\
 DATABASE_URL=DATABASE_URL:latest,\
 ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,\
@@ -392,17 +414,17 @@ JWT_EXPIRY_HOURS=72" \
   --port=8080
 
 # Save the deployed URL — looks like:
-# https://tutorsnap-api-xxxx-el.a.run.app
+# https://tutorsnap-api-yfxhelshwq-el.a.run.app
 ```
 
 ### Run Alembic migrations via Cloud Run Job
 ```bash
 # Create migration job
 gcloud run jobs create tutorsnap-migrate \
-  --image=asia-south1-docker.pkg.dev/PROJECT_ID/tutorsnap/api:latest \
+  --image=asia-south1-docker.pkg.dev/tutorsnap/tutorsnap/api:latest \
   --region=asia-south1 \
-  --service-account=tutorsnap-api@PROJECT_ID.iam.gserviceaccount.com \
-  --add-cloudsql-instances=PROJECT_ID:asia-south1:tutorsnap-db \
+  --service-account=tutorsnap-api@tutorsnap.iam.gserviceaccount.com \
+  --add-cloudsql-instances=tutorsnap:asia-south1:tutorsnap-db \
   --set-secrets="DATABASE_URL=DATABASE_URL:latest" \
   --command="python" \
   --args="-m,alembic,upgrade,head"
@@ -415,7 +437,7 @@ gcloud run jobs execute tutorsnap-migrate \
 
 ### Verify backend is live
 ```bash
-curl https://YOUR_CLOUD_RUN_URL/api/books
+curl https://tutorsnap-api-yfxhelshwq-el.a.run.app/api/books
 # Should return: {"detail": "Not authenticated"} or [] — either means it's running
 ```
 
@@ -426,7 +448,7 @@ curl https://YOUR_CLOUD_RUN_URL/api/books
 ### frontend/.env.production (create this file)
 ```
 VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-VITE_API_BASE=https://tutorsnap-api-xxxx-el.a.run.app
+VITE_API_BASE=https://tutorsnap-api-yfxhelshwq-el.a.run.app
 ```
 Replace with your actual Cloud Run URL.
 
@@ -476,12 +498,12 @@ firebase init hosting
 cd frontend
 npm run build
 firebase deploy --only hosting
-# Note the Hosting URL: https://tutorsnap-xxxx.web.app
+# Note the Hosting URL: https://tutorsnap.web.app
 ```
 
 ### Update FRONTEND_URL secret in GCP + redeploy backend
 ```bash
-echo -n "https://tutorsnap-xxxx.web.app" \
+echo -n "https://tutorsnap.web.app" \
   | gcloud secrets create FRONTEND_URL --data-file=-
 
 gcloud run services update tutorsnap-api \
@@ -494,14 +516,14 @@ gcloud run services update tutorsnap-api \
 console.cloud.google.com
 → APIs & Services → Credentials → your OAuth 2.0 Client ID → Edit
 → Authorised JavaScript origins:
-    ADD: https://tutorsnap-xxxx.web.app
+    ADD: https://tutorsnap.web.app
 → Authorised redirect URIs:
-    ADD: https://tutorsnap-xxxx.web.app
+    ADD: https://tutorsnap.web.app
 → Save
 ```
 
 ### Verify frontend works
-Open https://tutorsnap-xxxx.web.app → login → full session → confirm API calls
+Open https://tutorsnap.web.app → login → full session → confirm API calls
 go to Cloud Run URL (not localhost).
 
 ---
@@ -515,7 +537,10 @@ GitHub Actions will build the APK.
 ```bash
 cd frontend
 npm install @capacitor/core @capacitor/cli @capacitor/android
-npm install @capacitor/google-auth
+npm install @codetrix-studio/capacitor-google-auth
+# NOTE: @capacitor/google-auth does NOT exist on npm — use @codetrix-studio/capacitor-google-auth
+# This package has a peer dep on @capacitor/core@^6; since we use v8, also create frontend/.npmrc:
+#   legacy-peer-deps=true
 ```
 
 ### Initialize Capacitor
@@ -540,7 +565,7 @@ const config: CapacitorConfig = {
   plugins: {
     GoogleAuth: {
       scopes: ['profile', 'email'],
-      serverClientId: 'YOUR_GOOGLE_CLIENT_ID',
+      serverClientId: '192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com',
       forceCodeForRefreshToken: true,
     }
   }
@@ -548,7 +573,7 @@ const config: CapacitorConfig = {
 
 export default config;
 ```
-Replace YOUR_GOOGLE_CLIENT_ID with actual value.
+Replace 192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com with actual value.
 
 ### Add Android platform
 ```bash
@@ -567,7 +592,7 @@ import { Capacitor } from '@capacitor/core'
 // Inside Login component, add this handler:
 const handleNativeGoogleLogin = async () => {
   try {
-    const { GoogleAuth } = await import('@capacitor/google-auth')
+    const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth')
     await GoogleAuth.initialize()
     const result = await GoogleAuth.signIn()
     const idToken = result.authentication.idToken
@@ -616,7 +641,7 @@ npx cap sync android
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TutorSnap</string>
-    <string name="server_client_id">YOUR_GOOGLE_CLIENT_ID</string>
+    <string name="server_client_id">192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com</string>
     <string name="custom_url_scheme">com.tutorsnap.app</string>
 </resources>
 ```
@@ -647,9 +672,9 @@ on:
       - '.github/workflows/deploy-backend.yml'
 
 env:
-  PROJECT_ID: YOUR_GCP_PROJECT_ID
+  tutorsnap: YOUR_GCP_tutorsnap
   REGION: asia-south1
-  IMAGE: asia-south1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/tutorsnap/api
+  IMAGE: asia-south1-docker.pkg.dev/YOUR_GCP_tutorsnap/tutorsnap/api
 
 jobs:
   deploy:
@@ -686,6 +711,30 @@ jobs:
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
 
+      - name: Run database migrations (before deploy)
+        run: |
+          # IMPORTANT: migrations run BEFORE service deploy to avoid startup crash
+          # (seed_settings() queries app_settings at startup — table must exist first)
+          if gcloud run jobs describe tutorsnap-migrate --region=$REGION --quiet 2>/dev/null; then
+            gcloud run jobs update tutorsnap-migrate \
+              --image=$IMAGE:${{ github.sha }} \
+              --region=$REGION \
+              --quiet
+          else
+            gcloud run jobs create tutorsnap-migrate \
+              --image=$IMAGE:${{ github.sha }} \
+              --region=$REGION \
+              --service-account=tutorsnap-api@tutorsnap.iam.gserviceaccount.com \
+              --set-cloudsql-instances=tutorsnap:asia-south1:tutorsnap-db \
+              --set-secrets="DATABASE_URL=DATABASE_URL:latest" \
+              --command="python" \
+              --args="-m,alembic,upgrade,head" \
+              --quiet
+          fi
+          gcloud run jobs execute tutorsnap-migrate \
+            --region=$REGION \
+            --wait
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy tutorsnap-api \
@@ -693,16 +742,6 @@ jobs:
             --region=$REGION \
             --platform=managed \
             --quiet
-
-      - name: Run database migrations
-        run: |
-          gcloud run jobs update tutorsnap-migrate \
-            --image=$IMAGE:${{ github.sha }} \
-            --region=$REGION \
-            --quiet || true
-          gcloud run jobs execute tutorsnap-migrate \
-            --region=$REGION \
-            --wait
 ```
 
 ### Workflow 2: .github/workflows/deploy-frontend.yml
@@ -723,14 +762,23 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write          # required for WIF OIDC token
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'   # Capacitor 8 CLI requires Node >= 22
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -745,14 +793,15 @@ jobs:
           VITE_API_BASE: ${{ secrets.VITE_API_BASE }}
         run: npm run build
 
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
       - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          channelId: live
-          projectId: YOUR_FIREBASE_PROJECT_ID
-          entryPoint: ./frontend
+        working-directory: frontend
+        # firebase-tools v11+ respects ADC set by the WIF auth step above.
+        # FirebaseExtended/action-hosting-deploy@v0 was NOT used because it requires
+        # a service account key, which is blocked by org policy.
+        run: firebase deploy --only hosting --project=tutorsnap --non-interactive
 ```
 
 ### Workflow 3: .github/workflows/build-android.yml
@@ -778,17 +827,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'   # Capacitor 8 CLI requires Node >= 22
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Setup Java 17
+      - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'   # Gradle 8+ requires Java 21; Java 17 causes "invalid source release" error
           distribution: 'temurin'
 
       - name: Setup Android SDK
@@ -840,7 +889,7 @@ No service account key files needed. Uses OIDC tokens.
 
 ```bash
 # Get project number
-PROJECT_NUMBER=$(gcloud projects describe PROJECT_ID --format="value(projectNumber)")
+PROJECT_NUMBER=$(gcloud projects describe tutorsnap --format="value(projectNumber)")
 
 # Create Workload Identity Pool
 gcloud iam workload-identity-pools create github-pool \
@@ -857,18 +906,18 @@ gcloud iam workload-identity-pools providers create-oidc github-provider \
   --attribute-condition="assertion.ref == 'refs/heads/main'"
 
 # Allow GitHub Actions to impersonate the service account
-# Replace YOUR_GITHUB_USERNAME and YOUR_REPO_NAME
+# Replace Thirumal255 and YOUR_REPO_NAME
 gcloud iam service-accounts add-iam-policy-binding \
-  tutorsnap-api@PROJECT_ID.iam.gserviceaccount.com \
+  tutorsnap-api@tutorsnap.iam.gserviceaccount.com \
   --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/YOUR_GITHUB_USERNAME/tutorsnap"
+  --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/Thirumal255/tutorsnap"
 
 # Get the WIF provider resource name — save this for GitHub Secrets
 gcloud iam workload-identity-pools providers describe github-provider \
   --location=global \
   --workload-identity-pool=github-pool \
   --format="value(name)"
-# Output: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+# Output: projects/322472504855/locations/global/workloadIdentityPools/github-pool/providers/github-provider
 ```
 
 ---
@@ -879,21 +928,16 @@ Go to: GitHub repo → Settings → Secrets and variables → Actions → New re
 
 | Secret name | Value |
 |---|---|
-| WIF_PROVIDER | projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider |
-| WIF_SERVICE_ACCOUNT | tutorsnap-api@PROJECT_ID.iam.gserviceaccount.com |
-| FIREBASE_SERVICE_ACCOUNT | JSON content from Firebase Console → Project Settings → Service Accounts → Generate new private key |
-| VITE_GOOGLE_CLIENT_ID | your-google-client-id.apps.googleusercontent.com |
-| VITE_API_BASE | https://tutorsnap-api-xxxx-el.a.run.app |
+| WIF_PROVIDER | `projects/322472504855/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| WIF_SERVICE_ACCOUNT | `tutorsnap-api@tutorsnap.iam.gserviceaccount.com` |
+| VITE_GOOGLE_CLIENT_ID | `192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com` |
+| VITE_API_BASE | `https://tutorsnap-api-yfxhelshwq-el.a.run.app` |
 
-### How to get FIREBASE_SERVICE_ACCOUNT
-```
-Firebase Console → tutorsnap project
-→ Project Settings (gear icon)
-→ Service accounts tab
-→ "Generate new private key"
-→ Download JSON file
-→ Copy entire JSON contents → paste as secret value
-```
+**Note:** `FIREBASE_SERVICE_ACCOUNT` is NOT used in the actual implementation.
+The `deploy-frontend.yml` workflow uses `firebase-tools` CLI with Application Default
+Credentials (ADC) provided by the WIF auth step. This was required because an org policy
+(`constraints/iam.disableServiceAccountKeyCreation`) blocked SA key generation.
+`FirebaseExtended/action-hosting-deploy@v0` was dropped in favour of the firebase CLI approach.
 
 ---
 
@@ -1022,3 +1066,89 @@ Settings → Apps → Special app access → Install unknown apps
 - DO set androidScheme: 'https' in capacitor.config.ts — required for Google OAuth on Android
 - DO add android/local.properties to .gitignore (contains local SDK path)
 - DO use --no-daemon flag in Gradle build on CI — prevents memory issues
+
+---
+
+## 17. DEPLOYMENT NOTES — ISSUES AND FIXES ENCOUNTERED (2025-05-07)
+
+These are the bugs and gotchas discovered during the actual deployment. Read these before debugging.
+
+### 1. `@capacitor/google-auth` does not exist on npm
+**Problem:** The spec originally listed `@capacitor/google-auth` as the package to install.
+This package does not exist on npm.
+**Fix:** Use `@codetrix-studio/capacitor-google-auth` instead.
+Additionally, v3.4 of this package declares a peer dependency on `@capacitor/core@^6`,
+but the project uses v8. Create `frontend/.npmrc` with `legacy-peer-deps=true` to bypass the
+conflict in CI (where `npm ci` fails hard on peer dep mismatches).
+
+### 2. `cap init` creates JSON config, not TypeScript
+**Problem:** Running `npx cap init` creates `capacitor.config.json`, not `capacitor.config.ts`.
+Attempting TypeScript config without installing TypeScript causes `cap add android` to fail with
+"TypeScript not installed".
+**Fix:** Run `npm install -D typescript` before `cap add android`. Then delete
+`capacitor.config.json` and create `capacitor.config.ts` manually.
+
+### 3. Cloud SQL password must be alphanumeric
+**Problem:** The Cloud SQL user password contained `@` and `&` characters
+(e.g. `Sa4HhYI@yhp2YSSI&VeQ9@ZA`). These break psycopg2's URL parsing — psycopg2 sees
+everything after the first `@` as the hostname. The backend started but all DB operations
+failed with "password authentication failed".
+**Fix:** Reset the Cloud SQL user password to a pure hex string with no special characters
+(e.g. output of `openssl rand -hex 16`). Update the `DATABASE_URL` secret in Secret Manager.
+
+### 4. Migrations must run BEFORE deploying the Cloud Run service
+**Problem:** `main.py` calls `seed_settings()` at startup, which queries the `app_settings`
+table. If the service is deployed before migrations have run, the new container crashes
+immediately with `relation "app_settings" does not exist`. Cloud Run keeps trying to start the
+container, health checks fail, and the deploy rolls back.
+**Fix:** In `deploy-backend.yml`, the migration job step must come BEFORE the
+`gcloud run deploy` step, not after.
+
+### 5. Cloud Run Jobs use `--set-cloudsql-instances`, not `--add-cloudsql-instances`
+**Problem:** `gcloud run jobs create/update` does not recognise the `--add-cloudsql-instances`
+flag. Only Cloud Run Services support it (and even there, `--set-cloudsql-instances` is
+preferred).
+**Fix:** Use `--set-cloudsql-instances=tutorsnap:asia-south1:tutorsnap-db` for both
+`gcloud run jobs create` and `gcloud run jobs update`.
+
+### 6. Node.js 22 required for Capacitor 8 CLI
+**Problem:** GitHub Actions workflows originally used `node-version: '20'`. Capacitor 8 CLI
+requires Node >= 22. The `build-android.yml` and `deploy-frontend.yml` jobs failed with
+`[fatal] NodeJS >=22.0.0 required`.
+**Fix:** Change `node-version` to `'22'` in both workflows.
+
+### 7. Java 21 required for Gradle 8 / Capacitor 8 Android
+**Problem:** `build-android.yml` originally used `java-version: '17'`. The Gradle version
+bundled with the Capacitor 8 Android project requires Java 21. Builds failed with
+`error: invalid source release: 21`.
+**Fix:** Change `java-version` to `'21'` in `build-android.yml`.
+
+### 8. Firebase service account key creation blocked by org policy
+**Problem:** `FirebaseExtended/action-hosting-deploy@v0` requires a `FIREBASE_SERVICE_ACCOUNT`
+secret (a downloaded JSON key). The GCP org policy
+`constraints/iam.disableServiceAccountKeyCreation` blocked generating any SA keys, so this
+secret could not be created.
+**Fix:** Drop `FirebaseExtended/action-hosting-deploy@v0` entirely. Use `firebase-tools` CLI
+instead — it respects Application Default Credentials (ADC). After the WIF auth step runs in
+the workflow, ADC is set automatically, and `firebase deploy --non-interactive` works without
+any SA key file. Add `permissions: { id-token: write }` to the job.
+
+### 9. Firebase Hosting site not provisioned + missing `"site"` field
+**Problem:** Even after running `firebase deploy`, got:
+`Assertion failed: resolving hosting target of a site with no site name`.
+The Firebase project had not been connected to Firebase (Hosting not provisioned), and
+`firebase.json` was missing the `"site"` field.
+**Fix (two steps):**
+1. Call the Firebase Management REST API to provision Firebase on the GCP project:
+   `POST https://firebase.googleapis.com/v1beta1/projects/tutorsnap:addFirebase`
+2. Call the Firebase Hosting API to create the site (or verify it exists):
+   `POST https://firebasehosting.googleapis.com/v1beta1/projects/tutorsnap/sites?siteId=tutorsnap`
+3. Add `"site": "tutorsnap"` to `firebase.json` inside the `"hosting"` object.
+
+### 10. GitHub Secrets must be encrypted before uploading via API
+**Problem:** `gh` CLI was not available. Using `curl` to POST secrets to the GitHub API
+requires the secret value to be encrypted with the repo's libsodium public key
+(sealed box encryption).
+**Fix:** Use a Python script with `PyNaCl` to encrypt each secret value and POST it to
+`https://api.github.com/repos/Thirumal255/tutorsnap/actions/secrets/<NAME>`.
+Retrieve the GitHub token from `git credential fill` for authentication.

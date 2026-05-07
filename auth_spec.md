@@ -4,6 +4,20 @@
 
 ---
 
+## STATUS — IMPLEMENTED AND DEPLOYED (2025-05-07)
+
+All auth, admin, and parent features in this spec have been built and deployed.
+
+- Google OAuth 2.0 login is live for all three roles (admin, student, parent)
+- Admin panel: https://tutorsnap.web.app/admin (login: thirumalreddym1982@gmail.com)
+- Parent dashboard: https://tutorsnap.web.app/parent
+- Student home: https://tutorsnap.web.app/
+
+See `deploy_spec_v2.md` for GCP deployment details.
+See `README.md` for the full project reference.
+
+---
+
 ## CRITICAL INSTRUCTIONS
 
 1. Read the original spec.md fully before reading this file

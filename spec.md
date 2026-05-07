@@ -3,6 +3,20 @@
 
 ---
 
+## STATUS — IMPLEMENTED AND DEPLOYED (2025-05-07)
+
+All phases of this spec have been built and deployed. The app is live at:
+- **Frontend**: https://tutorsnap.web.app
+- **Backend API**: https://tutorsnap-api-yfxhelshwq-el.a.run.app
+- **Admin panel**: https://tutorsnap.web.app/admin
+- **Android APK**: GitHub → Actions → "Build Android APK" → Artifacts
+
+See `auth_spec.md` for the auth/admin/parent layer built on top of this spec.
+See `deploy_spec_v2.md` for the GCP deployment details and CI/CD setup.
+See `README.md` for the full project reference (live URLs, architecture, local dev setup).
+
+---
+
 ## CRITICAL INSTRUCTIONS FOR CLAUDE CODE
 
 1. Read this entire document before writing a single line of code
