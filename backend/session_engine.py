@@ -15,6 +15,21 @@ understand it so much better when we get there together. Let's try again."
 This rule has absolutely zero exceptions.
 """
 
+# Used ONLY in assess_answer — replaces ABSOLUTE_RULE so grading is not
+# contaminated by the "never confirm" instruction.
+ASSESS_RULE = """
+GRADING RULE — You are now acting as a fair, accurate examiner, NOT a hint-giver.
+Your only job is to judge whether the student's answer is correct.
+- A correct answer MUST receive a high score (80-100), even if it is short or informal
+- If the answer contains the right concept, rule, or method — score it 80+
+- A one-word correct answer ("yes", "no", "5", "LCM") is worth FULL marks
+- Stating the correct rule or procedure (even without a worked example) is worth 80+
+- NEVER give a low score to a correct answer just because it lacks detail
+- NEVER refuse to recognise a correct answer out of caution
+- Partial credit (50-79) only when the student is on the right track but incomplete or has a minor error
+- Feedback must celebrate what they got right, even when the overall score is low
+"""
+
 LEVEL_GUIDE = {
     "L1": "Recall and recognition — define, name, identify",
     "L2": "Comprehension — explain in your own words, describe",
@@ -109,8 +124,21 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> str:
         f"{exercise_instruction}\n"
         f"The question must:\n"
         f"- Be appropriate for a Grade 7 Cambridge student\n"
-        f"- Be clearly worded and unambiguous\n"
+        f"- Be clearly worded and unambiguous about what kind of answer is expected\n"
         f"- Not repeat any of these previous questions: {prev}\n\n"
+        f"IMPORTANT — question clarity rules by level:\n"
+        f"  L1 (Recall): Ask the student to STATE a fact, rule, or definition.\n"
+        f"    ✓ Good: 'State the divisibility rule for 5.'\n"
+        f"    ✗ Bad:  'Use the rule to find out if 1275 is divisible.' (this mixes recall + application)\n"
+        f"  L2 (Comprehension): Ask the student to EXPLAIN something in their own words.\n"
+        f"    ✓ Good: 'Explain in your own words what LCM means.'\n"
+        f"  L3 (Application): Give a specific problem and ask for a worked answer.\n"
+        f"    ✓ Good: 'Find the LCM of 12 and 18. Show your steps.'\n"
+        f"    ✓ Good: 'Is 1275 divisible by 5? State the rule you used and give your answer.'\n"
+        f"  L4 (Analysis): Ask the student to reason, compare, or spot an error.\n"
+        f"  L5 (Synthesis): Multi-step word problem combining two or more concepts.\n\n"
+        f"The question must make it obvious what a correct answer looks like — "
+        f"never leave the student guessing whether to give a number, a rule, a yes/no, or a worked solution.\n\n"
         f"Return ONLY the question text. No preamble, no answer, no explanation, no numbering."
     )
     return call_claude(system, user, max_tokens=300)
@@ -119,7 +147,7 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> str:
 def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int) -> dict:
     system = (
         f"You are Buddy, a friendly AI tutor for a Cambridge Grade 7 Mathematics student.\n"
-        f"{ABSOLUTE_RULE}\n"
+        f"{ASSESS_RULE}\n"
         f"{build_topic_context(topic)}"
     )
     user = (
@@ -136,6 +164,17 @@ def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int)
         f"  - Contains no mathematical attempt whatsoever\n"
         f"Set off_topic to FALSE only if the student is genuinely attempting to answer the maths question,\n"
         f"even if their answer is completely wrong.\n\n"
+        f"STEP 2 — Score the answer (off_topic must be FALSE):\n"
+        f"Be GENEROUS — recognise correct answers even if brief or informally worded.\n"
+        f"  - 90-100: correct answer or correct key concept/rule stated — award this even for short answers\n"
+        f"  - 70-89: mostly correct, minor omission or small error\n"
+        f"  - 50-69: partially correct, on the right track but incomplete\n"
+        f"  - 0-49: wrong approach, no understanding shown\n\n"
+        f"IMPORTANT scoring examples:\n"
+        f"  - If asked 'is X divisible by Y?' and student says 'yes' or 'no' correctly → score 80+\n"
+        f"  - If student states the correct rule or test → score 85+\n"
+        f"  - If student gives the correct numerical answer → score 90+\n"
+        f"  - Do NOT penalise for not showing full working if the answer is correct\n\n"
         f"Return ONLY valid JSON. No markdown. No text before or after.\n"
         f'{{"score": 85, "feedback": "...", "off_topic": false}}\n\n'
         f"If off_topic is TRUE:\n"
@@ -146,15 +185,11 @@ def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int)
         f"    'Oops, looks like your brain wandered off on a little adventure! Let\\'s bring it back —'\n"
         f"    'Ha! Nice try sneaking that in 😄 Let\\'s focus — '\n"
         f"  - End by briefly restating what the question is asking. Do NOT give any hint about the answer.\n\n"
-        f"If off_topic is FALSE, assess the answer normally:\n"
-        f"  - score: 0 to 100 based on correctness, method, reasoning\n"
-        f"  - 90-100: completely correct with good method\n"
-        f"  - 70-89: mostly correct, minor error\n"
-        f"  - 50-69: partially correct, on the right track\n"
-        f"  - 0-49: incorrect or fundamentally wrong approach\n"
+        f"If off_topic is FALSE:\n"
         f"  - feedback: 1-2 sentences, always encouraging, never condescending\n"
-        f"  - Celebrate what they got right even if wrong overall\n"
-        f"  - NEVER reveal the answer in feedback\n\n"
+        f"  - Celebrate what they got right, even if the overall score is low\n"
+        f"  - For correct answers, be enthusiastic: 'Spot on!', 'Exactly right!', 'Perfect!' etc.\n"
+        f"  - For wrong answers, encourage the attempt without revealing the answer\n\n"
         f"Hint tier weighting (apply to score when off_topic is false):\n"
         f"  - hint_tier 0: score unchanged\n"
         f"  - hint_tier 1: multiply score by 0.9\n"
