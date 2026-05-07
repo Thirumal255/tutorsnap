@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
-import { uploadPDF, getIngestionStatus, getTopics, getBooks } from '../../api/client'
+import { useState, useEffect } from 'react'
+import { uploadPDF, getTopics, getBooks } from '../../api/client'
+import { useUpload } from '../../context/UploadContext'
 
 const SUBJECTS = [
   'Mathematics', 'Science', 'English', 'Social Studies',
@@ -18,21 +19,23 @@ const RANK_COLORS = {
 }
 
 export default function AdminBooks() {
+  const { job, startJob } = useUpload()
   const [books, setBooks] = useState([])
   const [file, setFile] = useState(null)
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('Mathematics')
   const [grade, setGrade] = useState(6)
   const [uploading, setUploading] = useState(false)
-  const [activeBook, setActiveBook] = useState(null)   // { id, status, data, topics }
-  const [expanded, setExpanded] = useState({})
   const [error, setError] = useState(null)
-  const pollRef = useRef(null)
+  const [expanded, setExpanded] = useState({})
+  const [viewTopics, setViewTopics] = useState(null)   // { chapters } for a done book
 
+  useEffect(() => { loadBooks() }, [])
+
+  // Refresh book list when the active upload job finishes
   useEffect(() => {
-    loadBooks()
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [])
+    if (job?.stage === 'done') loadBooks()
+  }, [job?.stage])
 
   async function loadBooks() {
     try {
@@ -45,7 +48,7 @@ export default function AdminBooks() {
     if (!file || !title.trim()) return
     setUploading(true)
     setError(null)
-    setActiveBook(null)
+    setViewTopics(null)
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -53,9 +56,8 @@ export default function AdminBooks() {
       formData.append('subject', subject)
       formData.append('grade', String(grade))
       const res = await uploadPDF(formData)
-      const bookId = res.data.book_id
-      setActiveBook({ id: bookId, status: 'processing', data: null, topics: null })
-      startPolling(bookId)
+      // Hand off tracking to the global upload context
+      startJob(res.data.book_id, title.trim())
       setFile(null)
       setTitle('')
     } catch (e) {
@@ -65,28 +67,10 @@ export default function AdminBooks() {
     }
   }
 
-  function startPolling(id) {
-    if (pollRef.current) clearInterval(pollRef.current)
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await getIngestionStatus(id)
-        const s = res.data.status
-        setActiveBook(prev => ({ ...prev, status: s, data: res.data }))
-        if (s === 'done' || s === 'failed') {
-          clearInterval(pollRef.current)
-          loadBooks()
-          if (s === 'done') loadTopicsForBook(id)
-        }
-      } catch {
-        clearInterval(pollRef.current)
-      }
-    }, 3000)
-  }
-
-  async function loadTopicsForBook(id) {
+  async function loadTopicsForBook(bookId) {
     try {
-      const res = await getTopics(id)
-      setActiveBook(prev => ({ ...prev, topics: res.data }))
+      const res = await getTopics(bookId)
+      setViewTopics(res.data)
       const exp = {}
       res.data.chapters.forEach(ch => { exp[ch.id] = true })
       setExpanded(exp)
@@ -162,72 +146,59 @@ export default function AdminBooks() {
         )}
       </div>
 
-      {/* Ingestion progress */}
-      {activeBook && (
-        <div className="blox-card p-5">
-          {activeBook.status === 'processing' && (
-            <div className="flex items-center gap-3 text-[#8892B0]">
-              <div className="w-5 h-5 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin flex-shrink-0" />
-              <span className="font-nunito text-sm">🤖 AI is reading your book and extracting topics…</span>
-            </div>
-          )}
-          {activeBook.status === 'done' && activeBook.data && (
-            <div className="flex items-center gap-2 text-[#00D68F]">
-              <span className="text-xl">✅</span>
-              <span className="font-fredoka font-bold">
-                {activeBook.data.chapter_count} chapters · {activeBook.data.topic_count} topics extracted!
-              </span>
-            </div>
-          )}
-          {activeBook.status === 'failed' && (
-            <div className="text-[#FF3333]">
-              <p className="font-bold">❌ Ingestion failed</p>
-              {activeBook.data?.error && <p className="text-sm mt-1 text-[#FF6B6B]">{activeBook.data.error}</p>}
-            </div>
-          )}
+      {/* Active upload hint — widget is in the bottom-right corner */}
+      {job && job.stage !== 'done' && job.stage !== 'failed' && (
+        <div className="blox-card p-4 flex items-center gap-3 border-[#00A2FF]/30">
+          <div className="w-4 h-4 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          <p className="text-sm text-[#8892B0] font-nunito">
+            Processing <span className="text-white font-semibold">{job.title}</span> — see progress widget ↘
+          </p>
+        </div>
+      )}
 
-          {/* Extracted chapters/topics */}
-          {activeBook.topics && (
-            <div className="mt-5 space-y-3">
-              <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-wider">Extracted Topics</p>
-              {activeBook.topics.chapters.map(ch => (
-                <div key={ch.id} className="bg-[#0F0F23] rounded-xl overflow-hidden border border-[#2D2B5A]">
-                  <button
-                    onClick={() => setExpanded(p => ({ ...p, [ch.id]: !p[ch.id] }))}
-                    className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#1A1A3E] transition-colors"
-                  >
-                    <span className="font-fredoka font-bold text-white text-sm">
-                      <span className="text-[#00A2FF] mr-2">Ch {ch.chapter_number}</span>{ch.title}
-                    </span>
-                    <span className="text-xs text-[#8892B0]">{ch.topics.length} topics {expanded[ch.id] ? '▲' : '▼'}</span>
-                  </button>
-                  {expanded[ch.id] && (
-                    <ul className="border-t border-[#2D2B5A] divide-y divide-[#2D2B5A]/50">
-                      {ch.topics.map(t => (
-                        <li key={t.id} className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2 mb-1">
-                            <span className="text-sm font-semibold text-white font-nunito">
-                              {t.topic_number} {t.title}
-                            </span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${RANK_COLORS[t.difficulty_ceiling] || ''}`}>
-                              {t.difficulty_ceiling}
-                            </span>
-                          </div>
-                          {t.key_concepts?.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {t.key_concepts.map((c, i) => (
-                                <span key={i} className="text-xs bg-[#2D2B5A] text-[#8892B0] px-2 py-0.5 rounded-full">{c}</span>
-                              ))}
-                            </div>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))}
+      {/* Inline topics viewer for any book */}
+      {viewTopics && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-wider">Extracted Topics</p>
+            <button onClick={() => setViewTopics(null)} className="text-xs text-[#8892B0] hover:text-white">✕ Close</button>
+          </div>
+          {viewTopics.chapters.map(ch => (
+            <div key={ch.id} className="bg-[#0F0F23] rounded-xl overflow-hidden border border-[#2D2B5A]">
+              <button
+                onClick={() => setExpanded(p => ({ ...p, [ch.id]: !p[ch.id] }))}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#1A1A3E] transition-colors"
+              >
+                <span className="font-fredoka font-bold text-white text-sm">
+                  <span className="text-[#00A2FF] mr-2">Ch {ch.chapter_number}</span>{ch.title}
+                </span>
+                <span className="text-xs text-[#8892B0]">{ch.topics.length} topics {expanded[ch.id] ? '▲' : '▼'}</span>
+              </button>
+              {expanded[ch.id] && (
+                <ul className="border-t border-[#2D2B5A] divide-y divide-[#2D2B5A]/50">
+                  {ch.topics.map(t => (
+                    <li key={t.id} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="text-sm font-semibold text-white font-nunito">
+                          {t.topic_number} {t.title}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${RANK_COLORS[t.difficulty_ceiling] || ''}`}>
+                          {t.difficulty_ceiling}
+                        </span>
+                      </div>
+                      {t.key_concepts?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {t.key_concepts.map((c, i) => (
+                            <span key={i} className="text-xs bg-[#2D2B5A] text-[#8892B0] px-2 py-0.5 rounded-full">{c}</span>
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-          )}
+          ))}
         </div>
       )}
 
@@ -244,6 +215,7 @@ export default function AdminBooks() {
                   <th className="px-4 py-3 text-left">Grade</th>
                   <th className="px-4 py-3 text-left">Topics</th>
                   <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2D2B5A]">
@@ -266,13 +238,21 @@ export default function AdminBooks() {
                         <span className="text-xs bg-[#00D68F]/20 text-[#00D68F] border border-[#00D68F]/30 px-2 py-0.5 rounded-full">✓ Ready</span>
                       )}
                       {b.status === 'processing' && (
-                        <span className="text-xs bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/30 px-2 py-0.5 rounded-full">⚡ Processing</span>
+                        <span className="text-xs bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/30 px-2 py-0.5 rounded-full animate-pulse">⚡ Processing</span>
                       )}
                       {b.status === 'failed' && (
                         <span className="text-xs bg-[#FF3333]/20 text-[#FF3333] border border-[#FF3333]/30 px-2 py-0.5 rounded-full">✕ Failed</span>
                       )}
                       {b.status === 'pending' && (
                         <span className="text-xs bg-[#8892B0]/20 text-[#8892B0] border border-[#8892B0]/30 px-2 py-0.5 rounded-full">⏳ Pending</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {b.status === 'done' && (
+                        <button onClick={() => loadTopicsForBook(b.book_id)}
+                          className="text-xs text-[#00A2FF] hover:underline font-semibold">
+                          View Topics
+                        </button>
                       )}
                     </td>
                   </tr>

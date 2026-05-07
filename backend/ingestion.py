@@ -267,7 +267,8 @@ def _extract_native_text(doc, page_start_0: int, page_end_0: int) -> str:
 
 # ─── public parse_pdf ──────────────────────────────────────────────────────────
 
-def parse_pdf(filepath: str, subject: str = "General", grade: int = 0) -> list[dict]:
+def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
+              progress_callback=None) -> list[dict]:
     try:
         doc = fitz.open(filepath)
     except Exception as e:
@@ -283,6 +284,8 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0) -> list[d
     toc = doc.get_toc()
     chapters_meta = []
 
+    _cb = progress_callback or (lambda stage, pct: None)
+
     if len(toc) >= 3:
         for i, entry in enumerate(toc):
             level, title, page = entry
@@ -290,6 +293,7 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0) -> list[d
                 chapters_meta.append({"number": len(chapters_meta) + 1, "title": title, "page_start": page})
     else:
         print("  No native TOC — using Claude vision for structure...")
+        _cb("analysing", 40)
         chapters_meta = _detect_structure(doc, subject=subject, grade=grade)
 
     if not chapters_meta:
@@ -310,12 +314,17 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0) -> list[d
         ch["page_start"] = max(1, ch["page_start"])
 
     chunks = []
+    total_chapters = max(len(chapters_meta), 1)
 
-    for ch in chapters_meta:
+    for ch_idx, ch in enumerate(chapters_meta):
         ch_num = ch["number"]
         ch_title = ch["title"]
         ch_ps = ch["page_start"]
         ch_pe = ch["page_end"]
+
+        # Progress: 45% + up to 40% spread across chapters
+        ch_pct = 45 + int(ch_idx / total_chapters * 40)
+        _cb("analysing", ch_pct)
 
         print(f"  Processing chapter {ch_num}: '{ch_title}' (pp.{ch_ps}-{ch_pe})")
 
@@ -419,6 +428,7 @@ def run_ingestion(book_id: int, filepath: str, db=None):
     from database import SessionLocal
     from models import Book, Chapter, Topic
     from storage import get_local_path, cleanup_temp
+    from progress import set_book_progress
 
     own_db = db is None
     if own_db:
@@ -431,20 +441,37 @@ def run_ingestion(book_id: int, filepath: str, db=None):
             return
 
         book.ingestion_status = "processing"
+        book.upload_stage = "reading"
+        book.upload_progress = 30
         db.commit()
 
         print(f"\nIngesting book {book_id}: {filepath} | subject={book.subject} grade={book.grade}")
+
+        # ── Stage: Reading PDF (30-40%) ──────────────────────────────────────
         local_path = get_local_path(filepath)
+        set_book_progress(book_id, "reading", 35)
+
         try:
-            chunks = parse_pdf(local_path, subject=book.subject or "General", grade=book.grade or 0)
+            # parse_pdf will call _detect_structure (AI call) + per-chapter extraction
+            # We instrument it via a progress callback approach
+            chunks = parse_pdf(
+                local_path,
+                subject=book.subject or "General",
+                grade=book.grade or 0,
+                progress_callback=lambda stage, pct: set_book_progress(book_id, stage, pct),
+            )
         finally:
             cleanup_temp(local_path)
         print(f"  Parsed {len(chunks)} topic chunks")
 
+        # ── Stage: Saving to DB (85-95%) ────────────────────────────────────
+        set_book_progress(book_id, "saving", 85)
+
         chapter_map = {}
         topic_count = 0
+        total_chunks = max(len(chunks), 1)
 
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             ch_num = chunk["chapter_number"]
 
             if ch_num not in chapter_map:
@@ -479,11 +506,17 @@ def run_ingestion(book_id: int, filepath: str, db=None):
             db.add(topic)
             db.commit()
             topic_count += 1
-            print(f"  Structured topic: {chunk['topic_title']} ({len(topic_exercises)} exercises)")
+
+            # Progress: 85% + up to 10% as topics are saved
+            save_pct = 85 + int((i + 1) / total_chunks * 10)
+            set_book_progress(book_id, "saving", save_pct)
+            print(f"  Saved topic: {chunk['topic_title']} ({len(topic_exercises)} exercises)")
 
         book.ingestion_status = "done"
         book.chapter_count = len(chapter_map)
         book.topic_count = topic_count
+        book.upload_stage = "done"
+        book.upload_progress = 100
         db.commit()
         print(f"\nIngestion complete: {len(chapter_map)} chapters, {topic_count} topics")
 
@@ -494,6 +527,7 @@ def run_ingestion(book_id: int, filepath: str, db=None):
             book = db.query(Book).filter(Book.id == book_id).first()
             if book:
                 book.ingestion_status = "failed"
+                book.upload_stage = "failed"
                 book.ingestion_error = str(e)[:500]
                 db.commit()
         except Exception:

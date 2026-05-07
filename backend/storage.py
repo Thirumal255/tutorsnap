@@ -6,17 +6,42 @@ USE_GCS = os.getenv("USE_GCS", "false").lower() == "true"
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "tutorsnap-uploads")
 
 
-def save_upload_bytes(content: bytes, filename: str) -> str:
+def save_upload_bytes(content: bytes, filename: str, book_id: int = None) -> str:
     """
     Save raw bytes. Used from async context via run_in_executor.
+    Tracks GCS upload progress (0-30%) via set_book_progress if book_id is given.
     """
+    import io
+
     if USE_GCS:
-        import io
         from google.cloud import storage
+
+        total = len(content)
+        last_reported = [-1]  # mutable cell for closure
+
+        class ProgressBytesIO(io.BytesIO):
+            """BytesIO wrapper that reports read progress."""
+            def read(self, size=-1):
+                chunk = super().read(size)
+                if book_id and total > 0:
+                    pos = self.tell()
+                    pct = int(pos / total * 100)
+                    # GCS upload = 0→30% of overall progress; throttle every 4%
+                    scaled = int(pct * 0.30)
+                    if scaled > last_reported[0]:
+                        last_reported[0] = scaled
+                        from progress import set_book_progress
+                        set_book_progress(book_id, "uploading", scaled)
+                return chunk
+
         client = storage.Client()
         bucket = client.bucket(BUCKET_NAME)
         blob = bucket.blob(f"uploads/{filename}")
-        blob.upload_from_file(io.BytesIO(content), content_type="application/pdf")
+        blob.upload_from_file(
+            ProgressBytesIO(content),
+            content_type="application/pdf",
+            size=total,
+        )
         return f"gs://{BUCKET_NAME}/uploads/{filename}"
     else:
         upload_dir = os.getenv("UPLOAD_DIR", "uploads")

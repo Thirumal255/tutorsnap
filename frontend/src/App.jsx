@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { AuthProvider } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
+import { UploadProvider } from './context/UploadContext'
 import Login from './pages/Login'
 import Unauthorized from './pages/Unauthorized'
 import TopicSelect from './pages/TopicSelect'
@@ -52,7 +53,9 @@ export default function App() {
             {/* Admin */}
             <Route path="/admin" element={
               <ProtectedRoute roles={['admin']}>
-                <AdminLayout />
+                <UploadProvider>
+                  <AdminLayout />
+                </UploadProvider>
               </ProtectedRoute>
             }>
               <Route index element={<AdminDashboard />} />

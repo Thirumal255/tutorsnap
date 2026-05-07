@@ -12,6 +12,7 @@ import os
 import shutil
 from dotenv import load_dotenv
 from storage import save_upload, save_upload_bytes
+from progress import set_book_progress
 
 load_dotenv(override=True)
 
@@ -299,31 +300,48 @@ async def upload_pdf(
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
-    # Read file content eagerly so it's available in thread
+    # Read file bytes eagerly so they're available in the thread
     file_content = await file.read()
-    try:
-        loop = asyncio.get_event_loop()
-        filepath = await loop.run_in_executor(
-            _executor,
-            lambda: save_upload_bytes(file_content, file.filename)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
+    # Create book record first so we have an ID for progress tracking
     book = Book(
         title=title.strip(),
         subject=subject.strip(),
         grade=grade,
         filename=file.filename,
-        filepath=filepath,
+        filepath="pending",          # placeholder until GCS upload completes
         ingestion_status="pending",
+        upload_stage="uploading",
+        upload_progress=0,
     )
     db.add(book)
     db.commit()
     db.refresh(book)
-    background_tasks.add_task(run_ingestion, book.id, filepath)
+    book_id = book.id
 
-    return {"book_id": book.id, "filename": book.filename, "title": book.title,
+    # Upload to GCS in thread pool (non-blocking), with live progress tracking
+    try:
+        loop = asyncio.get_event_loop()
+        filepath = await loop.run_in_executor(
+            _executor,
+            lambda: save_upload_bytes(file_content, file.filename, book_id=book_id)
+        )
+    except Exception as e:
+        book.ingestion_status = "failed"
+        book.upload_stage = "failed"
+        book.ingestion_error = f"File upload failed: {e}"
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+
+    # Update filepath and kick off ingestion
+    book.filepath = filepath
+    book.upload_stage = "reading"
+    book.upload_progress = 30
+    db.commit()
+
+    background_tasks.add_task(run_ingestion, book_id, filepath)
+
+    return {"book_id": book_id, "filename": book.filename, "title": book.title,
             "status": "processing", "message": "Upload successful. Ingestion started."}
 
 
@@ -336,9 +354,15 @@ def get_ingestion_status(
     book = db.query(Book).filter(Book.id == book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    return {"book_id": book.id, "status": book.ingestion_status,
-            "chapter_count": book.chapter_count, "topic_count": book.topic_count,
-            "error": book.ingestion_error}
+    return {
+        "book_id": book.id,
+        "status": book.ingestion_status,
+        "stage": book.upload_stage or ("done" if book.ingestion_status == "done" else "processing"),
+        "progress": book.upload_progress or (100 if book.ingestion_status == "done" else 0),
+        "chapter_count": book.chapter_count,
+        "topic_count": book.topic_count,
+        "error": book.ingestion_error,
+    }
 
 
 @app.get("/api/books")
