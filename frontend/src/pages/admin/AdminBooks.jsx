@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { initUpload, completeUpload, uploadPDF, getTopics, getBooks } from '../../api/client'
+import { initUpload, completeUpload, uploadPDF, getTopics, getBooks, deleteBook } from '../../api/client'
 import { useUpload } from '../../context/UploadContext'
 
 const SUBJECTS = [
@@ -117,6 +117,17 @@ export default function AdminBooks() {
       setError(msg)
       failJob(msg)
       setUploading(false)
+    }
+  }
+
+  async function handleDelete(bookId, bookTitle) {
+    if (!window.confirm(`Delete "${bookTitle}"? This cannot be undone.`)) return
+    try {
+      await deleteBook(bookId)
+      setViewTopics(null)
+      loadBooks()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Delete failed.')
     }
   }
 
@@ -301,12 +312,19 @@ export default function AdminBooks() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {b.status === 'done' && (
-                        <button onClick={() => loadTopicsForBook(b.book_id)}
-                          className="text-xs text-[#00A2FF] hover:underline font-semibold">
-                          View Topics
+                      <div className="flex items-center gap-3">
+                        {b.status === 'done' && (
+                          <button onClick={() => loadTopicsForBook(b.book_id)}
+                            className="text-xs text-[#00A2FF] hover:underline font-semibold">
+                            View Topics
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(b.book_id, b.title || b.filename)}
+                          className="text-xs text-[#8892B0] hover:text-[#FF3333] transition-colors"
+                          title="Delete book">
+                          🗑
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}

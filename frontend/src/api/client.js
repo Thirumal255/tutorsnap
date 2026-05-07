@@ -36,6 +36,7 @@ export const completeUpload = (bookId) => api.post(`/upload/complete/${bookId}`)
 export const getIngestionStatus = (bookId) => api.get(`/ingestion/${bookId}`)
 export const getBooks = (grade) => api.get('/books', { params: grade ? { grade } : {} })
 export const getTopics = (bookId) => api.get(`/topics/${bookId}`)
+export const deleteBook = (bookId) => api.delete(`/books/${bookId}`)
 export const startSession = (studentName, topicId) =>
   api.post('/session/start', { student_name: studentName, topic_id: topicId })
 export const submitAnswer = (sessionId, answer) =>

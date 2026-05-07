@@ -469,6 +469,24 @@ def get_books(
             for b in books]
 
 
+@app.delete("/api/books/{book_id}")
+def delete_book(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    # Delete topics → chapters → book in order
+    for ch in db.query(Chapter).filter(Chapter.book_id == book_id).all():
+        db.query(Topic).filter(Topic.chapter_id == ch.id).delete()
+    db.query(Chapter).filter(Chapter.book_id == book_id).delete()
+    db.delete(book)
+    db.commit()
+    return {"message": f"Book {book_id} deleted"}
+
+
 @app.get("/api/topics/{book_id}")
 def get_topics(
     book_id: int,
