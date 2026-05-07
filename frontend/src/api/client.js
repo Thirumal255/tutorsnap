@@ -38,6 +38,8 @@ export const getIngestionStatus = (bookId) => api.get(`/ingestion/${bookId}`)
 export const getBooks = (grade) => api.get('/books', { params: grade ? { grade } : {} })
 export const getTopics = (bookId) => api.get(`/topics/${bookId}`)
 export const deleteBook = (bookId) => api.delete(`/books/${bookId}`)
+export const cancelIngestion = (bookId) => api.post(`/books/${bookId}/cancel`)
+export const retryIngestion  = (bookId) => api.post(`/books/${bookId}/retry`)
 export const startSession = (studentName, topicId) =>
   api.post('/session/start', { student_name: studentName, topic_id: topicId })
 export const submitAnswer = (sessionId, answer) =>

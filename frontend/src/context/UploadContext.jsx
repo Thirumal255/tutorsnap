@@ -101,8 +101,16 @@ export function UploadProvider({ children }) {
     setJob(null)
   }, [])
 
+  /**
+   * Called after a successful retryIngestion API call.
+   * Resets the job back to 'reading' so the progress card shows it running again.
+   */
+  const restartJob = useCallback(() => {
+    setJob(prev => prev ? { ...prev, stage: 'reading', progress: 30, localMode: false, error: null } : prev)
+  }, [])
+
   return (
-    <UploadCtx.Provider value={{ job, startJob, updateProgress, switchToPolling, failJob, clearJob }}>
+    <UploadCtx.Provider value={{ job, startJob, updateProgress, switchToPolling, failJob, clearJob, restartJob }}>
       {children}
     </UploadCtx.Provider>
   )

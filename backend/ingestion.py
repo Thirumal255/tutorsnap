@@ -299,7 +299,9 @@ def _extract_native_text(doc, page_start_0: int, page_end_0: int) -> str:
 # ─── public parse_pdf ──────────────────────────────────────────────────────────
 
 def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
-              progress_callback=None) -> list[dict]:
+              progress_callback=None,
+              skip_chapter_numbers: set = None,
+              cancel_check=None) -> list[dict]:
     try:
         doc = fitz.open(filepath)
     except Exception as e:
@@ -343,6 +345,7 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
         ch["page_end"] = chapters_meta[i + 1]["page_start"] - 1 if i + 1 < len(chapters_meta) else total
         ch["page_start"] = max(1, ch["page_start"])
 
+    _skip = skip_chapter_numbers or set()
     chunks = []
     total_chapters = max(len(chapters_meta), 1)
 
@@ -351,6 +354,16 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
         ch_title = ch["title"]
         ch_ps   = ch["page_start"]
         ch_pe   = ch["page_end"]
+
+        # ── Cancellation check — stop between chapters if admin cancelled ────
+        if cancel_check and cancel_check():
+            print(f"  Cancellation flag detected — stopping before chapter {ch_num}")
+            break
+
+        # ── Checkpoint skip — chapter already fully saved in DB ─────────────
+        if ch_num in _skip:
+            print(f"  Skipping chapter {ch_num} '{ch_title}' (already saved)")
+            continue
 
         ch_pct = 45 + int(ch_idx / total_chapters * 40)
         _cb("analysing", ch_pct)
@@ -457,12 +470,29 @@ def run_ingestion(book_id: int, filepath: str, db=None):
             print(f"Book {book_id} not found")
             return
 
-        book.ingestion_status = "processing"
-        book.upload_stage = "reading"
-        book.upload_progress = 30
-        db.commit()
+        # Only reset to processing if not already cancelled (shouldn't happen, but guard)
+        if book.ingestion_status != "failed":
+            book.ingestion_status = "processing"
+            book.upload_stage = "reading"
+            book.upload_progress = 30
+            db.commit()
 
         print(f"\nIngesting book {book_id}: {filepath} | subject={book.subject} grade={book.grade}")
+
+        # ── Checkpoint: find chapters already saved for this book ─────────────
+        existing_chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
+        chapter_map = {ch.chapter_number: ch for ch in existing_chapters}
+        topic_count = sum(
+            db.query(Topic).filter(Topic.chapter_id == ch.id).count()
+            for ch in existing_chapters
+        )
+        if chapter_map:
+            print(f"  Checkpoint resume: {len(chapter_map)} chapters already saved, "
+                  f"{topic_count} topics — skipping those chapters")
+
+        def _cancel_check():
+            db.refresh(book)
+            return book.ingestion_status == "failed"
 
         local_path = get_local_path(filepath)
         set_book_progress(book_id, "reading", 35)
@@ -473,15 +503,21 @@ def run_ingestion(book_id: int, filepath: str, db=None):
                 subject=book.subject or "General",
                 grade=book.grade or 0,
                 progress_callback=lambda stage, pct: set_book_progress(book_id, stage, pct),
+                skip_chapter_numbers=set(chapter_map.keys()),
+                cancel_check=_cancel_check,
             )
         finally:
             cleanup_temp(local_path)
 
-        print(f"  Parsed {len(chunks)} topic chunks")
+        # Check if cancelled during scanning phase
+        db.refresh(book)
+        if book.ingestion_status == "failed":
+            print("  Ingestion cancelled during PDF scanning — partial data preserved in DB")
+            return
+
+        print(f"  Parsed {len(chunks)} new topic chunks (plus {len(chapter_map)} existing chapters)")
         set_book_progress(book_id, "saving", 85)
 
-        chapter_map = {}
-        topic_count = 0
         total_chunks = max(len(chunks), 1)
 
         for i, chunk in enumerate(chunks):

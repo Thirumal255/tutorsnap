@@ -426,6 +426,58 @@ def complete_upload(
     return {"book_id": book_id, "status": "processing", "message": "Ingestion started."}
 
 
+@app.post("/api/books/{book_id}/cancel")
+def cancel_ingestion(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Marks a processing book as failed/cancelled.
+    The background ingestion task checks this flag between chapter batches and stops gracefully.
+    """
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if book.ingestion_status not in ("processing", "pending"):
+        raise HTTPException(status_code=400, detail="Book is not currently processing")
+    book.ingestion_status = "failed"
+    book.upload_stage = "failed"
+    book.ingestion_error = "Cancelled by admin"
+    db.commit()
+    return {"ok": True, "message": "Cancellation requested. Processing will stop after the current chapter."}
+
+
+@app.post("/api/books/{book_id}/retry")
+def retry_ingestion(
+    book_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Re-runs ingestion for a failed/cancelled book.
+    Resumes from the last completed chapter (skips chapters already saved to DB),
+    so no work is duplicated and the GCS file does not need to be re-uploaded.
+    """
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if book.ingestion_status == "processing":
+        raise HTTPException(status_code=400, detail="Book is still processing — cancel it first")
+    if not book.filepath or book.filepath == "pending":
+        raise HTTPException(status_code=400, detail="No source file to retry from")
+
+    book.ingestion_status = "processing"
+    book.upload_stage = "reading"
+    book.upload_progress = 30
+    book.ingestion_error = None
+    db.commit()
+
+    background_tasks.add_task(run_ingestion, book_id, book.filepath)
+    return {"ok": True, "book_id": book_id, "message": "Ingestion restarted from last checkpoint"}
+
+
 @app.get("/api/ingestion/{book_id}")
 def get_ingestion_status(
     book_id: int,

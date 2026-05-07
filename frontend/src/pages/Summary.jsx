@@ -153,7 +153,7 @@ export default function Summary() {
             onClick={() => navigate('/')}
             className="flex-1 py-3 rounded-full font-fredoka font-semibold text-[#8892B0] border border-[#2D2B5A] hover:border-[#00A2FF] hover:text-white transition-all"
           >
-            🗺️ Choose Topic
+            🏠 Home
           </button>
         </div>
       </div>

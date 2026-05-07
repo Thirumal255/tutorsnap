@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
-import { initUpload, completeUpload, uploadPDF, getTopics, getBooks, deleteBook } from '../../api/client'
+import {
+  initUpload, completeUpload, uploadPDF, getTopics, getBooks,
+  deleteBook, cancelIngestion, retryIngestion,
+} from '../../api/client'
 import { useUpload } from '../../context/UploadContext'
 
 const SUBJECTS = [
@@ -18,8 +21,187 @@ const RANK_COLORS = {
   L5: 'bg-[#FFD700]/20 text-[#FFD700] border-[#FFD700]/30',
 }
 
+const STAGE_INFO = {
+  uploading:  { label: '📤 Uploading to Cloud Storage', color: '#00A2FF' },
+  reading:    { label: '🔍 Reading PDF structure',       color: '#FFD700' },
+  analysing:  { label: '🤖 AI extracting topics',        color: '#C77DFF' },
+  saving:     { label: '💾 Saving to database',          color: '#00D68F' },
+  done:       { label: '✅ Ready!',                       color: '#00D68F' },
+  failed:     { label: '❌ Failed / Cancelled',           color: '#FF3333' },
+}
+
+const STAGE_STEPS = [
+  { key: 'uploading', short: '📤 Upload' },
+  { key: 'reading',   short: '🔍 Read' },
+  { key: 'analysing', short: '🤖 AI' },
+  { key: 'saving',    short: '💾 Save' },
+]
+const STAGE_ORDER = ['uploading', 'reading', 'analysing', 'saving', 'done']
+
+
+// ── Inline progress card (replaces floating widget) ───────────────────────
+function IngestionProgressCard({ job, onCancel, onRetry, onDismiss }) {
+  const [expanded, setExpanded] = useState(true)
+  const [cancelling, setCancelling] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+
+  if (!job) return null
+
+  const info = STAGE_INFO[job.stage] || STAGE_INFO.reading
+  const isDone = job.stage === 'done'
+  const isFailed = job.stage === 'failed'
+  const isActive = !isDone && !isFailed
+
+  async function handleCancel() {
+    setCancelling(true)
+    try { await onCancel() } finally { setCancelling(false) }
+  }
+
+  async function handleRetry() {
+    setRetrying(true)
+    try { await onRetry() } finally { setRetrying(false) }
+  }
+
+  return (
+    <div className={`blox-card overflow-hidden border ${
+      isFailed ? 'border-[#FF3333]/40' : isDone ? 'border-[#00D68F]/40' : 'border-[#00A2FF]/40'
+    }`}>
+      {/* Header row — always visible */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#1A1A3E] transition-colors"
+      >
+        {isActive && (
+          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 animate-pulse"
+            style={{ backgroundColor: info.color }} />
+        )}
+        {isDone && <span className="text-sm">✅</span>}
+        {isFailed && <span className="text-sm">❌</span>}
+
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white truncate font-nunito">{job.title}</p>
+          <p className="text-xs" style={{ color: info.color }}>{info.label}</p>
+        </div>
+
+        {/* Compact progress bar */}
+        {isActive && (
+          <div className="w-24 flex-shrink-0">
+            <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${job.progress ?? 0}%`, backgroundColor: info.color }} />
+            </div>
+            <p className="text-xs text-right mt-0.5 font-bold" style={{ color: info.color }}>
+              {job.progress ?? 0}%
+            </p>
+          </div>
+        )}
+
+        <span className="text-[#8892B0] text-xs ml-1">{expanded ? '▲' : '▼'}</span>
+      </button>
+
+      {/* Expanded body */}
+      {expanded && (
+        <div className="border-t border-[#2D2B5A] px-4 py-4 space-y-4">
+
+          {/* Full progress bar */}
+          {!isFailed && (
+            <div>
+              <div className="flex justify-between text-xs text-[#8892B0] mb-1.5">
+                <span>Progress</span>
+                <span className="font-bold" style={{ color: info.color }}>{job.progress ?? 0}%</span>
+              </div>
+              <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-700 ease-out"
+                  style={{
+                    width: `${job.progress ?? 0}%`,
+                    backgroundColor: info.color,
+                    boxShadow: `0 0 8px ${info.color}88`,
+                  }} />
+              </div>
+            </div>
+          )}
+
+          {/* Stage steps */}
+          <div className="grid grid-cols-4 gap-1">
+            {STAGE_STEPS.map(step => {
+              const curIdx = STAGE_ORDER.indexOf(job.stage)
+              const stepIdx = STAGE_ORDER.indexOf(step.key)
+              const done   = curIdx > stepIdx || isDone
+              const active = curIdx === stepIdx
+              return (
+                <div key={step.key} className={`text-center p-1.5 rounded-lg text-xs transition-all ${
+                  done   ? 'bg-[#00D68F]/20 text-[#00D68F]' :
+                  active ? 'bg-[#00A2FF]/20 text-[#00A2FF] ring-1 ring-[#00A2FF]/40' :
+                           'bg-[#0F0F23] text-[#4A5568]'
+                }`}>
+                  {step.short}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Result / error messages */}
+          {isDone && (
+            <div className="bg-[#00D68F]/10 border border-[#00D68F]/30 rounded-xl px-3 py-2 text-center">
+              <p className="text-[#00D68F] text-sm font-bold font-fredoka">
+                🎉 {job.chapterCount} chapters · {job.topicCount} topics ready!
+              </p>
+            </div>
+          )}
+          {isFailed && job.error && (
+            <div className="bg-[#FF3333]/10 border border-[#FF3333]/30 rounded-xl px-3 py-2 space-y-2">
+              <p className="text-[#FF6B6B] text-xs">{job.error}</p>
+              <p className="text-[#8892B0] text-xs">
+                Progress is saved — retrying will resume from the last completed chapter.
+              </p>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-2">
+            {isActive && (
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="flex-1 text-xs border border-[#FF3333]/40 text-[#FF3333] rounded-xl py-2 hover:bg-[#FF3333]/10 transition-all disabled:opacity-40"
+              >
+                {cancelling ? 'Cancelling…' : '⏹ Cancel'}
+              </button>
+            )}
+            {isFailed && (
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="flex-1 text-xs border border-[#00A2FF]/40 text-[#00A2FF] rounded-xl py-2 hover:bg-[#00A2FF]/10 transition-all disabled:opacity-40"
+              >
+                {retrying ? 'Starting…' : '▶ Resume from checkpoint'}
+              </button>
+            )}
+            {(isDone || isFailed) && (
+              <button
+                onClick={onDismiss}
+                className="text-xs border border-[#2D2B5A] text-[#8892B0] rounded-xl py-2 px-3 hover:text-white transition-all"
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+
+          {isActive && (
+            <p className="text-[#8892B0] text-xs text-center">
+              You can navigate away — processing continues in the background
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ── Main AdminBooks page ───────────────────────────────────────────────────
 export default function AdminBooks() {
-  const { job, startJob, updateProgress, switchToPolling, failJob } = useUpload()
+  const { job, startJob, updateProgress, switchToPolling, failJob, clearJob, restartJob } = useUpload()
   const [books, setBooks] = useState([])
   const [file, setFile] = useState(null)
   const [title, setTitle] = useState('')
@@ -28,11 +210,10 @@ export default function AdminBooks() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [expanded, setExpanded] = useState({})
-  const [viewTopics, setViewTopics] = useState(null)   // { chapters } for a done book
+  const [viewTopics, setViewTopics] = useState(null)
 
   useEffect(() => { loadBooks() }, [])
 
-  // Refresh book list when the active upload job finishes
   useEffect(() => {
     if (job?.stage === 'done') loadBooks()
   }, [job?.stage])
@@ -53,52 +234,33 @@ export default function AdminBooks() {
     const bookTitle = title.trim()
 
     try {
-      // ── Step 1: Init — create Book record + get signed URL ──────────────
       const initRes = await initUpload({
-        title: bookTitle,
-        subject,
-        grade,
-        filename: file.name,
-        content_type: 'application/pdf',
+        title: bookTitle, subject, grade,
+        filename: file.name, content_type: 'application/pdf',
       })
       const { book_id, upload_url, use_signed_url } = initRes.data
 
       if (use_signed_url && upload_url) {
-        // ── Step 2: Register job immediately so widget shows up ──────────
         startJob(book_id, bookTitle)
-        setFile(null)
-        setTitle('')
-        setUploading(false)
+        setFile(null); setTitle(''); setUploading(false)
 
-        // ── Step 3: Upload file directly to GCS via XHR ─────────────────
         await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest()
           xhr.open('PUT', upload_url)
           xhr.setRequestHeader('Content-Type', 'application/pdf')
-
           xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              // XHR phase = 0-30% of overall progress
-              const pct = Math.round((e.loaded / e.total) * 30)
-              updateProgress(pct)
-            }
+            if (e.lengthComputable) updateProgress(Math.round((e.loaded / e.total) * 30))
           }
-
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve()
-            else reject(new Error(`GCS upload failed (HTTP ${xhr.status})`))
-          }
+          xhr.onload  = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`GCS upload failed (HTTP ${xhr.status})`))
           xhr.onerror = () => reject(new Error('Network error during file upload'))
           xhr.onabort = () => reject(new Error('Upload cancelled'))
           xhr.send(file)
         })
 
-        // ── Step 4: Notify backend → triggers ingestion ──────────────────
         await completeUpload(book_id)
-        switchToPolling()   // hand off to DB-poll for reading/analysing/saving stages
+        switchToPolling()
 
       } else {
-        // ── Fallback: local dev — regular multipart upload ───────────────
         const formData = new FormData()
         formData.append('file', file)
         formData.append('title', bookTitle)
@@ -107,9 +269,7 @@ export default function AdminBooks() {
         const res = await uploadPDF(formData)
         startJob(res.data.book_id, bookTitle)
         switchToPolling()
-        setFile(null)
-        setTitle('')
-        setUploading(false)
+        setFile(null); setTitle(''); setUploading(false)
       }
 
     } catch (e) {
@@ -128,6 +288,38 @@ export default function AdminBooks() {
       loadBooks()
     } catch (e) {
       setError(e.response?.data?.detail || 'Delete failed.')
+    }
+  }
+
+  async function handleCancel() {
+    if (!job?.bookId) return
+    try {
+      await cancelIngestion(job.bookId)
+      // The widget will update via polling when the backend marks it failed
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Cancel failed.')
+    }
+  }
+
+  async function handleRetry() {
+    if (!job?.bookId) return
+    try {
+      await retryIngestion(job.bookId)
+      restartJob()   // reset local job state to 'reading'
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Retry failed.')
+    }
+  }
+
+  // Retry a book that failed but has no active job in context (e.g. after page refresh)
+  async function handleRetryBook(book) {
+    try {
+      await retryIngestion(book.book_id)
+      startJob(book.book_id, book.title || book.filename)
+      switchToPolling()
+      loadBooks()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Retry failed.')
     }
   }
 
@@ -152,7 +344,6 @@ export default function AdminBooks() {
       <div className="blox-card p-6 space-y-5">
         <h3 className="text-sm font-fredoka font-bold text-[#00A2FF]">➕ Upload New Textbook</h3>
 
-        {/* Metadata row */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="sm:col-span-1">
             <label className="text-xs text-[#8892B0] font-semibold mb-1 block">Book Title *</label>
@@ -177,7 +368,6 @@ export default function AdminBooks() {
           </div>
         </div>
 
-        {/* File picker */}
         <div>
           <label className="text-xs text-[#8892B0] font-semibold mb-1 block">PDF File *</label>
           <div className="flex flex-col sm:flex-row gap-3 items-start">
@@ -186,12 +376,8 @@ export default function AdminBooks() {
               <span className="text-sm text-[#8892B0] truncate">
                 {file ? file.name : 'Click to choose PDF…'}
               </span>
-              <input
-                type="file"
-                accept=".pdf"
-                className="hidden"
-                onChange={e => setFile(e.target.files[0] || null)}
-              />
+              <input type="file" accept=".pdf" className="hidden"
+                onChange={e => setFile(e.target.files[0] || null)} />
             </label>
             <button
               onClick={handleUpload}
@@ -210,17 +396,17 @@ export default function AdminBooks() {
         )}
       </div>
 
-      {/* Active upload hint — widget is in the bottom-right corner */}
-      {job && job.stage !== 'done' && job.stage !== 'failed' && (
-        <div className="blox-card p-4 flex items-center gap-3 border-[#00A2FF]/30">
-          <div className="w-4 h-4 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin flex-shrink-0" />
-          <p className="text-sm text-[#8892B0] font-nunito">
-            Processing <span className="text-white font-semibold">{job.title}</span> — see progress widget ↘
-          </p>
-        </div>
+      {/* Inline ingestion progress card */}
+      {job && (
+        <IngestionProgressCard
+          job={job}
+          onCancel={handleCancel}
+          onRetry={handleRetry}
+          onDismiss={clearJob}
+        />
       )}
 
-      {/* Inline topics viewer for any book */}
+      {/* Inline topics viewer */}
       {viewTopics && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -266,7 +452,7 @@ export default function AdminBooks() {
         </div>
       )}
 
-      {/* Existing books list */}
+      {/* Books list */}
       {books.length > 0 && (
         <div className="space-y-3">
           <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-wider">All Books ({books.length})</p>
@@ -317,6 +503,12 @@ export default function AdminBooks() {
                           <button onClick={() => loadTopicsForBook(b.book_id)}
                             className="text-xs text-[#00A2FF] hover:underline font-semibold">
                             View Topics
+                          </button>
+                        )}
+                        {b.status === 'failed' && (
+                          <button onClick={() => handleRetryBook(b)}
+                            className="text-xs text-[#FFD700] hover:underline font-semibold">
+                            ▶ Retry
                           </button>
                         )}
                         <button onClick={() => handleDelete(b.book_id, b.title || b.filename)}
