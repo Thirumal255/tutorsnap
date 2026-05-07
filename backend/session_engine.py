@@ -71,7 +71,7 @@ def build_topic_context(topic) -> str:
 def call_claude(system: str, user: str, max_tokens: int = 800) -> str:
     try:
         response = _client.messages.create(
-            model=os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
+            model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],

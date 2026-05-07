@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
 
 def _repair_json(text: str) -> str:
