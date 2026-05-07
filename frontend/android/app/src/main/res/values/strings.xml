@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">TutorSnap</string>
-    <string name="title_activity_main">TutorSnap</string>
+    <string name="app_name">StudyBlox</string>
+    <string name="title_activity_main">StudyBlox</string>
     <string name="package_name">com.tutorsnap.app</string>
     <string name="custom_url_scheme">com.tutorsnap.app</string>
     <string name="server_client_id">322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com</string>

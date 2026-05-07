@@ -1,16 +1,15 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { logout as apiLogout } from '../../api/client'
+import { logout as apiLogout, getFlaggedStudents } from '../../api/client'
 import { useEffect, useState } from 'react'
-import { getFlaggedStudents } from '../../api/client'
 
 const NAV = [
-  { to: '/admin', label: 'Dashboard', end: true },
-  { to: '/admin/students', label: 'Students' },
-  { to: '/admin/parents', label: 'Parents' },
-  { to: '/admin/books', label: 'Books' },
-  { to: '/admin/flagged', label: 'Flagged' },
-  { to: '/admin/settings', label: 'Settings' },
+  { to: '/admin',          label: 'Dashboard', icon: '🏠', end: true },
+  { to: '/admin/students', label: 'Students',  icon: '🎮' },
+  { to: '/admin/parents',  label: 'Parents',   icon: '👨‍👩‍👧' },
+  { to: '/admin/books',    label: 'Books',     icon: '📚' },
+  { to: '/admin/flagged',  label: 'Flagged',   icon: '🚩' },
+  { to: '/admin/settings', label: 'Settings',  icon: '⚙️' },
 ]
 
 export default function AdminLayout() {
@@ -29,28 +28,39 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-[#0F0F23]">
       {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-gray-100 flex flex-col flex-shrink-0">
-        <div className="px-5 py-5 border-b border-gray-100">
-          <span className="text-lg font-bold text-green-700">TutorSnap</span>
-          <p className="text-xs text-gray-400 mt-0.5">Admin</p>
+      <aside className="w-60 bg-[#16213E] border-r border-[#2D2B5A] flex flex-col flex-shrink-0">
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-[#2D2B5A]">
+          <p className="text-xl font-fredoka font-bold text-white">
+            Study<span className="text-[#00A2FF]">Blox</span>
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-xs bg-[#FF3333]/20 text-[#FF3333] border border-[#FF3333]/30 px-2 py-0.5 rounded-full font-semibold">
+              ADMIN
+            </span>
+          </div>
         </div>
 
+        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAV.map(({ to, label, end }) => (
+          {NAV.map(({ to, label, icon, end }) => (
             <NavLink key={to} to={to} end={end}
               className={({ isActive }) =>
-                `flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
+                `flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-nunito font-semibold transition-all ${
                   isActive
-                    ? 'bg-green-50 text-green-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-50'
+                    ? 'bg-[#00A2FF]/15 text-[#00A2FF] border-l-4 border-[#00A2FF]'
+                    : 'text-[#8892B0] hover:bg-[#1A1A3E] hover:text-white'
                 }`
               }
             >
-              {label}
+              <span className="flex items-center gap-2.5">
+                <span>{icon}</span>
+                {label}
+              </span>
               {label === 'Flagged' && flaggedCount > 0 && (
-                <span className="bg-red-100 text-red-600 text-xs font-medium px-1.5 py-0.5 rounded-full">
+                <span className="bg-[#FF3333] text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
                   {flaggedCount}
                 </span>
               )}
@@ -58,25 +68,29 @@ export default function AdminLayout() {
           ))}
         </nav>
 
-        <div className="px-4 py-4 border-t border-gray-100">
+        {/* User */}
+        <div className="px-4 py-4 border-t border-[#2D2B5A]">
           <div className="flex items-center gap-2 mb-3">
             {user?.avatar_url
-              ? <img src={user.avatar_url} className="w-7 h-7 rounded-full" alt="" />
-              : <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center text-green-700 text-xs font-bold">
+              ? <img src={user.avatar_url} className="w-8 h-8 rounded-xl border border-[#2D2B5A]" alt="" />
+              : <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#00A2FF] to-[#0066CC] flex items-center justify-center text-white font-fredoka font-bold">
                   {user?.name?.[0]}
                 </div>
             }
-            <span className="text-xs text-gray-700 truncate">{user?.name}</span>
+            <div className="min-w-0">
+              <p className="text-xs text-white font-semibold truncate">{user?.name}</p>
+              <p className="text-xs text-[#8892B0]">Admin</p>
+            </div>
           </div>
           <button onClick={handleLogout}
-            className="w-full text-xs text-gray-500 hover:text-gray-700 text-left px-1">
+            className="w-full text-xs text-[#8892B0] hover:text-white border border-[#2D2B5A] hover:border-[#FF3333] rounded-xl py-2 transition-all font-nunito">
             Sign out
           </button>
         </div>
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto bg-[#0F0F23]">
         <Outlet />
       </main>
     </div>

@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.tutorsnap.app',
-  appName: 'TutorSnap',
+  appName: 'StudyBlox',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

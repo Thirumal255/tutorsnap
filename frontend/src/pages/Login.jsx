@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
 import { Capacitor } from '@capacitor/core'
 import { useAuth } from '../auth/AuthContext'
-import { googleLogin } from '../api/client'
-import { devLogin as devLoginApi } from '../api/client'
+import { googleLogin, devLogin as devLoginApi } from '../api/client'
 
 const IS_DEV = import.meta.env.DEV
 const isNative = Capacitor.isNativePlatform()
@@ -58,35 +57,51 @@ export default function Login() {
       await GoogleAuth.initialize()
       const result = await GoogleAuth.signIn()
       const idToken = result.authentication.idToken
-
       const res = await googleLogin(idToken)
       const { access_token, user: userData } = res.data
       login(access_token, userData)
       redirectByRole(userData.role)
     } catch (err) {
       setError('Login failed. Please try again.')
-      console.error(err)
     }
   }
 
   return (
-    <div className="min-h-screen bg-green-50 flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 w-full max-w-sm text-center">
-        <h1 className="text-4xl font-bold text-green-700 mb-2">TutorSnap</h1>
-        <p className="text-gray-500 text-sm mb-8">Cambridge Maths made simple 📚</p>
+    <div className="min-h-screen bg-[#0F0F23] flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-20 left-10 text-6xl opacity-10 animate-float">🎮</div>
+        <div className="absolute top-40 right-16 text-5xl opacity-10 animate-float" style={{animationDelay:'1s'}}>⭐</div>
+        <div className="absolute bottom-32 left-20 text-5xl opacity-10 animate-float" style={{animationDelay:'2s'}}>📚</div>
+        <div className="absolute bottom-20 right-10 text-6xl opacity-10 animate-float" style={{animationDelay:'0.5s'}}>🏆</div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-[#00A2FF] opacity-5 blur-3xl" />
+      </div>
 
-        <div className="border-t border-gray-100 pt-8">
+      <div className="w-full max-w-sm relative z-10">
+        {/* Logo */}
+        <div className="text-center mb-8 animate-bounce-in">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-[#00A2FF] to-[#0066CC] shadow-glow-blue mb-4 animate-float">
+            <span className="text-4xl">🎮</span>
+          </div>
+          <h1 className="text-5xl font-fredoka font-bold text-white tracking-wide">
+            Study<span className="text-[#00A2FF]">Blox</span>
+          </h1>
+          <p className="text-[#8892B0] text-sm mt-2 font-nunito">Level up your learning! 🚀</p>
+        </div>
+
+        {/* Card */}
+        <div className="blox-card p-7 animate-bounce-in" style={{animationDelay:'0.1s'}}>
+          <p className="text-center text-[#8892B0] text-sm mb-6 font-nunito">
+            Sign in to start your quest
+          </p>
+
           <div className="flex justify-center">
             {isNative ? (
               <button
                 onClick={handleNativeGoogleLogin}
-                className="flex items-center gap-3 bg-white border border-gray-300 rounded-lg px-6 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors w-full justify-center"
+                className="w-full flex items-center justify-center gap-3 bg-white text-gray-700 font-nunito font-semibold rounded-2xl px-6 py-3 hover:bg-gray-50 transition-all hover:scale-105 shadow-lg"
               >
-                <img
-                  src="https://developers.google.com/identity/images/g-logo.png"
-                  className="w-5 h-5"
-                  alt="Google"
-                />
+                <img src="https://developers.google.com/identity/images/g-logo.png" className="w-5 h-5" alt="Google" />
                 Sign in with Google
               </button>
             ) : (
@@ -95,38 +110,42 @@ export default function Login() {
                 onError={() => setError('Login failed. Please try again.')}
                 use_fedcm_for_prompt={false}
                 flow="implicit"
+                theme="filled_black"
+                shape="pill"
+                size="large"
               />
             )}
           </div>
+
           {error && (
-            <div className="mt-4 bg-red-50 border border-red-100 rounded-lg px-4 py-3">
-              <p className="text-sm text-red-600 font-medium">{error}</p>
+            <div className="mt-4 bg-[#FF3333]/10 border border-[#FF3333]/30 rounded-xl px-4 py-3 animate-bounce-in">
+              <p className="text-sm text-[#FF6B6B] font-medium text-center">{error}</p>
               {error.includes('not registered') && (
-                <p className="text-xs text-red-400 mt-1">
-                  Contact your administrator to get access.
+                <p className="text-xs text-[#8892B0] mt-1 text-center">
+                  Ask your admin to add you to StudyBlox 🎮
                 </p>
               )}
             </div>
           )}
+
+          <p className="mt-5 text-center text-xs text-[#8892B0]">
+            🔒 Invite only — contact your admin to join
+          </p>
         </div>
 
-        <p className="mt-8 text-xs text-gray-400">
-          Access is by invitation only. Contact your admin to be added.
-        </p>
-
+        {/* Dev login */}
         {IS_DEV && (
-          <div className="mt-6 border-t border-dashed border-gray-200 pt-5">
-            <p className="text-xs text-gray-400 mb-3">Dev login (localhost only)</p>
+          <div className="mt-4 blox-card p-4 animate-bounce-in" style={{animationDelay:'0.2s'}}>
+            <p className="text-xs text-[#8892B0] mb-3 text-center font-mono">⚡ Dev login</p>
             <form onSubmit={handleDevLogin} className="flex flex-col gap-2">
               <input
                 type="email"
                 placeholder="email@example.com"
                 value={devEmail}
                 onChange={e => setDevEmail(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 w-full"
+                className="blox-input w-full"
               />
-              <button type="submit"
-                className="w-full py-2 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-800">
+              <button type="submit" className="btn-blox-primary w-full text-sm py-2">
                 Dev Login
               </button>
             </form>

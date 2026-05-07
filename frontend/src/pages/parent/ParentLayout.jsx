@@ -21,29 +21,32 @@ export default function ParentLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <nav className="bg-white border-b border-gray-100 shadow-sm px-6 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-[#0F0F23] flex flex-col">
+      <nav className="bg-[#16213E] border-b border-[#2D2B5A] px-6 py-3 flex items-center justify-between shadow-card">
         <div className="flex items-center gap-8">
-          <span className="text-lg font-bold text-green-700">TutorSnap</span>
+          <span className="text-xl font-fredoka font-bold text-white">
+            Study<span className="text-[#00A2FF]">Blox</span>
+          </span>
           <div className="flex items-center gap-6">
-            <NavLink
-              to="/parent"
-              end
+            <NavLink to="/parent" end
               className={({ isActive }) =>
-                `text-sm font-medium ${isActive ? 'text-green-700' : 'text-gray-500 hover:text-gray-700'}`
+                `text-sm font-nunito font-semibold transition-colors ${
+                  isActive ? 'text-[#00A2FF]' : 'text-[#8892B0] hover:text-white'
+                }`
               }
             >
-              My Children
+              👨‍👩‍👧 My Children
             </NavLink>
-            <NavLink
-              to="/parent/notifications"
+            <NavLink to="/parent/notifications"
               className={({ isActive }) =>
-                `text-sm font-medium flex items-center gap-1 ${isActive ? 'text-green-700' : 'text-gray-500 hover:text-gray-700'}`
+                `text-sm font-nunito font-semibold flex items-center gap-1.5 transition-colors ${
+                  isActive ? 'text-[#00A2FF]' : 'text-[#8892B0] hover:text-white'
+                }`
               }
             >
-              Notifications
+              🔔 Alerts
               {unread > 0 && (
-                <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">
+                <span className="bg-[#FF3333] text-white text-xs rounded-full px-1.5 py-0.5 leading-none font-bold shadow-glow-red">
                   {unread}
                 </span>
               )}
@@ -53,13 +56,11 @@ export default function ParentLayout() {
 
         <div className="flex items-center gap-3">
           {user?.avatar_url && (
-            <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
+            <img src={user.avatar_url} alt="" className="w-8 h-8 rounded-xl border border-[#2D2B5A]" />
           )}
-          <span className="text-sm text-gray-600 hidden sm:block">{user?.name}</span>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-gray-400 hover:text-gray-600"
-          >
+          <span className="text-sm text-[#8892B0] hidden sm:block font-nunito">{user?.name}</span>
+          <button onClick={handleLogout}
+            className="text-sm text-[#8892B0] hover:text-white border border-[#2D2B5A] hover:border-[#FF3333] rounded-full px-3 py-1.5 transition-all font-nunito">
             Sign out
           </button>
         </div>

@@ -19,6 +19,7 @@ export default function Chat() {
   const [hintTier, setHintTier] = useState(0)
   const [currentLevel, setCurrentLevel] = useState('L1')
   const [confirmEnd, setConfirmEnd] = useState(false)
+  const [xpGained, setXpGained] = useState(null)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -38,6 +39,11 @@ export default function Chat() {
     setMessages((prev) => [...prev, { sender, text }])
   }
 
+  function showXP(amount) {
+    setXpGained(amount)
+    setTimeout(() => setXpGained(null), 1500)
+  }
+
   async function handleSend() {
     if (!input.trim() || loading) return
     const answer = input.trim()
@@ -45,13 +51,12 @@ export default function Chat() {
     addMessage('student', answer)
     setShowHintButton(false)
     setLoading(true)
-    addMessage('buddy', null) // loading bubble
+    addMessage('buddy', null)
 
     try {
       const res = await submitAnswer(sessionId, answer)
       const d = res.data
 
-      // Replace loading bubble with feedback
       setMessages((prev) => {
         const next = [...prev]
         next[next.length - 1] = { sender: 'buddy', text: d.feedback }
@@ -61,7 +66,7 @@ export default function Chat() {
       setCurrentLevel(d.current_level)
 
       if (d.session_complete) {
-        // Navigate to summary after 2s
+        showXP('+100 XP')
         sessionStorage.setItem(`summary_${sessionId}`, JSON.stringify({
           summary: d.summary,
           level: d.current_level,
@@ -77,26 +82,26 @@ export default function Chat() {
       }
 
       if (d.action === 'advance_level') {
-        addMessage('buddy', `Great job! Let's try something a bit harder 🎉\n\n${d.next_question}`)
+        showXP('+50 XP')
+        addMessage('buddy', `🎉 Level Up! Let's try something harder!\n\n${d.next_question}`)
         setHintTier(0)
         setShowHintButton(false)
       } else if (d.action === 'retry_question' && d.next_question) {
-        // Off-topic answer — show playful redirect then replay the same question
         addMessage('buddy', d.next_question)
         setShowHintButton(false)
       } else if (d.next_question) {
+        showXP('+10 XP')
         addMessage('buddy', d.next_question)
         setHintTier(0)
         setShowHintButton(false)
       }
 
-      if (d.show_hint_button) {
-        setShowHintButton(true)
-      }
-    } catch (e) {
+      if (d.show_hint_button) setShowHintButton(true)
+
+    } catch {
       setMessages((prev) => {
         const next = [...prev]
-        next[next.length - 1] = { sender: 'buddy', text: 'Something went wrong. Please try again.' }
+        next[next.length - 1] = { sender: 'buddy', text: '⚠️ Something went wrong. Please try again.' }
         return next
       })
     } finally {
@@ -132,11 +137,7 @@ export default function Chat() {
   async function handleEnd() {
     if (!confirmEnd) { setConfirmEnd(true); return }
     setConfirmEnd(false)
-    try {
-      await endSession(sessionId)
-    } catch {
-      // best effort
-    }
+    try { await endSession(sessionId) } catch {}
     navigate(`/summary/${sessionId}`)
   }
 
@@ -150,66 +151,72 @@ export default function Chat() {
   if (!session) return null
 
   return (
-    <div className="flex flex-col h-screen bg-green-50">
+    <div className="flex flex-col h-screen bg-[#0F0F23]">
+
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 shadow-sm flex-shrink-0">
-        <span className="font-bold text-green-700 text-sm">TutorSnap</span>
-        <span className="text-xs text-gray-500 truncate max-w-[40%] text-center">{session.topicTitle}</span>
+      <div className="flex items-center justify-between px-4 py-3 bg-[#16213E] border-b border-[#2D2B5A] flex-shrink-0 shadow-card">
+        <div className="flex items-center gap-2">
+          <span className="font-fredoka font-bold text-white text-lg">Study<span className="text-[#00A2FF]">Blox</span></span>
+        </div>
+        <div className="flex-1 px-4">
+          <p className="text-xs text-[#8892B0] text-center truncate">{session.topicTitle}</p>
+        </div>
         <div className="flex items-center gap-2">
           <ProgressBadge level={currentLevel} />
           <button
             onClick={handleEnd}
-            className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
+            className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all ${
+              confirmEnd
+                ? 'bg-[#FF3333] text-white shadow-glow-red'
+                : 'border border-[#2D2B5A] text-[#8892B0] hover:border-[#FF3333] hover:text-[#FF3333]'
+            }`}
           >
-            {confirmEnd ? 'Sure? Click again' : 'End Session'}
+            {confirmEnd ? 'Sure? ✓' : 'End'}
           </button>
         </div>
       </div>
 
+      {/* XP pop */}
+      {xpGained && (
+        <div className="absolute top-16 right-4 z-50 font-fredoka font-bold text-[#FFD700] text-lg animate-coin-pop pointer-events-none">
+          {xpGained} ⭐
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.map((m, i) => (
-          <ChatBubble
-            key={i}
-            sender={m.sender}
-            message={m.text}
-            isLoading={m.text === null}
-          />
+          <ChatBubble key={i} sender={m.sender} message={m.text} isLoading={m.text === null} />
         ))}
         {showHintButton && (
-          <HintButton
-            onHint={handleHint}
-            hintTier={hintTier}
-            isLoading={hintLoading}
-            isFinalHint={hintTier >= 5}
-          />
+          <HintButton onHint={handleHint} hintTier={hintTier} isLoading={hintLoading} isFinalHint={hintTier >= 5} />
         )}
         <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div className="flex-shrink-0 bg-white border-t border-gray-100 px-4 py-3">
+      <div className="flex-shrink-0 bg-[#16213E] border-t border-[#2D2B5A] px-4 py-3">
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Type your answer…"
+            placeholder="Type your answer here… 💬"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={loading}
-            className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 disabled:bg-gray-50"
+            className="blox-input flex-1"
           />
           <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            className="px-5 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            className="btn-blox-primary px-5 py-2.5 text-sm flex items-center gap-2"
           >
             {loading ? (
               <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
               </svg>
-            ) : 'Send'}
+            ) : '⚡ Send'}
           </button>
         </div>
       </div>

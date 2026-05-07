@@ -1,23 +1,18 @@
-const LABELS = {
-  L1: 'Getting started',
-  L2: 'Building up',
-  L3: 'Practising',
-  L4: 'Going deeper',
-  L5: 'Challenge mode',
+const RANKS = {
+  L1: { label: 'Wood',    emoji: '🪵', cls: 'rank-wood' },
+  L2: { label: 'Stone',   emoji: '🪨', cls: 'rank-stone' },
+  L3: { label: 'Iron',    emoji: '⚔️',  cls: 'rank-iron' },
+  L4: { label: 'Diamond', emoji: '💎', cls: 'rank-diamond' },
+  L5: { label: 'Gold',    emoji: '👑', cls: 'rank-gold' },
 }
 
-const COLORS = {
-  L1: 'bg-gray-100 text-gray-700',
-  L2: 'bg-blue-100 text-blue-700',
-  L3: 'bg-green-100 text-green-700',
-  L4: 'bg-purple-100 text-purple-700',
-  L5: 'bg-orange-100 text-orange-700',
-}
-
-export default function ProgressBadge({ level }) {
+export default function ProgressBadge({ level, large }) {
+  const rank = RANKS[level] || RANKS.L1
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${COLORS[level] || 'bg-gray-100 text-gray-700'}`}>
-      {level} · {LABELS[level] || level}
+    <span className={`inline-flex items-center gap-1 rounded-full font-fredoka font-semibold ${rank.cls} ${
+      large ? 'px-4 py-2 text-base' : 'px-2.5 py-1 text-xs'
+    }`}>
+      {rank.emoji} {rank.label}
     </span>
   )
 }

@@ -2,7 +2,142 @@
 @tailwind components;
 @tailwind utilities;
 
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background-color: #f0fdf4;
-  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #0F0F23;
+  font-family: 'Nunito', system-ui, sans-serif;
+  color: #FFFFFF;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0F0F23; }
+::-webkit-scrollbar-thumb { background: #2D2B5A; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #00A2FF; }
+
+/* Blox card style */
+.blox-card {
+  background: #16213E;
+  border: 1px solid #2D2B5A;
+  border-radius: 1rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+.blox-card-glow {
+  background: #16213E;
+  border: 1px solid #00A2FF;
+  border-radius: 1rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 0 20px rgba(0,162,255,0.2);
+}
+
+/* Glowing border on hover */
+.blox-hover {
+  transition: all 0.2s ease;
+}
+.blox-hover:hover {
+  border-color: #00A2FF;
+  box-shadow: 0 0 20px rgba(0,162,255,0.3);
+  transform: translateY(-2px);
+}
+
+/* Pill button */
+.btn-blox-primary {
+  background: linear-gradient(135deg, #00A2FF, #0066CC);
+  color: white;
+  border-radius: 9999px;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.6rem 1.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 15px rgba(0,162,255,0.4);
+}
+.btn-blox-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,162,255,0.6);
+}
+.btn-blox-primary:active:not(:disabled) { transform: scale(0.97); }
+.btn-blox-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-blox-red {
+  background: linear-gradient(135deg, #FF3333, #CC0000);
+  box-shadow: 0 4px 15px rgba(255,51,51,0.4);
+}
+.btn-blox-red:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(255,51,51,0.6); }
+
+.btn-blox-gold {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #1A1A3E;
+  box-shadow: 0 4px 15px rgba(255,215,0,0.4);
+}
+.btn-blox-gold:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(255,215,0,0.6); }
+
+.btn-blox-green {
+  background: linear-gradient(135deg, #00D68F, #00A86B);
+  box-shadow: 0 4px 15px rgba(0,214,143,0.4);
+}
+.btn-blox-green:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(0,214,143,0.6); }
+
+/* XP bar */
+.xp-bar-track {
+  background: #2D2B5A;
+  border-radius: 9999px;
+  overflow: hidden;
+  height: 8px;
+}
+.xp-bar-fill {
+  background: linear-gradient(90deg, #00A2FF, #00D68F);
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.6s ease;
+}
+
+/* Rank badge glow */
+.rank-wood    { background: rgba(156,163,175,0.2); border: 1px solid #9CA3AF; color: #D1D5DB; }
+.rank-stone   { background: rgba(96,165,250,0.2);  border: 1px solid #60A5FA; color: #93C5FD; }
+.rank-iron    { background: rgba(52,211,153,0.2);  border: 1px solid #34D399; color: #6EE7B7; }
+.rank-diamond { background: rgba(167,139,250,0.2); border: 1px solid #A78BFA; color: #C4B5FD; }
+.rank-gold    { background: rgba(251,191,36,0.2);  border: 1px solid #FBBF24; color: #FDE68A; box-shadow: 0 0 12px rgba(251,191,36,0.4); }
+
+/* Confetti animation */
+@keyframes confetti-fall {
+  0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100px) rotate(720deg); opacity: 0; }
+}
+.confetti-piece {
+  position: absolute;
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  animation: confetti-fall 1.5s ease-out forwards;
+}
+
+/* Input dark style */
+.blox-input {
+  background: #0F0F23;
+  border: 1px solid #2D2B5A;
+  border-radius: 0.75rem;
+  color: #FFFFFF;
+  padding: 0.6rem 1rem;
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.blox-input:focus {
+  border-color: #00A2FF;
+  box-shadow: 0 0 0 3px rgba(0,162,255,0.15);
+}
+.blox-input::placeholder { color: #8892B0; }
+
+/* Nav active glow */
+.nav-active {
+  background: rgba(0,162,255,0.15);
+  color: #00A2FF;
+  border-left: 3px solid #00A2FF;
 }

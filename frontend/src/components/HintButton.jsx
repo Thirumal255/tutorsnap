@@ -1,22 +1,42 @@
 export default function HintButton({ onHint, hintTier, isLoading, isFinalHint }) {
-  let label = 'Need a hint? 💡'
+  const dots = [1, 2, 3, 4, 5]
+
+  let label = '🎁 Open Hint Chest'
+  let sublabel = 'Tap to unlock a clue!'
   if (hintTier >= 5 || isFinalHint) {
-    label = 'Get full explanation'
+    label = '🔮 Full Explanation'
+    sublabel = 'See the full breakdown'
   } else if (hintTier >= 1) {
-    label = 'Get another hint'
+    label = '🎁 Another Hint'
+    sublabel = 'Keep going, you\'re close!'
   }
 
   return (
-    <div className="flex flex-col items-center gap-1 py-2">
+    <div className="flex flex-col items-center gap-2 py-3 animate-bounce-in">
       <button
         onClick={onHint}
         disabled={isLoading}
-        className="px-4 py-2 rounded-lg border-2 border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="btn-blox-gold btn-blox-primary flex items-center gap-2 text-sm"
+        style={{ fontFamily: 'Fredoka, sans-serif', fontWeight: 600 }}
       >
-        {isLoading ? 'Loading...' : label}
+        {isLoading ? (
+          <span className="flex gap-1">
+            <span className="w-2 h-2 bg-[#1A1A3E] rounded-full animate-bounce [animation-delay:0ms]" />
+            <span className="w-2 h-2 bg-[#1A1A3E] rounded-full animate-bounce [animation-delay:150ms]" />
+            <span className="w-2 h-2 bg-[#1A1A3E] rounded-full animate-bounce [animation-delay:300ms]" />
+          </span>
+        ) : label}
       </button>
-      {hintTier > 0 && hintTier <= 5 && (
-        <span className="text-xs text-gray-400">Hint {hintTier}/5</span>
+      <p className="text-[#8892B0] text-xs">{sublabel}</p>
+      {hintTier > 0 && (
+        <div className="flex gap-1.5 items-center">
+          {dots.map(d => (
+            <div key={d} className={`w-2.5 h-2.5 rounded-full transition-all ${
+              d <= hintTier ? 'bg-[#FFD700] shadow-glow-gold scale-110' : 'bg-[#2D2B5A]'
+            }`} />
+          ))}
+          <span className="text-[#8892B0] text-xs ml-1">{hintTier}/5</span>
+        </div>
       )}
     </div>
   )

@@ -13,9 +13,7 @@ export default function AdminStudents() {
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
 
-  useEffect(() => {
-    reload()
-  }, [])
+  useEffect(() => { reload() }, [])
 
   function reload() {
     setLoading(true)
@@ -31,9 +29,7 @@ export default function AdminStudents() {
       reload()
     } catch (e) {
       setAddError(e.response?.data?.detail || 'Failed to add student')
-    } finally {
-      setAdding(false)
-    }
+    } finally { setAdding(false) }
   }
 
   async function toggleActive(s) {
@@ -44,10 +40,10 @@ export default function AdminStudents() {
     } catch {}
   }
 
-  async function handleGrade(id, grade) {
+  async function handleGrade(id, g) {
     try {
-      await updateStudentGrade(id, parseInt(grade))
-      setStudents(prev => prev.map(x => x.id === id ? { ...x, grade: parseInt(grade) } : x))
+      await updateStudentGrade(id, parseInt(g))
+      setStudents(prev => prev.map(x => x.id === id ? { ...x, grade: parseInt(g) } : x))
     } catch {}
   }
 
@@ -58,106 +54,115 @@ export default function AdminStudents() {
 
   return (
     <div className="p-8 space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">Students</h2>
+      <div>
+        <h2 className="text-2xl font-fredoka font-bold text-white">Students 🎮</h2>
+        <p className="text-[#8892B0] text-sm mt-1">Manage your players</p>
+      </div>
 
-      {/* Add student form */}
-      <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">Add Student</h3>
-        <div className="flex gap-3 flex-wrap items-center">
-          <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-60" />
-          <input placeholder="Name" value={name} onChange={e => setName(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-44" />
-          <select value={grade} onChange={e => setGrade(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
-            <option value="">Grade (optional)</option>
-            {[5,6,7,8,9,10].map(g => <option key={g} value={g}>Grade {g}</option>)}
-          </select>
+      {/* Add student */}
+      <div className="blox-card p-5">
+        <h3 className="text-sm font-fredoka font-bold text-[#00A2FF] mb-4">➕ Add New Student</h3>
+        <div className="flex gap-3 flex-wrap items-end">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-[#8892B0] font-semibold">Email</label>
+            <input placeholder="student@gmail.com" value={email} onChange={e => setEmail(e.target.value)}
+              className="blox-input w-56" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-[#8892B0] font-semibold">Name</label>
+            <input placeholder="Student Name" value={name} onChange={e => setName(e.target.value)}
+              className="blox-input w-44" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-[#8892B0] font-semibold">Grade</label>
+            <select value={grade} onChange={e => setGrade(e.target.value)}
+              className="blox-input">
+              <option value="">Optional</option>
+              {[5,6,7,8,9,10].map(g => <option key={g} value={g}>Grade {g}</option>)}
+            </select>
+          </div>
           <button onClick={handleAdd} disabled={adding || !email.trim() || !name.trim()}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-            {adding ? 'Adding…' : 'Add'}
+            className="btn-blox-primary text-sm py-2.5 px-5">
+            {adding ? '⚡ Adding…' : '+ Add Player'}
           </button>
         </div>
-        {addError && <p className="text-red-500 text-xs mt-2">{addError}</p>}
+        {addError && <p className="text-[#FF3333] text-xs mt-3">{addError}</p>}
       </div>
 
+      {/* Search + count */}
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-500">{students.length} student{students.length !== 1 ? 's' : ''}</span>
-        <input
-          placeholder="Search by name or email…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-60"
-        />
+        <span className="text-sm text-[#8892B0]">{students.length} player{students.length !== 1 ? 's' : ''}</span>
+        <input placeholder="🔍 Search players…" value={search} onChange={e => setSearch(e.target.value)}
+          className="blox-input w-60" />
       </div>
 
-      {loading
-        ? <p className="text-gray-400 text-sm">Loading…</p>
-        : (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500 text-xs">
-                <tr>
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-left">Email</th>
-                  <th className="px-4 py-3 text-left">Grade</th>
-                  <th className="px-4 py-3 text-left">Sessions</th>
-                  <th className="px-4 py-3 text-left">Mastered</th>
-                  <th className="px-4 py-3 text-left">Flagged</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-left">Actions</th>
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="text-3xl animate-bounce mb-2">🎮</div>
+          <p className="text-[#8892B0] text-sm">Loading players…</p>
+        </div>
+      ) : (
+        <div className="blox-card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-[#1A1A3E] text-[#8892B0] text-xs font-nunito uppercase tracking-wider">
+              <tr>
+                <th className="px-4 py-3 text-left">Name</th>
+                <th className="px-4 py-3 text-left">Email</th>
+                <th className="px-4 py-3 text-left">Grade</th>
+                <th className="px-4 py-3 text-left">Sessions</th>
+                <th className="px-4 py-3 text-left">Mastered</th>
+                <th className="px-4 py-3 text-left">Flags</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#2D2B5A]">
+              {filtered.map(s => (
+                <tr key={s.id} className="hover:bg-[#1A1A3E] transition-colors">
+                  <td className="px-4 py-3 font-semibold text-white font-nunito">🎮 {s.name}</td>
+                  <td className="px-4 py-3 text-[#8892B0] text-xs">{s.email}</td>
+                  <td className="px-4 py-3">
+                    <select value={s.grade || ''} onChange={e => handleGrade(s.id, e.target.value)}
+                      className="bg-[#2D2B5A] border border-[#2D2B5A] text-white text-xs rounded-lg px-2 py-1">
+                      <option value="">—</option>
+                      {[5,6,7,8,9,10].map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3 text-[#00A2FF] font-fredoka font-bold">{s.total_sessions}</td>
+                  <td className="px-4 py-3 text-[#00D68F] font-fredoka font-bold">{s.topics_mastered}</td>
+                  <td className="px-4 py-3">
+                    {s.flagged_topics > 0
+                      ? <span className="text-[#FF3333] font-fredoka font-bold">{s.flagged_topics} 🚩</span>
+                      : <span className="text-[#8892B0]">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                      s.is_active
+                        ? 'bg-[#00D68F]/20 text-[#00D68F] border border-[#00D68F]/30'
+                        : 'bg-[#2D2B5A] text-[#8892B0]'
+                    }`}>
+                      {s.is_active ? '● Active' : '○ Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 flex gap-2">
+                    <button onClick={() => navigate(`/admin/students/${s.id}`)}
+                      className="text-xs text-[#00A2FF] hover:underline font-semibold">View</button>
+                    <button onClick={() => toggleActive(s)}
+                      className="text-xs text-[#8892B0] hover:text-white transition-colors">
+                      {s.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map(s => (
-                  <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-800">{s.name}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{s.email}</td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={s.grade || ''}
-                        onChange={e => handleGrade(s.id, e.target.value)}
-                        className="border border-gray-200 rounded px-1 py-0.5 text-xs"
-                      >
-                        <option value="">—</option>
-                        {[5,6,7,8,9,10].map(g => <option key={g} value={g}>{g}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{s.total_sessions}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.topics_mastered}</td>
-                    <td className="px-4 py-3">
-                      {s.flagged_topics > 0
-                        ? <span className="text-red-500 font-medium">{s.flagged_topics}</span>
-                        : <span className="text-gray-400">0</span>
-                      }
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        s.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        {s.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 flex gap-2">
-                      <button
-                        onClick={() => navigate(`/admin/students/${s.id}`)}
-                        className="text-xs text-blue-600 hover:underline"
-                      >View</button>
-                      <button
-                        onClick={() => toggleActive(s)}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >{s.is_active ? 'Deactivate' : 'Activate'}</button>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400 text-sm">No students found</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )
-      }
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-[#8892B0] text-sm">
+                  No players found 👀
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
