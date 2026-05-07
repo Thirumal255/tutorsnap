@@ -1,16 +1,40 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAdminStudents, deactivateStudent, activateStudent, updateStudentGrade } from '../../api/client'
+import { getAdminStudents, createStudent, deactivateStudent, activateStudent, updateStudentGrade } from '../../api/client'
 
 export default function AdminStudents() {
   const navigate = useNavigate()
   const [students, setStudents] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [grade, setGrade] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState('')
 
   useEffect(() => {
-    getAdminStudents().then(r => setStudents(r.data)).finally(() => setLoading(false))
+    reload()
   }, [])
+
+  function reload() {
+    setLoading(true)
+    getAdminStudents().then(r => setStudents(r.data)).finally(() => setLoading(false))
+  }
+
+  async function handleAdd() {
+    if (!email.trim() || !name.trim()) return
+    setAdding(true); setAddError('')
+    try {
+      await createStudent(email.trim(), name.trim(), grade ? parseInt(grade) : null)
+      setEmail(''); setName(''); setGrade('')
+      reload()
+    } catch (e) {
+      setAddError(e.response?.data?.detail || 'Failed to add student')
+    } finally {
+      setAdding(false)
+    }
+  }
 
   async function toggleActive(s) {
     try {
@@ -33,9 +57,32 @@ export default function AdminStudents() {
   )
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-800">Students</h2>
+    <div className="p-8 space-y-6">
+      <h2 className="text-xl font-bold text-gray-800">Students</h2>
+
+      {/* Add student form */}
+      <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">Add Student</h3>
+        <div className="flex gap-3 flex-wrap items-center">
+          <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-60" />
+          <input placeholder="Name" value={name} onChange={e => setName(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-44" />
+          <select value={grade} onChange={e => setGrade(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+            <option value="">Grade (optional)</option>
+            {[5,6,7,8,9,10].map(g => <option key={g} value={g}>Grade {g}</option>)}
+          </select>
+          <button onClick={handleAdd} disabled={adding || !email.trim() || !name.trim()}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+            {adding ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+        {addError && <p className="text-red-500 text-xs mt-2">{addError}</p>}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-gray-500">{students.length} student{students.length !== 1 ? 's' : ''}</span>
         <input
           placeholder="Search by name or email…"
           value={search}

@@ -171,6 +171,11 @@ class EndSessionRequest(BaseModel):
 class UpdateGradeRequest(BaseModel):
     grade: int
 
+class CreateStudentRequest(BaseModel):
+    email: str
+    name: str
+    grade: Optional[int] = None
+
 class CreateParentRequest(BaseModel):
     email: str
     name: str
@@ -228,15 +233,22 @@ def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db)):
             user.google_id = info["google_id"]
 
     if not user:
-        role = "admin" if info["email"] in admin_emails else "student"
-        user = User(
-            google_id=info["google_id"],
-            email=info["email"],
-            name=info["name"],
-            avatar_url=info.get("avatar_url"),
-            role=role,
-        )
-        db.add(user)
+        # Admin emails are always allowed and auto-created
+        if info["email"] in admin_emails:
+            user = User(
+                google_id=info["google_id"],
+                email=info["email"],
+                name=info["name"],
+                avatar_url=info.get("avatar_url"),
+                role="admin",
+            )
+            db.add(user)
+        else:
+            # All other users must be pre-registered by admin
+            raise HTTPException(
+                status_code=403,
+                detail="Account not registered. Please ask your administrator to add you."
+            )
     else:
         user.name = info["name"]
         user.avatar_url = info.get("avatar_url")
@@ -592,6 +604,37 @@ def end_session(
 
 
 # ─── Phase C: Admin Routes ─────────────────────────────────────────────────
+
+@app.post("/api/admin/students")
+def admin_create_student(
+    req: CreateStudentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    existing = db.query(User).filter(User.email == req.email).first()
+    if existing:
+        existing.role = "student"
+        if req.name:
+            existing.name = req.name
+        if req.grade:
+            existing.grade = req.grade
+        db.commit()
+        db.refresh(existing)
+        return _user_dict(existing)
+
+    student = User(
+        email=req.email,
+        name=req.name,
+        google_id=f"stub_{req.email}",
+        role="student",
+        grade=req.grade,
+        is_active=True,
+    )
+    db.add(student)
+    db.commit()
+    db.refresh(student)
+    return _user_dict(student)
+
 
 @app.get("/api/admin/students")
 def admin_get_students(

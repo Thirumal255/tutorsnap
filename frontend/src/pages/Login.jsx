@@ -99,12 +99,19 @@ export default function Login() {
             )}
           </div>
           {error && (
-            <p className="mt-4 text-sm text-red-500">{error}</p>
+            <div className="mt-4 bg-red-50 border border-red-100 rounded-lg px-4 py-3">
+              <p className="text-sm text-red-600 font-medium">{error}</p>
+              {error.includes('not registered') && (
+                <p className="text-xs text-red-400 mt-1">
+                  Contact your administrator to get access.
+                </p>
+              )}
+            </div>
           )}
         </div>
 
         <p className="mt-8 text-xs text-gray-400">
-          Students, parents and teachers all sign in here
+          Access is by invitation only. Contact your admin to be added.
         </p>
 
         {IS_DEV && (

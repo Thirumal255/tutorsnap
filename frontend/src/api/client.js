@@ -42,6 +42,7 @@ export const endSession = (sessionId) => api.post('/session/end', { session_id: 
 
 // Admin
 export const getAdminStudents = () => api.get('/admin/students')
+export const createStudent = (email, name, grade) => api.post('/admin/students', { email, name, grade: grade || null })
 export const getAdminStudent = (id) => api.get(`/admin/students/${id}`)
 export const updateStudentGrade = (id, grade) => api.post(`/admin/students/${id}/grade`, { grade })
 export const deactivateStudent = (id) => api.post(`/admin/students/${id}/deactivate`)
