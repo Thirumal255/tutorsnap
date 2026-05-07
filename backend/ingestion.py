@@ -402,6 +402,9 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
             else:
                 topic_exercises = []
 
+            # Always guarantee lists so structure_topic never falls back to a Claude call
+            kc = topic.get("key_concepts")
+            vc = topic.get("vocabulary")
             chunks.append({
                 "chapter_number": ch_num,
                 "chapter_title": ch_title,
@@ -412,9 +415,11 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
                 "page_start": ch_ps,
                 "page_end": ch_pe,
                 "raw_text": (topic.get("raw_content") or "")[:4000],
-                "_key_concepts": topic.get("key_concepts"),
-                "_vocabulary": topic.get("vocabulary"),
-                "_difficulty_ceiling": topic.get("difficulty_ceiling"),
+                # Use list or None — but for scanned PDFs force an empty list rather than None
+                # so structure_topic skips the Claude fallback call entirely
+                "_key_concepts": kc if isinstance(kc, list) else [],
+                "_vocabulary": vc if isinstance(vc, list) else [],
+                "_difficulty_ceiling": topic.get("difficulty_ceiling") or "L3",
                 "_exercises": topic_exercises,
             })
 
@@ -425,10 +430,15 @@ def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
 # ─── structure_topic (native-text PDFs only) ──────────────────────────────────
 
 def structure_topic(chunk: dict, subject: str, grade: int) -> dict:
-    """For scanned PDFs this is skipped (vision already populated fields)."""
-    if chunk.get("_key_concepts") is not None:
+    """
+    For scanned PDFs: vision already populated key_concepts/vocabulary/difficulty.
+    We always set _key_concepts to a list (even empty) in parse_pdf for scanned pages,
+    so the early-return fires and no Claude call is made.
+    Only native-text PDFs with _key_concepts=None reach the Claude fallback below.
+    """
+    if chunk.get("_key_concepts") is not None:  # includes [] — any list skips Claude
         return {
-            "key_concepts": chunk["_key_concepts"],
+            "key_concepts": chunk["_key_concepts"] or [chunk.get("topic_title", "")],
             "vocabulary":   chunk.get("_vocabulary") or [],
             "difficulty_ceiling": chunk.get("_difficulty_ceiling") or "L3",
         }
@@ -518,47 +528,62 @@ def run_ingestion(book_id: int, filepath: str, db=None):
         print(f"  Parsed {len(chunks)} new topic chunks (plus {len(chapter_map)} existing chapters)")
         set_book_progress(book_id, "saving", 85)
 
-        total_chunks = max(len(chunks), 1)
+        # ── Group chunks by chapter so we commit once per chapter, not per topic ──
+        # This cuts DB round trips from O(topics) → O(chapters) and avoids
+        # flooding the connection pool with set_book_progress calls.
+        from collections import defaultdict
+        chunks_by_chapter: dict = defaultdict(list)
+        for chunk in chunks:
+            chunks_by_chapter[chunk["chapter_number"]].append(chunk)
 
-        for i, chunk in enumerate(chunks):
-            ch_num = chunk["chapter_number"]
+        new_chapters = sorted(chunks_by_chapter.keys())
+        total_new_chapters = max(len(new_chapters), 1)
 
+        for ch_idx, ch_num in enumerate(new_chapters):
+            ch_chunks = chunks_by_chapter[ch_num]
+
+            # Create chapter record if not already in map (from existing DB data)
             if ch_num not in chapter_map:
+                first = ch_chunks[0]
                 chapter = Chapter(
                     book_id=book_id,
                     chapter_number=ch_num,
-                    title=chunk["chapter_title"],
-                    page_start=chunk["chapter_page_start"],
-                    page_end=chunk["chapter_page_end"],
+                    title=first["chapter_title"],
+                    page_start=first["chapter_page_start"],
+                    page_end=first["chapter_page_end"],
                 )
                 db.add(chapter)
-                db.commit()
-                db.refresh(chapter)
+                db.flush()   # get the chapter id without a full commit
                 chapter_map[ch_num] = chapter
-                print(f"  Created chapter {ch_num}: {chunk['chapter_title']}")
+                print(f"  Creating chapter {ch_num}: {first['chapter_title']} ({len(ch_chunks)} topics)")
 
-            structured = structure_topic(chunk, book.subject, book.grade)
+            ch_id = chapter_map[ch_num].id
 
-            topic_exercises = chunk.get("_exercises") or []
-            topic = Topic(
-                chapter_id=chapter_map[ch_num].id,
-                topic_number=chunk["topic_number"],
-                title=chunk["topic_title"],
-                key_concepts=structured.get("key_concepts"),
-                vocabulary=structured.get("vocabulary"),
-                exercises=topic_exercises if topic_exercises else None,
-                difficulty_ceiling=structured.get("difficulty_ceiling", "L3"),
-                raw_content=chunk["raw_text"],
-                page_start=chunk["page_start"],
-                page_end=chunk["page_end"],
-            )
-            db.add(topic)
+            # Add all topics for this chapter in one transaction
+            for chunk in ch_chunks:
+                structured = structure_topic(chunk, book.subject, book.grade)
+                topic_exercises = chunk.get("_exercises") or []
+                db.add(Topic(
+                    chapter_id=ch_id,
+                    topic_number=chunk["topic_number"],
+                    title=chunk["topic_title"],
+                    key_concepts=structured.get("key_concepts") or [],
+                    vocabulary=structured.get("vocabulary") or [],
+                    exercises=topic_exercises or None,
+                    difficulty_ceiling=structured.get("difficulty_ceiling") or "L3",
+                    raw_content=chunk["raw_text"],
+                    page_start=chunk["page_start"],
+                    page_end=chunk["page_end"],
+                ))
+                topic_count += 1
+
+            # One commit per chapter (was: one commit per topic)
             db.commit()
-            topic_count += 1
+            print(f"  Saved chapter {ch_num}: {len(ch_chunks)} topics committed")
 
-            save_pct = 85 + int((i + 1) / total_chunks * 10)
-            set_book_progress(book_id, "saving", save_pct)
-            print(f"  Saved topic: {chunk['topic_title']} ({len(topic_exercises)} exercises)")
+            # One progress update per chapter (was: one per topic)
+            save_pct = 85 + int((ch_idx + 1) / total_new_chapters * 12)
+            set_book_progress(book_id, "saving", min(97, save_pct))
 
         book.ingestion_status = "done"
         book.chapter_count = len(chapter_map)
