@@ -28,10 +28,10 @@ export const logout = () => api.post('/auth/logout')
 export const devLogin = (email) => api.post('/auth/dev-login', { email })
 
 // Core (unchanged)
-export const uploadPDF = (formData) =>
-  api.post('/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+// Let axios/browser set Content-Type with boundary automatically for multipart
+export const uploadPDF = (formData) => api.post('/upload', formData)
 export const getIngestionStatus = (bookId) => api.get(`/ingestion/${bookId}`)
-export const getBooks = () => api.get('/books')
+export const getBooks = (grade) => api.get('/books', { params: grade ? { grade } : {} })
 export const getTopics = (bookId) => api.get(`/topics/${bookId}`)
 export const startSession = (studentName, topicId) =>
   api.post('/session/start', { student_name: studentName, topic_id: topicId })

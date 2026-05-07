@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile, File, Query
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile, File, Query, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -287,10 +287,13 @@ def logout():
 async def upload_pdf(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    title: str = Form(...),
+    subject: str = Form(...),
+    grade: int = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    if not file.filename.endswith(".pdf"):
+    if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
     try:
@@ -299,16 +302,20 @@ async def upload_pdf(
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
     book = Book(
-        subject="Mathematics", grade=7,
-        filename=file.filename, filepath=filepath, ingestion_status="pending",
+        title=title.strip(),
+        subject=subject.strip(),
+        grade=grade,
+        filename=file.filename,
+        filepath=filepath,
+        ingestion_status="pending",
     )
     db.add(book)
     db.commit()
     db.refresh(book)
     background_tasks.add_task(run_ingestion, book.id, filepath)
 
-    return {"book_id": book.id, "filename": book.filename, "status": "processing",
-            "message": "Upload successful. Ingestion started."}
+    return {"book_id": book.id, "filename": book.filename, "title": book.title,
+            "status": "processing", "message": "Upload successful. Ingestion started."}
 
 
 @app.get("/api/ingestion/{book_id}")
@@ -327,11 +334,21 @@ def get_ingestion_status(
 
 @app.get("/api/books")
 def get_books(
+    grade: Optional[int] = Query(None, description="Filter books by grade"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    books = db.query(Book).order_by(Book.created_at.desc()).all()
-    return [{"book_id": b.id, "subject": b.subject, "grade": b.grade,
+    q = db.query(Book).filter(Book.ingestion_status == "done")
+    if grade is not None:
+        q = q.filter(Book.grade == grade)
+    # Admins see all books including non-done ones
+    if current_user.role == "admin":
+        q = db.query(Book)
+        if grade is not None:
+            q = q.filter(Book.grade == grade)
+    books = q.order_by(Book.created_at.desc()).all()
+    return [{"book_id": b.id, "title": b.title or b.filename,
+             "subject": b.subject, "grade": b.grade,
              "filename": b.filename, "status": b.ingestion_status,
              "chapter_count": b.chapter_count, "topic_count": b.topic_count,
              "created_at": b.created_at.isoformat() if b.created_at else None}

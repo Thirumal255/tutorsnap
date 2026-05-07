@@ -71,8 +71,9 @@ class Book(Base):
     __tablename__ = "books"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    subject = Column(String(100), nullable=False, default="Mathematics")
-    grade = Column(Integer, nullable=False, default=6)
+    title = Column(String(300), nullable=True)
+    subject = Column(String(100), nullable=False, default="General")
+    grade = Column(Integer, nullable=False, default=1)
     filename = Column(String(255), nullable=False)
     filepath = Column(String(500), nullable=False)
     ingestion_status = Column(String(20), default="pending")
