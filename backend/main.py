@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import os
 import shutil
 from dotenv import load_dotenv
-from storage import save_upload, save_upload_bytes
+from storage import save_upload, save_upload_bytes, USE_GCS, BUCKET_NAME
 from progress import set_book_progress
 
 load_dotenv(override=True)
@@ -190,6 +190,13 @@ class LinkStudentRequest(BaseModel):
 class ConfirmRequest(BaseModel):
     confirm: bool
 
+class InitUploadRequest(BaseModel):
+    title: str
+    subject: str
+    grade: int
+    filename: str
+    content_type: str = "application/pdf"
+
 
 # ─── Phase B: Auth Routes ──────────────────────────────────────────────────
 
@@ -343,6 +350,80 @@ async def upload_pdf(
 
     return {"book_id": book_id, "filename": book.filename, "title": book.title,
             "status": "processing", "message": "Upload successful. Ingestion started."}
+
+
+@app.post("/api/upload/init")
+def init_upload(
+    req: InitUploadRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Step 1 of direct-to-GCS upload.
+    Creates a Book record and returns a signed URL the browser can PUT the file to directly,
+    bypassing Cloud Run's 32 MB request-body limit.
+    """
+    if not req.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    # Sanitise filename to avoid collisions
+    import re, uuid
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", req.filename)
+    unique_name = f"{uuid.uuid4().hex}_{safe_name}"
+
+    book = Book(
+        title=req.title.strip(),
+        subject=req.subject.strip(),
+        grade=req.grade,
+        filename=unique_name,
+        filepath="pending",
+        ingestion_status="pending",
+        upload_stage="uploading",
+        upload_progress=0,
+    )
+    db.add(book)
+    db.commit()
+    db.refresh(book)
+
+    upload_url = None
+    if USE_GCS:
+        from storage import generate_upload_signed_url
+        upload_url = generate_upload_signed_url(unique_name, content_type=req.content_type)
+
+    return {
+        "book_id": book.id,
+        "upload_url": upload_url,
+        "gcs_path": f"gs://{BUCKET_NAME}/uploads/{unique_name}",
+        "use_signed_url": USE_GCS,
+    }
+
+
+@app.post("/api/upload/complete/{book_id}")
+def complete_upload(
+    book_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Step 2 of direct-to-GCS upload.
+    Called by the browser after the signed-URL PUT succeeds.
+    Updates the book filepath and kicks off background ingestion.
+    """
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if book.filepath != "pending":
+        raise HTTPException(status_code=400, detail="Upload already completed")
+
+    filepath = f"gs://{BUCKET_NAME}/uploads/{book.filename}"
+    book.filepath = filepath
+    book.upload_stage = "reading"
+    book.upload_progress = 30
+    db.commit()
+
+    background_tasks.add_task(run_ingestion, book_id, filepath)
+    return {"book_id": book_id, "status": "processing", "message": "Ingestion started."}
 
 
 @app.get("/api/ingestion/{book_id}")

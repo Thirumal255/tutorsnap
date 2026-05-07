@@ -6,6 +6,42 @@ USE_GCS = os.getenv("USE_GCS", "false").lower() == "true"
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "tutorsnap-uploads")
 
 
+def generate_upload_signed_url(
+    filename: str,
+    content_type: str = "application/pdf",
+    expiration_minutes: int = 60,
+) -> str:
+    """
+    Generate a GCS v4 signed URL for direct browser → GCS upload.
+    Works on Cloud Run via ADC (Application Default Credentials) + IAM signBlob.
+    """
+    from datetime import timedelta
+    import google.auth
+    from google.auth.transport import requests as google_auth_requests
+    from google.cloud import storage as gcs
+
+    credentials, project = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    auth_request = google_auth_requests.Request()
+    if not credentials.valid:
+        credentials.refresh(auth_request)
+
+    client = gcs.Client(credentials=credentials, project=project)
+    bucket = client.bucket(BUCKET_NAME)
+    blob = bucket.blob(f"uploads/{filename}")
+
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expiration_minutes),
+        method="PUT",
+        content_type=content_type,
+        service_account_email=credentials.service_account_email,
+        access_token=credentials.token,
+    )
+    return signed_url
+
+
 def save_upload_bytes(content: bytes, filename: str, book_id: int = None) -> str:
     """
     Save raw bytes. Used from async context via run_in_executor.

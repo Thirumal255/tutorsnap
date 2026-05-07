@@ -30,9 +30,10 @@ export function UploadProvider({ children }) {
     }
   }, [job])
 
-  // Auto-poll whenever there's an active job
+  // Auto-poll whenever there's an active job that is past the local XHR phase
   useEffect(() => {
-    if (!job || job.stage === 'done' || job.stage === 'failed') {
+    const shouldPoll = job && !job.localMode && job.stage !== 'done' && job.stage !== 'failed'
+    if (!shouldPoll) {
       if (pollRef.current) clearInterval(pollRef.current)
       return
     }
@@ -58,11 +59,42 @@ export function UploadProvider({ children }) {
     }, 3000)
 
     return () => clearInterval(pollRef.current)
-  }, [job?.bookId, job?.stage])
+  }, [job?.bookId, job?.stage, job?.localMode])
 
+  /** Called right after initUpload — shows the widget immediately, pauses DB polling. */
   const startJob = useCallback((bookId, title) => {
-    const j = { bookId, title, stage: 'uploading', progress: 0, chapterCount: 0, topicCount: 0 }
+    const j = {
+      bookId,
+      title,
+      stage: 'uploading',
+      progress: 0,
+      chapterCount: 0,
+      topicCount: 0,
+      localMode: true,   // XHR in progress — don't poll yet
+    }
     setJob(j)
+  }, [])
+
+  /**
+   * Update XHR upload progress locally (0-30%).
+   * Only has effect while localMode is true.
+   */
+  const updateProgress = useCallback((pct) => {
+    setJob(prev => prev && prev.localMode ? { ...prev, progress: pct } : prev)
+  }, [])
+
+  /**
+   * Called after completeUpload succeeds — switches from local XHR tracking to DB polling.
+   */
+  const switchToPolling = useCallback(() => {
+    setJob(prev => prev ? { ...prev, localMode: false, stage: 'reading', progress: 30 } : prev)
+  }, [])
+
+  /**
+   * Mark the current job as failed (e.g. XHR network error).
+   */
+  const failJob = useCallback((errorMsg) => {
+    setJob(prev => prev ? { ...prev, stage: 'failed', localMode: false, error: errorMsg } : prev)
   }, [])
 
   const clearJob = useCallback(() => {
@@ -70,7 +102,7 @@ export function UploadProvider({ children }) {
   }, [])
 
   return (
-    <UploadCtx.Provider value={{ job, startJob, clearJob }}>
+    <UploadCtx.Provider value={{ job, startJob, updateProgress, switchToPolling, failJob, clearJob }}>
       {children}
     </UploadCtx.Provider>
   )

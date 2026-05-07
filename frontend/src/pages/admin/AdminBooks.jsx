@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { uploadPDF, getTopics, getBooks } from '../../api/client'
+import { initUpload, completeUpload, uploadPDF, getTopics, getBooks } from '../../api/client'
 import { useUpload } from '../../context/UploadContext'
 
 const SUBJECTS = [
@@ -19,7 +19,7 @@ const RANK_COLORS = {
 }
 
 export default function AdminBooks() {
-  const { job, startJob } = useUpload()
+  const { job, startJob, updateProgress, switchToPolling, failJob } = useUpload()
   const [books, setBooks] = useState([])
   const [file, setFile] = useState(null)
   const [title, setTitle] = useState('')
@@ -49,20 +49,73 @@ export default function AdminBooks() {
     setUploading(true)
     setError(null)
     setViewTopics(null)
+
+    const bookTitle = title.trim()
+
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('title', title.trim())
-      formData.append('subject', subject)
-      formData.append('grade', String(grade))
-      const res = await uploadPDF(formData)
-      // Hand off tracking to the global upload context
-      startJob(res.data.book_id, title.trim())
-      setFile(null)
-      setTitle('')
+      // ── Step 1: Init — create Book record + get signed URL ──────────────
+      const initRes = await initUpload({
+        title: bookTitle,
+        subject,
+        grade,
+        filename: file.name,
+        content_type: 'application/pdf',
+      })
+      const { book_id, upload_url, use_signed_url } = initRes.data
+
+      if (use_signed_url && upload_url) {
+        // ── Step 2: Register job immediately so widget shows up ──────────
+        startJob(book_id, bookTitle)
+        setFile(null)
+        setTitle('')
+        setUploading(false)
+
+        // ── Step 3: Upload file directly to GCS via XHR ─────────────────
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('PUT', upload_url)
+          xhr.setRequestHeader('Content-Type', 'application/pdf')
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              // XHR phase = 0-30% of overall progress
+              const pct = Math.round((e.loaded / e.total) * 30)
+              updateProgress(pct)
+            }
+          }
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve()
+            else reject(new Error(`GCS upload failed (HTTP ${xhr.status})`))
+          }
+          xhr.onerror = () => reject(new Error('Network error during file upload'))
+          xhr.onabort = () => reject(new Error('Upload cancelled'))
+          xhr.send(file)
+        })
+
+        // ── Step 4: Notify backend → triggers ingestion ──────────────────
+        await completeUpload(book_id)
+        switchToPolling()   // hand off to DB-poll for reading/analysing/saving stages
+
+      } else {
+        // ── Fallback: local dev — regular multipart upload ───────────────
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('title', bookTitle)
+        formData.append('subject', subject)
+        formData.append('grade', String(grade))
+        const res = await uploadPDF(formData)
+        startJob(res.data.book_id, bookTitle)
+        switchToPolling()
+        setFile(null)
+        setTitle('')
+        setUploading(false)
+      }
+
     } catch (e) {
-      setError(e.response?.data?.detail || 'Upload failed. Please try again.')
-    } finally {
+      const msg = e.response?.data?.detail || e.message || 'Upload failed. Please try again.'
+      setError(msg)
+      failJob(msg)
       setUploading(false)
     }
   }
