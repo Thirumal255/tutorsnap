@@ -1,0 +1,104 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+
+env:
+  PROJECT_ID: tutorsnap
+  REGION: asia-south1
+  IMAGE: asia-south1-docker.pkg.dev/tutorsnap/tutorsnap/api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t $IMAGE:${{ github.sha }} \
+            -t $IMAGE:latest \
+            ./backend
+
+      - name: Push Docker image
+        run: |
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy tutorsnap-api \
+            --image=$IMAGE:${{ github.sha }} \
+            --region=$REGION \
+            --platform=managed \
+            --allow-unauthenticated \
+            --service-account=tutorsnap-api@$PROJECT_ID.iam.gserviceaccount.com \
+            --add-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
+            --set-secrets="\
+          DATABASE_URL=DATABASE_URL:latest,\
+          ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,\
+          GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,\
+          GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,\
+          JWT_SECRET=JWT_SECRET:latest,\
+          ADMIN_EMAILS=ADMIN_EMAILS:latest,\
+          GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest,\
+          FRONTEND_URL=FRONTEND_URL:latest" \
+            --set-env-vars="\
+          CLAUDE_MODEL=claude-sonnet-4-20250514,\
+          USE_GCS=true,\
+          MAX_HINT_TIERS=5,\
+          JWT_EXPIRY_HOURS=72" \
+            --memory=1Gi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=10 \
+            --port=8080 \
+            --quiet
+
+      - name: Run database migrations
+        run: |
+          gcloud run jobs update tutorsnap-migrate \
+            --image=$IMAGE:${{ github.sha }} \
+            --region=$REGION \
+            --quiet 2>/dev/null || \
+          gcloud run jobs create tutorsnap-migrate \
+            --image=$IMAGE:${{ github.sha }} \
+            --region=$REGION \
+            --service-account=tutorsnap-api@$PROJECT_ID.iam.gserviceaccount.com \
+            --add-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
+            --set-secrets="DATABASE_URL=DATABASE_URL:latest" \
+            --command="python" \
+            --args="-m,alembic,upgrade,head" \
+            --quiet
+          gcloud run jobs execute tutorsnap-migrate \
+            --region=$REGION \
+            --wait
+
+      - name: Print deployed URL
+        run: |
+          URL=$(gcloud run services describe tutorsnap-api \
+            --region=$REGION \
+            --format='value(status.url)')
+          echo "✅ Backend deployed: $URL"

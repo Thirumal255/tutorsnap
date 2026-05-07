@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
+import { Capacitor } from '@capacitor/core'
 import { useAuth } from '../auth/AuthContext'
 import { googleLogin } from '../api/client'
 import { devLogin as devLoginApi } from '../api/client'
 
 const IS_DEV = import.meta.env.DEV
+const isNative = Capacitor.isNativePlatform()
 
 export default function Login() {
   const { user, login } = useAuth()
@@ -49,6 +51,24 @@ export default function Login() {
     }
   }
 
+  async function handleNativeGoogleLogin() {
+    setError('')
+    try {
+      const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth')
+      await GoogleAuth.initialize()
+      const result = await GoogleAuth.signIn()
+      const idToken = result.authentication.idToken
+
+      const res = await googleLogin(idToken)
+      const { access_token, user: userData } = res.data
+      login(access_token, userData)
+      redirectByRole(userData.role)
+    } catch (err) {
+      setError('Login failed. Please try again.')
+      console.error(err)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-green-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 w-full max-w-sm text-center">
@@ -57,12 +77,26 @@ export default function Login() {
 
         <div className="border-t border-gray-100 pt-8">
           <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleSuccess}
-              onError={() => setError('Login failed. Please try again.')}
-              use_fedcm_for_prompt={false}
-              flow="implicit"
-            />
+            {isNative ? (
+              <button
+                onClick={handleNativeGoogleLogin}
+                className="flex items-center gap-3 bg-white border border-gray-300 rounded-lg px-6 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors w-full justify-center"
+              >
+                <img
+                  src="https://developers.google.com/identity/images/g-logo.png"
+                  className="w-5 h-5"
+                  alt="Google"
+                />
+                Sign in with Google
+              </button>
+            ) : (
+              <GoogleLogin
+                onSuccess={handleSuccess}
+                onError={() => setError('Login failed. Please try again.')}
+                use_fedcm_for_prompt={false}
+                flow="implicit"
+              />
+            )}
           </div>
           {error && (
             <p className="mt-4 text-sm text-red-500">{error}</p>

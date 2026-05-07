@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TutorSnap</string>
+    <string name="title_activity_main">TutorSnap</string>
+    <string name="package_name">com.tutorsnap.app</string>
+    <string name="custom_url_scheme">com.tutorsnap.app</string>
+    <string name="server_client_id">192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com</string>
+</resources>
