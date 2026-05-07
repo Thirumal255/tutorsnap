@@ -17,7 +17,7 @@ from models import User
 
 
 def verify_google_token(token: str) -> dict:
-    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
     try:
         idinfo = id_token.verify_oauth2_token(
             token,
