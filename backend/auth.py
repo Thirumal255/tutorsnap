@@ -1,11 +1,14 @@
 import os
 import jwt
+import logging
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv(override=True)
 
@@ -28,6 +31,7 @@ def verify_google_token(token: str) -> dict:
             "avatar_url": idinfo.get("picture", None),
         }
     except Exception as e:
+        logger.error(f"Token verification failed. client_id={client_id!r} token_len={len(token) if token else 0} error={e!r}")
         raise ValueError(f"Invalid Google token: {e}")
 
 

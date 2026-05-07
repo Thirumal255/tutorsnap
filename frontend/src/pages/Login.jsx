@@ -40,8 +40,13 @@ export default function Login() {
 
   async function handleSuccess(credentialResponse) {
     setError('')
+    const credential = credentialResponse.credential
+    if (!credential) {
+      setError('No credential received from Google. Please try again.')
+      return
+    }
     try {
-      const res = await googleLogin(credentialResponse.credential)
+      const res = await googleLogin(credential)
       const { access_token, user: userData } = res.data
       login(access_token, userData)
       redirectByRole(userData.role)
@@ -108,8 +113,6 @@ export default function Login() {
               <GoogleLogin
                 onSuccess={handleSuccess}
                 onError={() => setError('Login failed. Please try again.')}
-                use_fedcm_for_prompt={false}
-                flow="implicit"
                 theme="filled_black"
                 shape="pill"
                 size="large"
