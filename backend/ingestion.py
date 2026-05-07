@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 
 
 def _repair_json(text: str) -> str:
@@ -66,12 +66,20 @@ def _is_scanned(doc) -> bool:
 def _detect_structure(doc, subject: str = "General", grade: int = 0) -> list[dict]:
     """
     Send sampled pages to Claude vision to identify chapter structure.
+    Samples the first 12 pages (covers TOC) + distributed pages through the book.
     Returns list of chapter dicts with page_start (1-based).
     """
     total = doc.page_count
-    # Clamp all indices to valid range [0, total-1]
-    raw_indices = [2, 3, 4, total // 5, total // 3, total // 2]
-    sample_indices = sorted(set(min(max(0, i), total - 1) for i in raw_indices))
+
+    # Always include the first 12 pages — the TOC is almost always here
+    early = list(range(min(12, total)))
+    # Plus pages spread through the rest of the book to catch later chapters
+    distributed = [
+        total // 5, total * 2 // 5, total * 3 // 5, total * 4 // 5,
+        total - 2,
+    ]
+    all_indices = early + [min(max(0, i), total - 1) for i in distributed]
+    sample_indices = sorted(set(all_indices))
 
     content = []
     for pg in sample_indices:
@@ -87,18 +95,19 @@ def _detect_structure(doc, subject: str = "General", grade: int = 0) -> list[dic
         "type": "text",
         "text": (
             f"This is a {grade_str} {subject} textbook with {total} pages.\n"
-            "Identify all chapter titles and their starting page numbers.\n"
+            "Look carefully at the table of contents pages and any chapter title pages.\n"
+            "Identify ALL chapter titles and their starting page numbers.\n"
             "Return ONLY valid JSON — no markdown, no explanation:\n"
             '{"chapters": [{"number": 1, "title": "Chapter One Title", "page_start": 5}, '
             '{"number": 2, "title": "Chapter Two Title", "page_start": 20}]}\n'
-            "page_start is the 1-based page number where the chapter begins."
+            "page_start is the 1-based page number where that chapter begins in the book."
         ),
     })
 
     try:
         resp = _client.messages.create(
             model=_MODEL,
-            max_tokens=1000,
+            max_tokens=1500,
             messages=[{"role": "user", "content": content}],
         )
         text = resp.content[0].text.strip()
@@ -107,7 +116,9 @@ def _detect_structure(doc, subject: str = "General", grade: int = 0) -> list[dic
             if text.startswith("json"):
                 text = text[4:]
         data = json.loads(text.strip())
-        return data.get("chapters", [])
+        chapters = data.get("chapters", [])
+        print(f"  Structure detection found {len(chapters)} chapters")
+        return chapters
     except Exception as e:
         print(f"  Structure detection error: {e}")
         return []
@@ -123,8 +134,13 @@ def _extract_chapter_content(doc, ch_page_start: int, ch_page_end: int,
     Returns topic dicts including 'exercises' — real questions pulled from the textbook.
     """
     pages = list(range(ch_page_start - 1, min(ch_page_end, doc.page_count)))
-    # Use first 2 and last 2 pages for structure; collect all for exercises
-    sample = sorted(set(pages[:2] + pages[-2:])) if len(pages) > 4 else pages
+    # Sample: first 3, middle pages at ~25%/50%/75%, last 2 — gives good coverage
+    n = len(pages)
+    if n <= 8:
+        sample = pages
+    else:
+        mid_indices = [pages[n // 4], pages[n // 2], pages[3 * n // 4]]
+        sample = sorted(set(pages[:3] + mid_indices + pages[-2:]))
 
     content = []
     for pg in sample:
@@ -151,7 +167,7 @@ def _extract_chapter_content(doc, ch_page_start: int, ch_page_end: int,
             '"raw_content": "2-3 sentence summary only"'
             '}]}\n'
             "Rules:\n"
-            "- 1 to 5 topics per chapter\n"
+            "- Extract ALL topics/sections visible in these pages (typically 3-8 per chapter)\n"
             "- difficulty_ceiling: L1=recall, L2=explain, L3=apply, L4=analyse, L5=multi-step\n"
             "- key_concepts: 3-6 core ideas\n"
             "- vocabulary: subject-specific terms\n"
@@ -162,7 +178,7 @@ def _extract_chapter_content(doc, ch_page_start: int, ch_page_end: int,
     try:
         resp = _client.messages.create(
             model=_MODEL,
-            max_tokens=1500,
+            max_tokens=2500,
             messages=[{"role": "user", "content": content}],
         )
         text = resp.content[0].text.strip()
@@ -175,7 +191,9 @@ def _extract_chapter_content(doc, ch_page_start: int, ch_page_end: int,
         except json.JSONDecodeError:
             text = _repair_json(text)
             data = json.loads(text)
-        return data.get("topics", [])
+        topics = data.get("topics", [])
+        print(f"  Chapter {chapter_number} extracted {len(topics)} topics")
+        return topics
     except Exception as e:
         print(f"  Chapter content extraction error: {e}")
         return [{

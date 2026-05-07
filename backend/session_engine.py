@@ -44,6 +44,11 @@ def build_topic_context(topic) -> str:
     vocabulary = ", ".join(topic.vocabulary or [])
     raw = (topic.raw_content or "")[:1500]
 
+    # Pull grade/subject from the book via chapter → book relationship
+    book = getattr(topic.chapter, "book", None) if topic.chapter else None
+    subject = getattr(book, "subject", None) or "Mathematics"
+    grade = getattr(book, "grade", None) or 7
+
     exercises_section = ""
     exercises = getattr(topic, "exercises", None) or []
     if exercises:
@@ -51,8 +56,8 @@ def build_topic_context(topic) -> str:
         exercises_section = f"\nReal exercise questions from the textbook (use these as inspiration):\n{ex_lines}\n"
 
     return (
-        f"Subject: Mathematics\n"
-        f"Grade: 7\n"
+        f"Subject: {subject}\n"
+        f"Grade: {grade}\n"
         f"Chapter: {chapter_title}\n"
         f"Topic: {topic.title}\n"
         f"Key concepts the student must learn: {key_concepts}\n"
@@ -66,7 +71,7 @@ def build_topic_context(topic) -> str:
 def call_claude(system: str, user: str, max_tokens: int = 800) -> str:
     try:
         response = _client.messages.create(
-            model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
+            model=os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],

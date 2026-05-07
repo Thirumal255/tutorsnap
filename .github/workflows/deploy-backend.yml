@@ -89,7 +89,7 @@ jobs:
           GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest,\
           FRONTEND_URL=FRONTEND_URL:latest" \
             --set-env-vars="\
-          CLAUDE_MODEL=claude-sonnet-4-20250514,\
+          CLAUDE_MODEL=claude-3-5-sonnet-20241022,\
           USE_GCS=true,\
           MAX_HINT_TIERS=5,\
           JWT_EXPIRY_HOURS=72" \
