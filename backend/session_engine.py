@@ -225,6 +225,10 @@ def get_hint(topic, question: str, student_answer: str, hint_tier: int) -> str:
     system = (
         f"You are Buddy, a friendly AI tutor for a Cambridge Grade 7 Mathematics student.\n"
         f"{ABSOLUTE_RULE}\n"
+        f"IMPORTANT — Hint context rule: The student's answer shown below has already been\n"
+        f"assessed as INCORRECT or INCOMPLETE by the grading system. Do NOT tell the student\n"
+        f"their answer is correct or 'spot on' — if it were correct, no hint would be shown.\n"
+        f"Focus exclusively on helping them understand what is missing or wrong.\n"
         f"{build_topic_context(topic)}"
     )
 
@@ -234,12 +238,14 @@ def get_hint(topic, question: str, student_answer: str, hint_tier: int) -> str:
             f"QUESTION THEY WERE ASKED: {question}\n"
             f"THEIR INCORRECT ANSWER: {student_answer}\n\n"
             f"Give a Tier 1 hint: a conceptual recall nudge.\n"
+            f"- Identify what is specifically wrong or missing in their answer\n"
             f"- Remind them of the relevant concept WITHOUT giving structure or steps\n"
             f"- Do NOT show any worked examples\n"
             f"- Do NOT break the problem into steps\n"
             f"- Ask ONE guiding question that points them in the right direction\n"
             f"- Keep it to 2-3 sentences maximum\n"
-            f"- Be warm and encouraging"
+            f"- Be warm and encouraging\n"
+            f"- Do NOT tell them their answer is correct — it has been marked wrong"
         )
     elif hint_tier == 2:
         tier_instruction = (
