@@ -60,7 +60,7 @@ jobs:
               --image=$IMAGE:${{ github.sha }} \
               --region=$REGION \
               --service-account=tutorsnap-api@$PROJECT_ID.iam.gserviceaccount.com \
-              --add-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
+              --set-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
               --set-secrets="DATABASE_URL=DATABASE_URL:latest" \
               --command="python" \
               --args="-m,alembic,upgrade,head" \
@@ -78,7 +78,7 @@ jobs:
             --platform=managed \
             --allow-unauthenticated \
             --service-account=tutorsnap-api@$PROJECT_ID.iam.gserviceaccount.com \
-            --add-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
+            --set-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
             --set-secrets="\
           DATABASE_URL=DATABASE_URL:latest,\
           ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,\
