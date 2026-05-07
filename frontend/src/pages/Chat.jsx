@@ -14,13 +14,16 @@ export default function Chat() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [slowLoading, setSlowLoading] = useState(false)
   const [hintLoading, setHintLoading] = useState(false)
   const [showHintButton, setShowHintButton] = useState(false)
   const [hintTier, setHintTier] = useState(0)
   const [currentLevel, setCurrentLevel] = useState('L1')
-  const [confirmEnd, setConfirmEnd] = useState(false)
+  const [showEndModal, setShowEndModal] = useState(false)
+  const [ending, setEnding] = useState(false)
   const [xpGained, setXpGained] = useState(null)
   const bottomRef = useRef(null)
+  const slowTimerRef = useRef(null)
 
   useEffect(() => {
     const stored = sessionStorage.getItem(`session_${sessionId}`)
@@ -35,6 +38,9 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, showHintButton])
 
+  // Clear slow-loading timer on unmount
+  useEffect(() => () => clearTimeout(slowTimerRef.current), [])
+
   function addMessage(sender, text) {
     setMessages((prev) => [...prev, { sender, text }])
   }
@@ -44,6 +50,16 @@ export default function Chat() {
     setTimeout(() => setXpGained(null), 1500)
   }
 
+  function startSlowTimer() {
+    clearTimeout(slowTimerRef.current)
+    slowTimerRef.current = setTimeout(() => setSlowLoading(true), 8000)
+  }
+
+  function clearSlowTimer() {
+    clearTimeout(slowTimerRef.current)
+    setSlowLoading(false)
+  }
+
   async function handleSend() {
     if (!input.trim() || loading) return
     const answer = input.trim()
@@ -51,6 +67,7 @@ export default function Chat() {
     addMessage('student', answer)
     setShowHintButton(false)
     setLoading(true)
+    startSlowTimer()
     addMessage('buddy', null)
 
     try {
@@ -98,19 +115,27 @@ export default function Chat() {
 
       if (d.show_hint_button) setShowHintButton(true)
 
-    } catch {
+    } catch (err) {
+      const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout')
       setMessages((prev) => {
         const next = [...prev]
-        next[next.length - 1] = { sender: 'buddy', text: '⚠️ Something went wrong. Please try again.' }
+        next[next.length - 1] = {
+          sender: 'buddy',
+          text: isTimeout
+            ? '⏱️ That took too long — please try sending your answer again.'
+            : '⚠️ Something went wrong. Please try again.',
+        }
         return next
       })
     } finally {
       setLoading(false)
+      clearSlowTimer()
     }
   }
 
   async function handleHint() {
     setHintLoading(true)
+    startSlowTimer()
     try {
       const res = await requestHint(sessionId)
       const d = res.data
@@ -128,15 +153,15 @@ export default function Chat() {
         setShowHintButton(!d.is_final_hint || d.hint_tier < 5)
       }
     } catch {
-      addMessage('buddy', 'Could not load hint. Please try again.')
+      addMessage('buddy', '⚠️ Could not load hint. Please try again.')
     } finally {
       setHintLoading(false)
+      clearSlowTimer()
     }
   }
 
-  async function handleEnd() {
-    if (!confirmEnd) { setConfirmEnd(true); return }
-    setConfirmEnd(false)
+  async function doEndSession() {
+    setEnding(true)
     try { await endSession(sessionId) } catch {}
     navigate(`/summary/${sessionId}`)
   }
@@ -153,6 +178,51 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-screen bg-[#0F0F23]">
 
+      {/* ── End Session Modal ─────────────────────────────────────── */}
+      {showEndModal && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4"
+          onClick={() => !ending && setShowEndModal(false)}
+        >
+          <div
+            className="blox-card p-6 max-w-sm w-full space-y-5 animate-bounce-in"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center space-y-2">
+              <div className="text-4xl">🏁</div>
+              <h3 className="font-fredoka font-bold text-white text-xl">End this session?</h3>
+              <p className="text-[#8892B0] text-sm">
+                Your progress is saved. You can come back to this topic any time!
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEndModal(false)}
+                disabled={ending}
+                className="flex-1 border border-[#2D2B5A] text-[#8892B0] rounded-xl py-2.5 text-sm font-semibold hover:border-[#00A2FF] hover:text-white transition-all disabled:opacity-40"
+              >
+                💪 Keep Going
+              </button>
+              <button
+                onClick={doEndSession}
+                disabled={ending}
+                className="flex-1 bg-[#FF3333] text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-[#CC0000] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {ending ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Ending…
+                  </>
+                ) : 'Yes, End It'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 bg-[#16213E] border-b border-[#2D2B5A] flex-shrink-0 shadow-card">
         <div className="flex items-center gap-2">
@@ -164,14 +234,10 @@ export default function Chat() {
         <div className="flex items-center gap-2">
           <ProgressBadge level={currentLevel} />
           <button
-            onClick={handleEnd}
-            className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all ${
-              confirmEnd
-                ? 'bg-[#FF3333] text-white shadow-glow-red'
-                : 'border border-[#2D2B5A] text-[#8892B0] hover:border-[#FF3333] hover:text-[#FF3333]'
-            }`}
+            onClick={() => setShowEndModal(true)}
+            className="text-xs px-3 py-1.5 rounded-full font-semibold border border-[#2D2B5A] text-[#8892B0] hover:border-[#FF3333] hover:text-[#FF3333] transition-all"
           >
-            {confirmEnd ? 'Sure? ✓' : 'End'}
+            End
           </button>
         </div>
       </div>
@@ -188,6 +254,16 @@ export default function Chat() {
         {messages.map((m, i) => (
           <ChatBubble key={i} sender={m.sender} message={m.text} isLoading={m.text === null} />
         ))}
+
+        {/* Slow-loading nudge — appears after 8 s */}
+        {slowLoading && (
+          <div className="flex justify-start mb-3">
+            <div className="bg-[#1A1A3E] border border-[#2D2B5A] rounded-2xl px-4 py-2 text-xs text-[#8892B0] italic">
+              ⏳ Still thinking… Claude is working on it!
+            </div>
+          </div>
+        )}
+
         {showHintButton && (
           <HintButton onHint={handleHint} hintTier={hintTier} isLoading={hintLoading} isFinalHint={hintTier >= 5} />
         )}

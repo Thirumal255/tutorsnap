@@ -2,6 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api` : '/api',
+  timeout: 90000, // 90s — generous for Claude cold-start + inference time
 })
 
 api.interceptors.request.use(config => {
