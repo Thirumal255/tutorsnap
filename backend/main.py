@@ -478,10 +478,41 @@ def delete_book(
     book = db.query(Book).filter(Book.id == book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    # Delete topics → chapters → book in order
-    for ch in db.query(Chapter).filter(Chapter.book_id == book_id).all():
-        db.query(Topic).filter(Topic.chapter_id == ch.id).delete()
-    db.query(Chapter).filter(Chapter.book_id == book_id).delete()
+
+    # Collect all topic IDs and chapter IDs for this book
+    chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
+    chapter_ids = [ch.id for ch in chapters]
+    topic_ids = [t.id for ch_id in chapter_ids
+                 for t in db.query(Topic).filter(Topic.chapter_id == ch_id).all()]
+
+    if topic_ids:
+        # Collect session IDs referencing these topics
+        session_ids = [s.id for s in
+                       db.query(SessionModel).filter(SessionModel.topic_id.in_(topic_ids)).all()]
+
+        # 1. Clear notifications that point to these topics or sessions
+        db.query(Notification).filter(Notification.related_topic_id.in_(topic_ids)).delete(synchronize_session=False)
+        if session_ids:
+            db.query(Notification).filter(Notification.related_session_id.in_(session_ids)).delete(synchronize_session=False)
+
+        # 2. Delete session turns
+        if session_ids:
+            db.query(SessionTurn).filter(SessionTurn.session_id.in_(session_ids)).delete(synchronize_session=False)
+
+        # 3. Delete sessions
+        db.query(SessionModel).filter(SessionModel.topic_id.in_(topic_ids)).delete(synchronize_session=False)
+
+        # 4. Delete topic mastery records
+        db.query(TopicMastery).filter(TopicMastery.topic_id.in_(topic_ids)).delete(synchronize_session=False)
+
+        # 5. Delete topics
+        db.query(Topic).filter(Topic.id.in_(topic_ids)).delete(synchronize_session=False)
+
+    # 6. Delete chapters
+    if chapter_ids:
+        db.query(Chapter).filter(Chapter.id.in_(chapter_ids)).delete(synchronize_session=False)
+
+    # 7. Delete the book
     db.delete(book)
     db.commit()
     return {"message": f"Book {book_id} deleted"}
