@@ -1,4 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile, File, Query, Form
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+_executor = ThreadPoolExecutor(max_workers=4)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -8,7 +11,7 @@ from datetime import datetime, timedelta
 import os
 import shutil
 from dotenv import load_dotenv
-from storage import save_upload
+from storage import save_upload, save_upload_bytes
 
 load_dotenv(override=True)
 
@@ -296,8 +299,14 @@ async def upload_pdf(
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
+    # Read file content eagerly so it's available in thread
+    file_content = await file.read()
     try:
-        filepath = save_upload(file, file.filename)
+        loop = asyncio.get_event_loop()
+        filepath = await loop.run_in_executor(
+            _executor,
+            lambda: save_upload_bytes(file_content, file.filename)
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 

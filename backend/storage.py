@@ -6,6 +6,27 @@ USE_GCS = os.getenv("USE_GCS", "false").lower() == "true"
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "tutorsnap-uploads")
 
 
+def save_upload_bytes(content: bytes, filename: str) -> str:
+    """
+    Save raw bytes. Used from async context via run_in_executor.
+    """
+    if USE_GCS:
+        import io
+        from google.cloud import storage
+        client = storage.Client()
+        bucket = client.bucket(BUCKET_NAME)
+        blob = bucket.blob(f"uploads/{filename}")
+        blob.upload_from_file(io.BytesIO(content), content_type="application/pdf")
+        return f"gs://{BUCKET_NAME}/uploads/{filename}"
+    else:
+        upload_dir = os.getenv("UPLOAD_DIR", "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        filepath = os.path.join(upload_dir, filename)
+        with open(filepath, "wb") as f:
+            f.write(content)
+        return filepath
+
+
 def save_upload(file: UploadFile, filename: str) -> str:
     """
     Local dev: saves to uploads/ folder, returns local path.

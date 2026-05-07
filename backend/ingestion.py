@@ -63,18 +63,15 @@ def _is_scanned(doc) -> bool:
 
 # ─── structure detection (one call with sampled pages) ────────────────────────
 
-def _detect_structure(doc) -> list[dict]:
+def _detect_structure(doc, subject: str = "General", grade: int = 0) -> list[dict]:
     """
-    Send 6 sampled pages to Claude vision to identify chapter structure.
+    Send sampled pages to Claude vision to identify chapter structure.
     Returns list of chapter dicts with page_start (1-based).
     """
     total = doc.page_count
-    sample_indices = sorted(set([
-        2, 3, 4,
-        max(0, total // 5),
-        max(0, total // 3),
-        max(0, total // 2),
-    ]))
+    # Clamp all indices to valid range [0, total-1]
+    raw_indices = [2, 3, 4, total // 5, total // 3, total // 2]
+    sample_indices = sorted(set(min(max(0, i), total - 1) for i in raw_indices))
 
     content = []
     for pg in sample_indices:
@@ -85,14 +82,15 @@ def _detect_structure(doc) -> list[dict]:
         })
         content.append({"type": "text", "text": f"(page {pg + 1} of {total})"})
 
+    grade_str = f"Grade {grade}" if grade else ""
     content.append({
         "type": "text",
         "text": (
-            f"This is a Cambridge Mathematics Grade 7 textbook with {total} pages.\n"
+            f"This is a {grade_str} {subject} textbook with {total} pages.\n"
             "Identify all chapter titles and their starting page numbers.\n"
             "Return ONLY valid JSON — no markdown, no explanation:\n"
-            '{"chapters": [{"number": 1, "title": "Integers", "page_start": 5}, '
-            '{"number": 2, "title": "Expressions", "page_start": 20}]}\n'
+            '{"chapters": [{"number": 1, "title": "Chapter One Title", "page_start": 5}, '
+            '{"number": 2, "title": "Chapter Two Title", "page_start": 20}]}\n'
             "page_start is the 1-based page number where the chapter begins."
         ),
     })
@@ -118,7 +116,8 @@ def _detect_structure(doc) -> list[dict]:
 # ─── per-chapter content + exercise extraction ────────────────────────────────
 
 def _extract_chapter_content(doc, ch_page_start: int, ch_page_end: int,
-                              chapter_title: str, chapter_number: int) -> list[dict]:
+                              chapter_title: str, chapter_number: int,
+                              subject: str = "General", grade: int = 0) -> list[dict]:
     """
     Send sampled pages to Claude vision.
     Returns topic dicts including 'exercises' — real questions pulled from the textbook.
@@ -136,15 +135,16 @@ def _extract_chapter_content(doc, ch_page_start: int, ch_page_end: int,
         })
         content.append({"type": "text", "text": f"(page {pg + 1})"})
 
+    grade_str = f"Grade {grade} " if grade else ""
     content.append({
         "type": "text",
         "text": (
-            f"This is Chapter {chapter_number}: '{chapter_title}' of a Cambridge Mathematics Grade 7 textbook.\n"
-            "Extract the topic/section structure AND exercise questions from these pages.\n"
+            f"This is Chapter {chapter_number}: '{chapter_title}' of a {grade_str}{subject} textbook.\n"
+            "Extract the topic/section structure from these pages.\n"
             "Return ONLY valid JSON — no markdown:\n"
             '{"topics": [{'
             '"number": "1.1", '
-            '"title": "Adding and Subtracting Integers", '
+            '"title": "Topic Title", '
             '"key_concepts": ["concept1", "concept2"], '
             '"vocabulary": ["term1", "term2"], '
             '"difficulty_ceiling": "L3", '
@@ -152,8 +152,7 @@ def _extract_chapter_content(doc, ch_page_start: int, ch_page_end: int,
             '}]}\n'
             "Rules:\n"
             "- 1 to 5 topics per chapter\n"
-            "- difficulty_ceiling: L1=recall, L2=explain, L3=calculate, L4=analyse, L5=multi-step\n"
-            "- Most Grade 7 maths topics are L3 or L4\n"
+            "- difficulty_ceiling: L1=recall, L2=explain, L3=apply, L4=analyse, L5=multi-step\n"
             "- key_concepts: 3-6 core ideas\n"
             "- vocabulary: subject-specific terms\n"
             "- raw_content: 2-3 sentences max — keep it brief"
@@ -268,7 +267,7 @@ def _extract_native_text(doc, page_start_0: int, page_end_0: int) -> str:
 
 # ─── public parse_pdf ──────────────────────────────────────────────────────────
 
-def parse_pdf(filepath: str) -> list[dict]:
+def parse_pdf(filepath: str, subject: str = "General", grade: int = 0) -> list[dict]:
     try:
         doc = fitz.open(filepath)
     except Exception as e:
@@ -291,11 +290,11 @@ def parse_pdf(filepath: str) -> list[dict]:
                 chapters_meta.append({"number": len(chapters_meta) + 1, "title": title, "page_start": page})
     else:
         print("  No native TOC — using Claude vision for structure...")
-        chapters_meta = _detect_structure(doc)
+        chapters_meta = _detect_structure(doc, subject=subject, grade=grade)
 
     if not chapters_meta:
         print("  Fallback: treating whole PDF as one chapter")
-        chapters_meta = [{"number": 1, "title": "Mathematics", "page_start": 1}]
+        chapters_meta = [{"number": 1, "title": subject, "page_start": 1}]
 
     # Apply chapter limit
     if chapter_limit > 0:
@@ -322,7 +321,8 @@ def parse_pdf(filepath: str) -> list[dict]:
 
         if scanned:
             # Extract topics/structure
-            topics = _extract_chapter_content(doc, ch_ps, ch_pe, ch_title, ch_num)
+            topics = _extract_chapter_content(doc, ch_ps, ch_pe, ch_title, ch_num,
+                                              subject=subject, grade=grade)
             # Extract all exercises from every page in this chapter
             print(f"  Extracting exercises for chapter {ch_num}...")
             exercises = _extract_exercises(doc, ch_ps, ch_pe, ch_title, ch_num)
@@ -433,10 +433,10 @@ def run_ingestion(book_id: int, filepath: str, db=None):
         book.ingestion_status = "processing"
         db.commit()
 
-        print(f"\nIngesting book {book_id}: {filepath}")
+        print(f"\nIngesting book {book_id}: {filepath} | subject={book.subject} grade={book.grade}")
         local_path = get_local_path(filepath)
         try:
-            chunks = parse_pdf(local_path)
+            chunks = parse_pdf(local_path, subject=book.subject or "General", grade=book.grade or 0)
         finally:
             cleanup_temp(local_path)
         print(f"  Parsed {len(chunks)} topic chunks")
