@@ -47,6 +47,29 @@ jobs:
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
 
+      - name: Run database migrations (before deploy)
+        run: |
+          # Create job if it doesn't exist, update image if it does
+          if gcloud run jobs describe tutorsnap-migrate --region=$REGION --quiet 2>/dev/null; then
+            gcloud run jobs update tutorsnap-migrate \
+              --image=$IMAGE:${{ github.sha }} \
+              --region=$REGION \
+              --quiet
+          else
+            gcloud run jobs create tutorsnap-migrate \
+              --image=$IMAGE:${{ github.sha }} \
+              --region=$REGION \
+              --service-account=tutorsnap-api@$PROJECT_ID.iam.gserviceaccount.com \
+              --add-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
+              --set-secrets="DATABASE_URL=DATABASE_URL:latest" \
+              --command="python" \
+              --args="-m,alembic,upgrade,head" \
+              --quiet
+          fi
+          gcloud run jobs execute tutorsnap-migrate \
+            --region=$REGION \
+            --wait
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy tutorsnap-api \
@@ -77,28 +100,9 @@ jobs:
             --port=8080 \
             --quiet
 
-      - name: Run database migrations
-        run: |
-          gcloud run jobs update tutorsnap-migrate \
-            --image=$IMAGE:${{ github.sha }} \
-            --region=$REGION \
-            --quiet 2>/dev/null || \
-          gcloud run jobs create tutorsnap-migrate \
-            --image=$IMAGE:${{ github.sha }} \
-            --region=$REGION \
-            --service-account=tutorsnap-api@$PROJECT_ID.iam.gserviceaccount.com \
-            --add-cloudsql-instances=$PROJECT_ID:$REGION:tutorsnap-db \
-            --set-secrets="DATABASE_URL=DATABASE_URL:latest" \
-            --command="python" \
-            --args="-m,alembic,upgrade,head" \
-            --quiet
-          gcloud run jobs execute tutorsnap-migrate \
-            --region=$REGION \
-            --wait
-
       - name: Print deployed URL
         run: |
           URL=$(gcloud run services describe tutorsnap-api \
             --region=$REGION \
             --format='value(status.url)')
-          echo "✅ Backend deployed: $URL"
+          echo "Backend deployed: $URL"
