@@ -59,11 +59,14 @@ jobs:
         working-directory: frontend/android
         run: ./gradlew assembleDebug --no-daemon
 
+      - name: Rename APK
+        run: mv frontend/android/app/build/outputs/apk/debug/app-debug.apk frontend/android/app/build/outputs/apk/debug/StudyBlox.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tutorsnap-debug-${{ github.sha }}
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          name: StudyBlox-${{ github.sha }}
+          path: frontend/android/app/build/outputs/apk/debug/StudyBlox.apk
           retention-days: 30
 
       - name: Print APK location
