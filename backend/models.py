@@ -156,6 +156,8 @@ class SessionTurn(Base):
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
     turn_number = Column(Integer, nullable=False)
     question_text = Column(Text, nullable=False)
+    expected_key_points = Column(Text, nullable=True)   # JSON list of strings
+    answer_format = Column(String(30), nullable=True)   # number|yes_no|rule|explanation|working
     student_answer = Column(Text, nullable=True)
     assessment_score = Column(Integer, nullable=True)
     confidence_tag = Column(String(20), nullable=True)

@@ -22,6 +22,7 @@ export default function Chat() {
   const [showEndModal, setShowEndModal] = useState(false)
   const [ending, setEnding] = useState(false)
   const [xpGained, setXpGained] = useState(null)
+  const [answerFormat, setAnswerFormat] = useState(null)
   const bottomRef = useRef(null)
   const slowTimerRef = useRef(null)
 
@@ -31,6 +32,7 @@ export default function Chat() {
     const data = JSON.parse(stored)
     setSession(data)
     setCurrentLevel(data.currentLevel)
+    setAnswerFormat(data.answerFormat || null)
     setMessages([{ sender: 'buddy', text: data.initialMessage }])
   }, [sessionId])
 
@@ -103,14 +105,17 @@ export default function Chat() {
         addMessage('buddy', `🎉 Level Up! Let's try something harder!\n\n${d.next_question}`)
         setHintTier(0)
         setShowHintButton(false)
+        if (d.answer_format) setAnswerFormat(d.answer_format)
       } else if (d.action === 'retry_question' && d.next_question) {
         addMessage('buddy', d.next_question)
         setShowHintButton(false)
+        // keep existing answerFormat for retry
       } else if (d.next_question) {
         showXP('+10 XP')
         addMessage('buddy', d.next_question)
         setHintTier(0)
         setShowHintButton(false)
+        if (d.answer_format) setAnswerFormat(d.answer_format)
       }
 
       if (d.show_hint_button) setShowHintButton(true)
@@ -146,6 +151,7 @@ export default function Chat() {
         addMessage('buddy', d.fresh_question)
         setShowHintButton(false)
         setHintTier(0)
+        if (d.answer_format) setAnswerFormat(d.answer_format)
       } else if (d.flagged) {
         setShowHintButton(false)
         setTimeout(() => navigate(`/summary/${sessionId}`), 2000)
@@ -272,6 +278,18 @@ export default function Chat() {
 
       {/* Input */}
       <div className="flex-shrink-0 bg-[#16213E] border-t border-[#2D2B5A] px-4 py-3">
+        {answerFormat && !loading && (
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="text-[10px] text-[#2D2B5A] uppercase tracking-widest">Answer type:</span>
+            <span className="text-[10px] text-[#00A2FF]/70 font-semibold">
+              {answerFormat === 'number'      && '🔢 a number'}
+              {answerFormat === 'yes_no'      && '✅ yes or no'}
+              {answerFormat === 'rule'        && '📖 state the rule'}
+              {answerFormat === 'explanation' && '💬 explain in words'}
+              {answerFormat === 'working'     && '📝 show your working'}
+            </span>
+          </div>
+        )}
         <div className="flex gap-2">
           <input
             type="text"

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile, File, Query, Form
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
 _executor = ThreadPoolExecutor(max_workers=4)
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,8 +71,15 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE books ADD COLUMN IF NOT EXISTS chapter_limit INTEGER"
             ))
+            # Two-phase session engine: store reference answer alongside each question
+            conn.execute(text(
+                "ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS expected_key_points TEXT"
+            ))
+            conn.execute(text(
+                "ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS answer_format VARCHAR(30)"
+            ))
             conn.commit()
-            print("Migration: schema up to date (toc_pages, chapter_structure, chapter_limit added if missing)")
+            print("Migration: schema up to date (session_turns.expected_key_points, answer_format added if missing)")
     except Exception as e:
         print(f"Migration run_migrations failed (non-fatal): {e}")
 
@@ -707,9 +715,13 @@ def start_session(
                       .order_by(SessionTurn.created_at.desc()).limit(10).all())
         previous_questions = [t.question_text for t in prev_turns]
 
-    question = generate_question(topic, start_level, previous_questions)
-    db.add(SessionTurn(session_id=session.id, turn_number=1,
-                       question_text=question, level=start_level))
+    q = generate_question(topic, start_level, previous_questions)
+    db.add(SessionTurn(
+        session_id=session.id, turn_number=1,
+        question_text=q["question"], level=start_level,
+        expected_key_points=json.dumps(q["expected_key_points"]),
+        answer_format=q["answer_format"],
+    ))
     session.questions_asked = 1
     db.commit()
 
@@ -718,7 +730,8 @@ def start_session(
         "chapter_title": chapter.title if chapter else "",
         "student_name": req.student_name, "current_level": start_level,
         "level_label": level_label(start_level),
-        "message": f"Hi {req.student_name}! Let's practise {topic.title}.\n\n{question}",
+        "message": f"Hi {req.student_name}! Let's practise {topic.title}.\n\n{q['question']}",
+        "answer_format": q["answer_format"],
         "show_hint_button": False, "turn_number": 1,
     }
 
@@ -745,8 +758,13 @@ def submit_answer(
     current_turn = (db.query(SessionTurn).filter(SessionTurn.session_id == session.id)
                     .order_by(SessionTurn.turn_number.desc()).first())
 
-    assessment = assess_answer(topic, current_turn.question_text, req.answer,
-                               session.current_level, session.hint_tier)
+    ekp = json.loads(current_turn.expected_key_points) if current_turn.expected_key_points else None
+    assessment = assess_answer(
+        topic, current_turn.question_text, req.answer,
+        session.current_level, session.hint_tier,
+        expected_key_points=ekp,
+        answer_format=current_turn.answer_format,
+    )
 
     current_turn.student_answer = req.answer
     current_turn.assessment_score = assessment["score"]
@@ -773,17 +791,25 @@ def submit_answer(
                 "turn_number": current_turn.turn_number}
 
     next_question = None
+    next_answer_format = None
     new_turn_number = current_turn.turn_number
 
     if next_action["action"] == "retry_question":
         next_question = current_turn.question_text
+        next_answer_format = current_turn.answer_format
     elif next_action["action"] in ("advance_level", "next_question"):
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-        next_question = generate_question(topic, session.current_level, prev_qs)
+        nq = generate_question(topic, session.current_level, prev_qs)
+        next_question = nq["question"]
+        next_answer_format = nq["answer_format"]
         new_turn_number = current_turn.turn_number + 1
-        db.add(SessionTurn(session_id=session.id, turn_number=new_turn_number,
-                           question_text=next_question, level=session.current_level))
+        db.add(SessionTurn(
+            session_id=session.id, turn_number=new_turn_number,
+            question_text=nq["question"], level=session.current_level,
+            expected_key_points=json.dumps(nq["expected_key_points"]),
+            answer_format=nq["answer_format"],
+        ))
         session.questions_asked += 1
         db.commit()
 
@@ -793,6 +819,7 @@ def submit_answer(
             "level_label": level_label(session.current_level),
             "show_hint_button": next_action.get("show_hint_button", False),
             "session_complete": False, "next_question": next_question,
+            "answer_format": next_answer_format,
             "turn_number": new_turn_number}
 
 
@@ -824,16 +851,21 @@ def request_hint(
         explanation = get_concept_explanation(topic, current_turn.question_text)
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-        fresh_question = generate_question(topic, session.current_level, prev_qs)
+        fq = generate_question(topic, session.current_level, prev_qs)
         new_turn_number = current_turn.turn_number + 1
-        db.add(SessionTurn(session_id=session.id, turn_number=new_turn_number,
-                           question_text=fresh_question, level=session.current_level))
+        db.add(SessionTurn(
+            session_id=session.id, turn_number=new_turn_number,
+            question_text=fq["question"], level=session.current_level,
+            expected_key_points=json.dumps(fq["expected_key_points"]),
+            answer_format=fq["answer_format"],
+        ))
         session.hint_tier = 0
         session.questions_asked += 1
         db.commit()
         return {"session_id": session.id, "hint_message": explanation,
                 "hint_tier": max_hints + 1, "is_final_hint": False,
-                "is_concept_reset": True, "flagged": False, "fresh_question": fresh_question}
+                "is_concept_reset": True, "flagged": False,
+                "fresh_question": fq["question"], "answer_format": fq["answer_format"]}
 
     if session.hint_tier > max_hints and session.concept_reset_done:
         session.flagged_for_review = True

@@ -113,6 +113,7 @@ export default function StudentPractice() {
           topicTitle: d.topic_title, chapterTitle: d.chapter_title,
           initialMessage: d.message, currentLevel: d.current_level,
           levelLabel: d.level_label, topicId,
+          answerFormat: d.answer_format || null,
         })
       )
       navigate(`/session/${d.session_id}`)

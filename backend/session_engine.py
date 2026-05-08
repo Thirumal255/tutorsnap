@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import anthropic
 from dotenv import load_dotenv
 
@@ -97,6 +98,14 @@ def build_topic_context(topic) -> str:
     )
 
 
+def get_subject_label(topic) -> str:
+    """Return 'Grade N Subject' string from topic → chapter → book chain."""
+    book = getattr(topic.chapter, "book", None) if topic.chapter else None
+    subject = getattr(book, "subject", None) or "Mathematics"
+    grade = getattr(book, "grade", None) or 7
+    return f"Grade {grade} {subject}"
+
+
 def call_claude(system: str, user: str, max_tokens: int = 800) -> str:
     try:
         response = _client.messages.create(
@@ -110,9 +119,11 @@ def call_claude(system: str, user: str, max_tokens: int = 800) -> str:
         raise RuntimeError(f"Claude API call failed: {e}") from e
 
 
-def generate_question(topic, level: str, previous_questions: list[str]) -> str:
+def generate_question(topic, level: str, previous_questions: list[str]) -> dict:
+    """Generate a question and return a dict with question, expected_key_points, answer_format."""
+    subject_label = get_subject_label(topic)
     system = (
-        f"You are Buddy, a friendly AI tutor for a Cambridge Grade 7 Mathematics student.\n"
+        f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
         f"{ABSOLUTE_RULE}\n"
         f"{build_topic_context(topic)}"
     )
@@ -137,7 +148,7 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> str:
         f"Level {level} means: {LEVEL_GUIDE[level]}\n\n"
         f"{exercise_instruction}\n"
         f"The question must:\n"
-        f"- Be appropriate for a Grade 7 Cambridge student\n"
+        f"- Be appropriate for a {subject_label} student\n"
         f"- Be clearly worded and unambiguous about what kind of answer is expected\n"
         f"- Not repeat any of these previous questions: {prev}\n\n"
         f"IMPORTANT — question clarity rules by level:\n"
@@ -153,67 +164,155 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> str:
         f"  L5 (Synthesis): Multi-step word problem combining two or more concepts.\n\n"
         f"The question must make it obvious what a correct answer looks like — "
         f"never leave the student guessing whether to give a number, a rule, a yes/no, or a worked solution.\n\n"
-        f"Return ONLY the question text. No preamble, no answer, no explanation, no numbering."
+        f"After composing the question, also determine:\n"
+        f"1. expected_key_points — a list of 2-5 short strings capturing what a CORRECT answer MUST contain.\n"
+        f"   These are used by the grader, NOT shown to the student.\n"
+        f"   Examples:\n"
+        f"   - 'State the divisibility rule for 5' → [\"ends in 0 or 5\", \"last digit is 0 or 5\"]\n"
+        f"   - 'Is 1275 divisible by 5?' → [\"yes\", \"ends in 5\"]\n"
+        f"   - 'Find the LCM of 12 and 18' → [\"36\", \"LCM is 36\"]\n"
+        f"   - 'Explain what LCM means' → [\"smallest multiple\", \"common to both\", \"least common multiple\"]\n\n"
+        f"2. answer_format — ONE of these exact strings describing the expected answer type:\n"
+        f"   - \"number\"      — the answer is a specific number or calculation result\n"
+        f"   - \"yes_no\"      — the answer is yes or no\n"
+        f"   - \"rule\"        — the answer is a rule, definition, or law stated in words\n"
+        f"   - \"explanation\" — the answer is an explanation or description in words\n"
+        f"   - \"working\"     — a full worked solution with steps is required\n\n"
+        f"Return ONLY valid JSON — no markdown, no code fences, no text before or after:\n"
+        f'{{"question": "...", "expected_key_points": ["...", "..."], "answer_format": "..."}}'
     )
-    return call_claude(system, user, max_tokens=300)
+    raw = call_claude(system, user, max_tokens=500)
+    try:
+        # Strip any accidental markdown code fences
+        cleaned = re.sub(r"```[a-z]*\n?", "", raw).strip()
+        data = json.loads(cleaned)
+        return {
+            "question": str(data["question"]),
+            "expected_key_points": list(data.get("expected_key_points") or []),
+            "answer_format": str(data.get("answer_format") or "explanation"),
+        }
+    except Exception:
+        # Fallback: treat the whole response as the question text
+        return {
+            "question": raw,
+            "expected_key_points": [],
+            "answer_format": "explanation",
+        }
 
 
-def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int) -> dict:
+def assess_answer(
+    topic,
+    question: str,
+    answer: str,
+    level: str,
+    hint_tier: int,
+    expected_key_points: list | None = None,
+    answer_format: str | None = None,
+) -> dict:
+    """
+    Two-phase scoring: compare the student's answer against the reference key points
+    using a per-format rubric, rather than doing blind open-ended grading.
+    """
+    subject_label = get_subject_label(topic)
     system = (
-        f"You are Buddy, a friendly AI tutor for a Cambridge Grade 7 Mathematics student.\n"
+        f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
         f"{ASSESS_RULE}\n"
         f"{build_topic_context(topic)}"
     )
+
+    # Reference answer section (shown to grader, not to student)
+    if expected_key_points:
+        ref_section = (
+            f"\nREFERENCE ANSWER — key points a correct answer MUST contain:\n"
+            + "\n".join(f"  ✓ {p}" for p in expected_key_points)
+            + "\n"
+        )
+    else:
+        ref_section = ""
+
+    # Per-format scoring rule
+    FORMAT_RULES = {
+        "number": (
+            "\nFORMAT RULE — Expected answer type: NUMBER\n"
+            "  - Correct number stated (even without working shown) → score 90+\n"
+            "  - Correct number with minor rounding/notation difference → score 80-89\n"
+            "  - Right method but arithmetic error → score 55-75\n"
+            "  - Wrong number with wrong method → score 0-49\n"
+        ),
+        "yes_no": (
+            "\nFORMAT RULE — Expected answer type: YES or NO\n"
+            "  - Correct yes/no (even alone, without explanation) → score 90+\n"
+            "  - Correct yes/no WITH correct reasoning → score 95-100\n"
+            "  - WRONG yes/no → score 0-40 regardless of explanation quality\n"
+            "  - 'yes' alone, if correct → 90. 'no' alone, if correct → 90.\n"
+        ),
+        "rule": (
+            "\nFORMAT RULE — Expected answer type: RULE or DEFINITION\n"
+            "  - Correct concept captured, even informally or in one word → score 90+\n"
+            "  - Informal/abbreviated phrasing is FINE — do NOT penalise for lack of formal language\n"
+            "  - Partially correct (right idea, missing one key element) → score 60-79\n"
+            "  - Wrong concept entirely → score 0-49\n"
+        ),
+        "explanation": (
+            "\nFORMAT RULE — Expected answer type: EXPLANATION in words\n"
+            "  - Covers the key points (even briefly) → score 80+\n"
+            "  - On the right track but missing some key points → score 50-79\n"
+            "  - Off-base explanation showing misunderstanding → score 0-49\n"
+        ),
+        "working": (
+            "\nFORMAT RULE — Expected answer type: FULLY WORKED SOLUTION\n"
+            "  - Correct answer with clear method shown → score 90+\n"
+            "  - Correct answer, method unclear or partially shown → score 75-89\n"
+            "  - Correct final answer, no working shown → score 70\n"
+            "  - Correct method, arithmetic error → score 55-70\n"
+            "  - Wrong method → score 0-49\n"
+        ),
+    }
+    format_rule = FORMAT_RULES.get(answer_format or "", "")
+
     user = (
         f"The student was asked this question at level {level}:\n"
-        f"QUESTION: {question}\n\n"
-        f"The student answered:\n"
-        f"ANSWER: {answer}\n\n"
+        f"QUESTION: {question}\n"
+        f"{ref_section}"
+        f"\nThe student answered:\n"
+        f"ANSWER: {answer}\n"
+        f"{format_rule}\n"
         f"STEP 1 — Is the answer off-topic?\n"
         f"Set off_topic to TRUE if the answer:\n"
-        f"  - Is completely unrelated to maths (e.g. 'I like pizza', 'What's for lunch?', 'Hello')\n"
+        f"  - Is completely unrelated to the subject (e.g. 'I like pizza', 'Hello', 'What\\'s for lunch?')\n"
         f"  - Is a joke, random words, gibberish, or nonsense\n"
-        f"  - Says 'I don't know', 'idk', 'no idea', 'skip', or similar\n"
+        f"  - Says 'I don\\'t know', 'idk', 'no idea', 'skip', 'pass', or similar\n"
         f"  - Is a question instead of an answer\n"
-        f"  - Contains no mathematical attempt whatsoever\n"
-        f"Set off_topic to FALSE only if the student is genuinely attempting to answer the maths question,\n"
-        f"even if their answer is completely wrong.\n\n"
-        f"STEP 2 — Score the answer (off_topic must be FALSE):\n"
-        f"Be GENEROUS — recognise correct answers even if brief or informally worded.\n"
-        f"  - 90-100: correct answer or correct key concept/rule stated — award this even for short answers\n"
-        f"  - 70-89: mostly correct, minor omission or small error\n"
-        f"  - 50-69: partially correct, on the right track but incomplete\n"
-        f"  - 0-49: wrong approach, no understanding shown\n\n"
-        f"IMPORTANT scoring examples:\n"
-        f"  - If asked 'is X divisible by Y?' and student says 'yes' or 'no' correctly → score 80+\n"
-        f"  - If student states the correct rule or test → score 85+\n"
-        f"  - If student gives the correct numerical answer → score 90+\n"
-        f"  - Do NOT penalise for not showing full working if the answer is correct\n\n"
-        f"Return ONLY valid JSON. No markdown. No text before or after.\n"
+        f"  - Contains absolutely no genuine academic attempt\n"
+        f"Set off_topic to FALSE if the student is genuinely trying to answer, even if completely wrong.\n\n"
+        f"STEP 2 — Score the answer (only when off_topic is FALSE):\n"
+        f"Compare the student's answer against the REFERENCE ANSWER key points.\n"
+        f"Apply the FORMAT RULE strictly.\n"
+        f"Be GENEROUS — recognise correct answers even if brief or informally worded.\n\n"
+        f"Return ONLY valid JSON — no markdown, no code fences, no text outside the JSON:\n"
         f'{{"score": 85, "feedback": "...", "off_topic": false}}\n\n'
         f"If off_topic is TRUE:\n"
-        f"  - Set score to 0\n"
-        f"  - Write a feedback message that is warm, playful, and gently redirects them back to the question.\n"
-        f"  - Use humour or a fun analogy. Make them smile and want to try again.\n"
-        f"  - Examples: 'Haha, I like the creativity! But let\\'s put our maths hats on — '\n"
-        f"    'Oops, looks like your brain wandered off on a little adventure! Let\\'s bring it back —'\n"
-        f"    'Ha! Nice try sneaking that in 😄 Let\\'s focus — '\n"
-        f"  - End by briefly restating what the question is asking. Do NOT give any hint about the answer.\n\n"
+        f"  - score: 0\n"
+        f"  - feedback: warm, playful redirect. Use humour. Make them smile and want to try again.\n"
+        f"  - Examples: 'Haha, I like the creativity! But maths hat on now — '\n"
+        f"    'Oops, brain wandered! Let\\'s bring it back — '\n"
+        f"  - End by briefly restating what the question asks. Do NOT hint at the answer.\n\n"
         f"If off_topic is FALSE:\n"
-        f"  - feedback: 1-2 sentences, always encouraging, never condescending\n"
-        f"  - Celebrate what they got right, even if the overall score is low\n"
-        f"  - For correct answers, be enthusiastic: 'Spot on!', 'Exactly right!', 'Perfect!' etc.\n"
-        f"  - For wrong answers, encourage the attempt without revealing the answer\n\n"
-        f"Hint tier weighting (apply to score when off_topic is false):\n"
+        f"  - feedback: 1-2 sentences, encouraging, never condescending\n"
+        f"  - Celebrate what they got right, even when overall score is low\n"
+        f"  - Correct answers: 'Spot on!', 'Exactly right!', 'Perfect!', 'Brilliant!' etc.\n"
+        f"  - Wrong answers: encourage the attempt without revealing the answer\n\n"
+        f"Hint tier weighting (apply to score only, NOT to confidence determination):\n"
         f"  - hint_tier 0: score unchanged\n"
         f"  - hint_tier 1: multiply score by 0.9\n"
         f"  - hint_tier 2: cap score at 79 maximum\n"
-        f"  - hint_tier 3+: cap score at 49 maximum\n"
+        f"  - hint_tier 3+: cap score at 64 maximum\n"
         f"Current hint_tier: {hint_tier}"
     )
     try:
-        text = call_claude(system, user, max_tokens=400)
-        data = json.loads(text)
+        raw = call_claude(system, user, max_tokens=400)
+        cleaned = re.sub(r"```[a-z]*\n?", "", raw).strip()
+        data = json.loads(cleaned)
         raw_score = int(data.get("score", 0))
         feedback = str(data.get("feedback", "Let's try again!"))
         off_topic = bool(data.get("off_topic", False))
@@ -221,14 +320,12 @@ def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int)
         return {"score": 0, "feedback": "Let's try again!", "confidence_tag": "struggling", "off_topic": False}
 
     if off_topic:
-        # Off-topic answers don't count as struggling — keep the hint button hidden,
-        # just ask them to try again with the same question.
+        # Off-topic answers: don't penalise, just ask them to try the same question again.
         return {"score": 0, "feedback": feedback, "confidence_tag": "off_topic", "off_topic": True}
 
-    # Determine confidence_tag from RAW score BEFORE hint_tier penalty.
-    # This is critical — a student who gives a correct answer after many hints should
-    # still be marked "confident" so the session progresses. Without this, high hint_tiers
-    # cap the score below 80 even for correct answers, causing an infinite struggling loop.
+    # Confidence tag is derived from RAW score BEFORE hint_tier penalty.
+    # Critical: a student who nails the answer after hints must still be marked "confident"
+    # so the session progresses. The penalty only affects the stored score quality metric.
     if raw_score >= 80:
         confidence_tag = "confident"
     elif raw_score >= 50:
@@ -236,8 +333,7 @@ def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int)
     else:
         confidence_tag = "struggling"
 
-    # Apply hint_tier penalty to the STORED score only (for mastery tracking quality).
-    # This does NOT affect confidence_tag — progression is always based on raw correctness.
+    # Apply hint_tier penalty to the stored score (mastery quality metric only).
     if hint_tier == 0:
         score = raw_score
     elif hint_tier == 1:
@@ -245,14 +341,15 @@ def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int)
     elif hint_tier == 2:
         score = min(raw_score, 79)
     else:  # hint_tier 3+
-        score = min(raw_score, 64)  # shaky ceiling, not struggling — avoids infinite loop
+        score = min(raw_score, 64)  # shaky ceiling, avoids infinite struggle loop
 
     return {"score": score, "feedback": feedback, "confidence_tag": confidence_tag, "off_topic": False}
 
 
 def get_hint(topic, question: str, student_answer: str, hint_tier: int) -> str:
+    subject_label = get_subject_label(topic)
     system = (
-        f"You are Buddy, a friendly AI tutor for a Cambridge Grade 7 Mathematics student.\n"
+        f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
         f"{ABSOLUTE_RULE}\n"
         f"IMPORTANT — Hint context rule: The student's answer shown below has already been\n"
         f"assessed as INCORRECT or INCOMPLETE by the grading system. Do NOT tell the student\n"
@@ -320,8 +417,9 @@ def get_hint(topic, question: str, student_answer: str, hint_tier: int) -> str:
 
 
 def get_concept_explanation(topic, question: str) -> str:
+    subject_label = get_subject_label(topic)
     system = (
-        f"You are Buddy, a friendly AI tutor for a Cambridge Grade 7 Mathematics student.\n"
+        f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
         f"{ABSOLUTE_RULE}\n"
         f"{build_topic_context(topic)}"
     )
@@ -330,7 +428,7 @@ def get_concept_explanation(topic, question: str) -> str:
         f"QUESTION: {question}\n\n"
         f"Give a full concept explanation:\n"
         f"- Explain the underlying concept clearly and completely\n"
-        f"- Use simple language appropriate for Grade 7\n"
+        f"- Use simple language appropriate for the student's level\n"
         f"- Use a different example to illustrate (NOT the original question)\n"
         f"- ABSOLUTELY DO NOT state the answer to the original question above\n"
         f'- End with exactly this sentence: "Now I\'m going to give you a fresh question on the same concept — let\'s see how you do!"'
