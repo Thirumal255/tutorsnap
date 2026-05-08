@@ -16,7 +16,7 @@ from progress import set_book_progress
 
 load_dotenv(override=True)
 
-from database import get_db, SessionLocal
+from database import get_db, SessionLocal, engine
 from models import (
     Book, Chapter, Topic, Session as SessionModel, SessionTurn, TopicMastery,
     AppSettings, User, ParentStudentLink, Notification,
