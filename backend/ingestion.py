@@ -481,14 +481,16 @@ def _parse_pdf_gen(filepath: str, subject: str = "General", grade: int = 0,
             print("  Fallback: treating whole PDF as one chapter")
             chapters_meta = [{"number": 1, "title": subject, "page_start": 1}]
 
-        if chapter_limit > 0:
-            chapters_meta = chapters_meta[:chapter_limit]
-            print(f"  Limiting to {chapter_limit} chapters")
-
-        # Assign page_end
+        # Assign page_end using the FULL list so chapter N's end = chapter N+1's start - 1.
+        # This must happen BEFORE chapter_limit truncation, otherwise the last kept chapter
+        # incorrectly gets page_end = total (entire rest of PDF).
         for i, ch in enumerate(chapters_meta):
             ch["page_end"] = chapters_meta[i + 1]["page_start"] - 1 if i + 1 < len(chapters_meta) else total
             ch["page_start"] = max(1, ch["page_start"])
+
+        if chapter_limit > 0:
+            chapters_meta = chapters_meta[:chapter_limit]
+            print(f"  Limiting to {chapter_limit} chapters")
 
         _skip = skip_chapter_numbers or set()
         total_chapters = max(len(chapters_meta), 1)
