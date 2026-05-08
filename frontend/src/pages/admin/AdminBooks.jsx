@@ -323,6 +323,17 @@ export default function AdminBooks() {
     }
   }
 
+  // Cancel a stuck-processing book that has no active job in context
+  async function handleCancelBook(book) {
+    if (!window.confirm(`Cancel ingestion for "${book.title || book.filename}"?\n\nProgress already saved will be kept — you can resume from the last completed chapter.`)) return
+    try {
+      await cancelIngestion(book.book_id)
+      loadBooks()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Cancel failed.')
+    }
+  }
+
   async function loadTopicsForBook(bookId) {
     try {
       const res = await getTopics(bookId)
@@ -503,6 +514,12 @@ export default function AdminBooks() {
                           <button onClick={() => loadTopicsForBook(b.book_id)}
                             className="text-xs text-[#00A2FF] hover:underline font-semibold">
                             View Topics
+                          </button>
+                        )}
+                        {b.status === 'processing' && !job && (
+                          <button onClick={() => handleCancelBook(b)}
+                            className="text-xs text-[#FF6B6B] hover:underline font-semibold">
+                            ⏹ Cancel
                           </button>
                         )}
                         {b.status === 'failed' && (
