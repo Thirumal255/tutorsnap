@@ -144,13 +144,13 @@ export default function Summary() {
 
         <div className="border-t border-[#2D2B5A] pt-5 flex flex-col sm:flex-row gap-3 justify-center">
           <button
-            onClick={() => navigate('/', { state: { topicId } })}
+            onClick={() => navigate('/practice', { state: { topicId } })}
             className="btn-blox-primary flex-1 py-3"
           >
             🔄 Play Again
           </button>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/home')}
             className="flex-1 py-3 rounded-full font-fredoka font-semibold text-[#8892B0] border border-[#2D2B5A] hover:border-[#00A2FF] hover:text-white transition-all"
           >
             🏠 Home

@@ -1,7 +1,82 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getChildDetail, getChildSessions } from '../../api/client'
-import ProgressBadge from '../../components/ProgressBadge'
+
+const SUBJECT_EMOJI = {
+  Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
+  History: '🏛️', Geography: '🗺️', Physics: '⚡', Chemistry: '🧪',
+  Biology: '🌿', 'Computer Science': '💻', Tamil: '🔤', Hindi: '🔤', Other: '📚',
+}
+
+const LEVEL_COLOR = {
+  L1: 'text-[#8892B0]', L2: 'text-blue-400', L3: 'text-green-400',
+  L4: 'text-purple-400', L5: 'text-yellow-300',
+}
+
+const MASTERY_ICON = {
+  null:  '⬜',
+  L1:    '🟡',
+  L2:    '🔵',
+  L3:    '🟢',
+  L4:    '🟣',
+  L5:    '⭐',
+}
+
+function timeAgo(isoStr) {
+  if (!isoStr) return '—'
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000)
+  if (diff < 60) return 'Just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 86400 * 2) return 'Yesterday'
+  return new Date(isoStr).toLocaleDateString()
+}
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function WeekBar({ weekly }) {
+  if (!weekly?.length) return null
+  const max = Math.max(...weekly.map(d => d.sessions), 1)
+  return (
+    <div className="flex items-end gap-2 h-10">
+      {weekly.map(({ date, sessions }) => {
+        const dayLabel = DAYS[new Date(date + 'T00:00:00').getDay()]
+        const isToday = date === new Date().toISOString().slice(0, 10)
+        return (
+          <div key={date} className="flex-1 flex flex-col items-center gap-0.5">
+            <div className="w-full flex items-end justify-center" style={{ height: '32px' }}>
+              <div
+                className={`w-full rounded-t ${sessions > 0 ? (isToday ? 'bg-[#FFD700]' : 'bg-[#00A2FF]') : 'bg-[#2D2B5A]'}`}
+                style={{ height: sessions > 0 ? `${Math.max((sessions / max) * 100, 20)}%` : '6px', minHeight: '4px' }}
+                title={`${sessions} session${sessions !== 1 ? 's' : ''}`}
+              />
+            </div>
+            <span className={`text-[9px] ${isToday ? 'text-[#FFD700]' : 'text-[#8892B0]'}`}>{dayLabel}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function SubjectBar({ subj, mastered, attempted }) {
+  const pct = attempted > 0 ? Math.round((mastered / attempted) * 100) : 0
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-white font-semibold">
+          {SUBJECT_EMOJI[subj] || '📚'} {subj}
+        </span>
+        <span className="text-[#8892B0]">{mastered}/{attempted} mastered</span>
+      </div>
+      <div className="h-2 bg-[#2D2B5A] rounded-full overflow-hidden">
+        <div className="h-full bg-[#00CC88] rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+const PAGE = 10
 
 export default function ParentChildDetail() {
   const { id } = useParams()
@@ -12,7 +87,7 @@ export default function ParentChildDetail() {
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(false)
-  const PAGE = 10
+  const [activeTab, setActiveTab] = useState('overview') // overview | mastery | sessions
 
   useEffect(() => {
     getChildDetail(id)
@@ -33,157 +108,241 @@ export default function ParentChildDetail() {
     finally { setSessionsLoading(false) }
   }
 
-  if (loading) return <div className="p-8 text-gray-400 text-sm">Loading…</div>
-  if (!child) return <div className="p-8 text-gray-500">Not found.</div>
+  if (loading) return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center">
+        <div className="text-4xl animate-bounce mb-3">⭐</div>
+        <p className="text-[#8892B0]">Loading…</p>
+      </div>
+    </div>
+  )
 
-  const flagged = child.topic_mastery?.filter(m => m.flagged_for_review) ?? []
+  if (!child) return (
+    <div className="flex items-center justify-center h-full">
+      <p className="text-[#8892B0]">Student not found.</p>
+    </div>
+  )
+
+  const { student, summary, subject_summary = [], topic_mastery = [],
+          flagged_topics = [], recent_sessions = [], weekly_activity } = child
+  const flagged = topic_mastery.filter(m => m.flagged_for_review)
 
   return (
-    <div className="p-8 max-w-4xl space-y-8">
+    <div className="p-6 max-w-4xl mx-auto space-y-5">
+
+      {/* ── Header ──────────────────────────────────────────── */}
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/parent')}
-          className="text-sm text-gray-400 hover:text-gray-600">← Back</button>
-        <h2 className="text-xl font-bold text-gray-800">{child.name}</h2>
-        {child.grade && (
-          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Grade {child.grade}</span>
+        <button
+          onClick={() => navigate('/parent')}
+          className="text-[#8892B0] hover:text-white text-sm font-nunito transition-colors"
+        >
+          ← Back
+        </button>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FF6B9D] to-[#FF3333] flex items-center justify-center text-white font-fredoka font-bold text-lg">
+            {student.name[0]}
+          </div>
+          <div>
+            <h1 className="text-xl font-fredoka font-bold text-white">{student.name}</h1>
+            <p className="text-xs text-[#8892B0]">Grade {student.grade}</p>
+          </div>
+        </div>
+        {flagged.length > 0 && (
+          <span className="ml-auto text-xs bg-[#FF3333]/20 text-[#FF6B6B] border border-[#FF3333]/30 px-3 py-1 rounded-full font-semibold">
+            🚩 {flagged.length} need{flagged.length === 1 ? 's' : ''} attention
+          </span>
         )}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
-          <p className="text-2xl font-bold text-gray-800">{child.total_sessions ?? 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Total Sessions</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
-          <p className="text-2xl font-bold text-gray-800">{child.topics_mastered ?? 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Topics Mastered</p>
-        </div>
-        <div className={`rounded-xl border shadow-sm p-4 text-center ${flagged.length > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-gray-100'}`}>
-          <p className={`text-2xl font-bold ${flagged.length > 0 ? 'text-red-600' : 'text-gray-800'}`}>
-            {flagged.length}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">Needs Attention</p>
-        </div>
+      {/* ── Stat strip ──────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Sessions',  value: summary.total_sessions,      color: 'text-[#00A2FF]' },
+          { label: 'Mastered',  value: summary.topics_at_l3_or_above, color: 'text-[#00CC88]' },
+          { label: 'Streak',    value: summary.streak_days > 0 ? `🔥 ${summary.streak_days}d` : '—',
+            color: 'text-[#FFD700]' },
+          { label: 'This week', value: `${summary.sessions_this_week ?? 0} sess`,
+            color: 'text-[#8892B0]' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="blox-card p-3 text-center">
+            <p className={`text-xl font-fredoka font-bold ${color}`}>{value}</p>
+            <p className="text-xs text-[#8892B0] mt-0.5">{label}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Flagged topics */}
+      {/* ── Weekly activity ──────────────────────────────────── */}
+      {weekly_activity && (
+        <div className="blox-card p-4">
+          <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold mb-3">
+            📅 This week
+          </p>
+          <WeekBar weekly={weekly_activity} />
+        </div>
+      )}
+
+      {/* ── Needs attention ─────────────────────────────────── */}
       {flagged.length > 0 && (
-        <div>
-          <h3 className="text-base font-semibold text-red-600 mb-3">Needs Attention</h3>
-          <div className="bg-red-50 rounded-xl border border-red-100 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-red-100/50 text-red-700 text-xs">
-                <tr>
-                  <th className="px-4 py-3 text-left">Topic</th>
-                  <th className="px-4 py-3 text-left">Chapter</th>
-                  <th className="px-4 py-3 text-left">Level</th>
-                  <th className="px-4 py-3 text-left">Sessions</th>
-                  <th className="px-4 py-3 text-left">Max Hint Used</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-red-100">
-                {flagged.map((m, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-3 font-medium text-gray-800">{m.topic_title}</td>
-                    <td className="px-4 py-3 text-gray-500">{m.chapter_title}</td>
-                    <td className="px-4 py-3"><ProgressBadge level={m.mastery_level} /></td>
-                    <td className="px-4 py-3 text-gray-600">{m.total_sessions}</td>
-                    <td className="px-4 py-3 text-gray-600">{m.last_hint_tier_needed}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="blox-card p-4 border-[#FF3333]/40">
+          <p className="text-sm font-fredoka font-bold text-[#FF6B6B] mb-3">
+            🚩 Needs attention ({flagged.length})
+          </p>
+          <div className="space-y-2">
+            {flagged.map((m, i) => (
+              <div key={i} className="flex items-start gap-3 py-2 border-b border-[#2D2B5A] last:border-0">
+                <span className="text-lg">{MASTERY_ICON[m.mastery_level] || '⬜'}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{m.topic_title}</p>
+                  <p className="text-xs text-[#8892B0]">{m.chapter_title} · {m.sessions_on_topic} sessions</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className={`text-sm font-fredoka font-bold ${LEVEL_COLOR[m.mastery_level] || 'text-white'}`}>
+                    {m.mastery_level}
+                  </p>
+                  <p className="text-xs text-[#8892B0]">
+                    Hint tier {m.last_hint_tier_needed ?? 0}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Topic mastery */}
-      <div>
-        <h3 className="text-base font-semibold text-gray-700 mb-3">Topic Progress</h3>
-        {!child.topic_mastery?.length ? (
-          <p className="text-sm text-gray-400">No topics practised yet.</p>
-        ) : (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500 text-xs">
-                <tr>
-                  <th className="px-4 py-3 text-left">Topic</th>
-                  <th className="px-4 py-3 text-left">Chapter</th>
-                  <th className="px-4 py-3 text-left">Level</th>
-                  <th className="px-4 py-3 text-left">Sessions</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {child.topic_mastery.map((m, i) => (
-                  <tr key={i} className={m.flagged_for_review ? 'bg-amber-50' : ''}>
-                    <td className="px-4 py-3 font-medium text-gray-800">{m.topic_title}</td>
-                    <td className="px-4 py-3 text-gray-500">{m.chapter_title}</td>
-                    <td className="px-4 py-3"><ProgressBadge level={m.mastery_level} /></td>
-                    <td className="px-4 py-3 text-gray-600">{m.total_sessions}</td>
-                    <td className="px-4 py-3">
-                      {m.flagged_for_review
-                        ? <span className="text-xs text-red-600 font-medium">⚑ Needs help</span>
-                        : <span className="text-xs text-green-600">On track</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* ── Tabs ────────────────────────────────────────────── */}
+      <div className="flex gap-2">
+        {[
+          { id: 'overview',  label: '📊 Overview' },
+          { id: 'mastery',   label: '🏆 Topic Mastery' },
+          { id: 'sessions',  label: '📋 Sessions' },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`px-4 py-2 rounded-xl text-sm font-nunito font-semibold transition-all ${
+              activeTab === t.id
+                ? 'bg-[#00A2FF] text-white'
+                : 'bg-[#2D2B5A] text-[#8892B0] hover:text-white'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Session history */}
-      <div>
-        <h3 className="text-base font-semibold text-gray-700 mb-3">Session History</h3>
-        {sessions.length === 0 && !sessionsLoading ? (
-          <p className="text-sm text-gray-400">No sessions yet.</p>
-        ) : (
-          <>
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-gray-500 text-xs">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Topic</th>
-                    <th className="px-4 py-3 text-left">Date</th>
-                    <th className="px-4 py-3 text-left">Level</th>
-                    <th className="px-4 py-3 text-left">Questions</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {sessions.map((s, i) => (
-                    <tr key={i}>
-                      <td className="px-4 py-3 text-gray-800">{s.topic_title}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">
-                        {s.started_at ? new Date(s.started_at).toLocaleDateString() : '—'}
-                      </td>
-                      <td className="px-4 py-3"><ProgressBadge level={s.current_level} /></td>
-                      <td className="px-4 py-3 text-gray-600">{s.questions_asked}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          s.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                        }`}>{s.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* ── Overview tab ────────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <div className="space-y-3">
+          {subject_summary.length === 0 ? (
+            <div className="blox-card p-6 text-center">
+              <p className="text-[#8892B0]">No topics practised yet.</p>
             </div>
-            {hasMore && (
-              <button
-                onClick={() => loadSessions(offset)}
-                disabled={sessionsLoading}
-                className="mt-3 text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
+          ) : (
+            <div className="blox-card p-5 space-y-4">
+              <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold">
+                📚 Subject progress
+              </p>
+              {subject_summary
+                .sort((a, b) => b.attempted - a.attempted)
+                .map(s => (
+                  <SubjectBar key={s.subject} subj={s.subject} mastered={s.mastered} attempted={s.attempted} />
+                ))
+              }
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Topic Mastery tab ───────────────────────────────── */}
+      {activeTab === 'mastery' && (
+        <div className="space-y-2">
+          {topic_mastery.length === 0 ? (
+            <div className="blox-card p-6 text-center">
+              <p className="text-[#8892B0]">No topics practised yet.</p>
+            </div>
+          ) : (
+            topic_mastery.map((m, i) => (
+              <div
+                key={i}
+                className={`blox-card px-4 py-3 flex items-center gap-3 ${
+                  m.flagged_for_review ? 'border-[#FF3333]/40' : ''
+                }`}
               >
-                {sessionsLoading ? 'Loading…' : 'Load more'}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+                <span className="text-lg flex-shrink-0">{MASTERY_ICON[m.mastery_level] || '⬜'}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-nunito font-semibold text-white truncate">{m.topic_title}</p>
+                  <p className="text-xs text-[#8892B0]">
+                    {m.chapter_title}
+                    {m.subject && ` · ${SUBJECT_EMOJI[m.subject] || ''} ${m.subject}`}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className={`text-sm font-fredoka font-bold ${LEVEL_COLOR[m.mastery_level] || 'text-[#8892B0]'}`}>
+                    {m.mastery_level ?? '—'}
+                  </p>
+                  <p className="text-[10px] text-[#8892B0]">
+                    {m.sessions_on_topic} sess
+                    {m.last_practiced_at && ` · ${timeAgo(m.last_practiced_at)}`}
+                  </p>
+                </div>
+                {m.flagged_for_review && (
+                  <span className="text-[#FF6B6B] text-sm flex-shrink-0">🚩</span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ── Sessions tab ────────────────────────────────────── */}
+      {activeTab === 'sessions' && (
+        <div className="space-y-2">
+          {sessions.length === 0 && !sessionsLoading ? (
+            <div className="blox-card p-6 text-center">
+              <p className="text-[#8892B0]">No sessions yet.</p>
+            </div>
+          ) : (
+            <>
+              {sessions.map((s, i) => (
+                <div key={i} className="blox-card px-4 py-3 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#2D2B5A] flex items-center justify-center text-base flex-shrink-0">
+                    📝
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-nunito font-semibold text-white truncate">{s.topic_title}</p>
+                    <p className="text-xs text-[#8892B0]">
+                      {s.questions_asked} questions
+                      {s.duration_minutes > 0 && ` · ${s.duration_minutes}m`}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-sm font-fredoka font-bold ${LEVEL_COLOR[s.level_reached] || 'text-white'}`}>
+                      {s.level_reached}
+                    </p>
+                    <p className="text-[10px] text-[#8892B0]">{timeAgo(s.started_at)}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                    s.status === 'completed'
+                      ? 'bg-[#00CC88]/20 text-[#00CC88]'
+                      : 'bg-[#FFD700]/20 text-[#FFD700]'
+                  }`}>
+                    {s.status}
+                  </span>
+                </div>
+              ))}
+              {hasMore && (
+                <button
+                  onClick={() => loadSessions(offset)}
+                  disabled={sessionsLoading}
+                  className="w-full blox-card py-3 text-sm text-[#00A2FF] hover:text-white font-nunito font-semibold transition-colors disabled:opacity-50"
+                >
+                  {sessionsLoading ? 'Loading…' : '↓ Load more'}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

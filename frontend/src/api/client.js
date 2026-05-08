@@ -68,10 +68,17 @@ export const getSettings = () => api.get('/admin/settings')
 export const updateSettings = (settings) => api.put('/admin/settings', settings)
 export const getAdminOverview = () => api.get('/admin/reports/overview')
 
+// Student
+export const getStudentDashboard = () => api.get('/student/dashboard')
+export const getStudentProgress = () => api.get('/student/progress')
+export const getStudentSessions = (limit = 50) => api.get('/student/sessions', { params: { limit } })
+
 // Parent
 export const getMyChildren = () => api.get('/parent/children')
 export const getChildDetail = (id) => api.get(`/parent/children/${id}`)
 export const getChildSessions = (id, limit = 20, offset = 0) =>
   api.get(`/parent/children/${id}/sessions?limit=${limit}&offset=${offset}`)
+export const getFamilyActivity = () => api.get('/parent/family-activity')
 export const getParentNotifications = () => api.get('/parent/notifications')
 export const markNotificationRead = (id) => api.post(`/parent/notifications/${id}/read`)
+export const markAllNotificationsRead = () => api.post('/parent/notifications/mark-all-read')

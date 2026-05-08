@@ -614,15 +614,40 @@ def get_topics(
 
     chapters = (db.query(Chapter).filter(Chapter.book_id == book_id)
                 .order_by(Chapter.chapter_number).all())
+
+    # Pre-fetch mastery records for this student so we don't N+1
+    mastery_map: dict[int, TopicMastery] = {}
+    if current_user.role == "student":
+        all_topic_ids = [
+            t.id for ch in chapters
+            for t in db.query(Topic).filter(Topic.chapter_id == ch.id).all()
+        ]
+        if all_topic_ids:
+            records = db.query(TopicMastery).filter(
+                TopicMastery.student_name == current_user.name,
+                TopicMastery.topic_id.in_(all_topic_ids),
+            ).all()
+            mastery_map = {r.topic_id: r for r in records}
+
     chapters_data = []
     for ch in chapters:
         topics = db.query(Topic).filter(Topic.chapter_id == ch.id).order_by(Topic.id).all()
+        topic_list = []
+        for t in topics:
+            m = mastery_map.get(t.id)
+            topic_list.append({
+                "id": t.id, "topic_number": t.topic_number, "title": t.title,
+                "difficulty_ceiling": t.difficulty_ceiling,
+                "key_concepts": t.key_concepts or [],
+                "vocabulary": t.vocabulary or [],
+                "mastery_level": m.mastery_level if m else None,
+                "mastery_sessions": m.total_sessions if m else 0,
+                "flagged_for_review": m.flagged_for_review if m else False,
+                "last_practiced_at": m.last_practiced_at.isoformat() if m and m.last_practiced_at else None,
+            })
         chapters_data.append({
             "id": ch.id, "chapter_number": ch.chapter_number, "title": ch.title,
-            "topics": [{"id": t.id, "topic_number": t.topic_number, "title": t.title,
-                        "difficulty_ceiling": t.difficulty_ceiling,
-                        "key_concepts": t.key_concepts or [],
-                        "vocabulary": t.vocabulary or []} for t in topics],
+            "topics": topic_list,
         })
 
     return {"book_id": book.id, "subject": book.subject, "grade": book.grade,
@@ -1218,19 +1243,40 @@ def parent_get_children(
         ParentStudentLink.parent_id == current_user.id
     ).all()
     result = []
+    today = datetime.utcnow().date()
+    week_start = datetime.utcnow() - timedelta(days=6)
     for link in links:
         child = db.query(User).filter(User.id == link.student_id).first()
         if not child:
             continue
+        stats = _student_stats(db, child.name)
         last_session = (db.query(SessionModel).filter(SessionModel.student_name == child.name)
                         .order_by(SessionModel.started_at.desc()).first())
-        stats = _student_stats(db, child.name)
+        # Streak — consecutive days ending today with ≥1 session
+        week_sessions = (db.query(SessionModel)
+                         .filter(SessionModel.student_name == child.name,
+                                 SessionModel.started_at >= week_start).all())
+        day_counts: dict[str, int] = {}
+        for s in week_sessions:
+            d = s.started_at.date().isoformat()
+            day_counts[d] = day_counts.get(d, 0) + 1
+        streak = 0
+        for i in range(7):
+            d = (today - timedelta(days=i)).isoformat()
+            if day_counts.get(d, 0) > 0:
+                streak += 1
+            else:
+                break
+        sessions_this_week = sum(day_counts.values())
         result.append({
             "id": child.id, "name": child.name, "grade": child.grade,
             "avatar_url": child.avatar_url,
             "last_active": last_session.started_at.isoformat() if last_session and last_session.started_at else None,
-            "topics_practised": stats["total_sessions"],
+            "total_sessions": stats["total_sessions"],
+            "topics_mastered": stats["topics_mastered"],
             "flagged_topics": stats["flagged_topics"],
+            "streak_days": streak,
+            "sessions_this_week": sessions_this_week,
         })
     return result
 
@@ -1267,14 +1313,24 @@ def parent_get_child_detail(
     flagged_count = sum(1 for m in masteries if m.flagged_for_review)
 
     topic_mastery_list = []
+    subject_map: dict[str, dict] = {}  # subject → {mastered, attempted}
     for m in masteries:
         topic = db.query(Topic).filter(Topic.id == m.topic_id).first()
         chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
+        book = db.query(Book).filter(Book.id == chapter.book_id).first() if chapter else None
+        subj = book.subject if book else "Other"
+        if subj not in subject_map:
+            subject_map[subj] = {"subject": subj, "attempted": 0, "mastered": 0}
+        subject_map[subj]["attempted"] += 1
+        if m.mastery_level in ("L3", "L4", "L5"):
+            subject_map[subj]["mastered"] += 1
         topic_mastery_list.append({
             "topic_title": topic.title if topic else "", "chapter_title": chapter.title if chapter else "",
+            "subject": subj,
             "mastery_level": m.mastery_level, "level_label": level_label(m.mastery_level),
             "last_practiced_at": m.last_practiced_at.isoformat() if m.last_practiced_at else None,
             "sessions_on_topic": m.total_sessions, "flagged_for_review": m.flagged_for_review,
+            "last_hint_tier_needed": m.last_hint_tier_needed,
         })
 
     recent_sessions = []
@@ -1299,15 +1355,39 @@ def parent_get_child_detail(
                             "Consider reviewing it together."),
             })
 
-    last_session = sessions[0] if sessions else None
+    # Streak for this child
+    today_dt = datetime.utcnow().date()
+    week_start_dt = datetime.utcnow() - timedelta(days=6)
+    week_sess = [s for s in sessions if s.started_at and s.started_at >= week_start_dt]
+    day_counts_detail: dict[str, int] = {}
+    for s in week_sess:
+        d = s.started_at.date().isoformat()
+        day_counts_detail[d] = day_counts_detail.get(d, 0) + 1
+    streak_detail = 0
+    for i in range(7):
+        d = (today_dt - timedelta(days=i)).isoformat()
+        if day_counts_detail.get(d, 0) > 0:
+            streak_detail += 1
+        else:
+            break
+
+    # 7-day activity for this child
+    weekly_activity = []
+    for i in range(7):
+        d = (today_dt - timedelta(days=6 - i)).isoformat()
+        weekly_activity.append({"date": d, "sessions": day_counts_detail.get(d, 0)})
+
     return {
         "student": {"name": child.name, "grade": child.grade},
         "summary": {"total_sessions": total_sessions, "total_time_minutes": total_minutes,
                     "topics_practised": topics_practised, "topics_at_l3_or_above": topics_at_l3,
-                    "flagged_topics": flagged_count},
+                    "flagged_topics": flagged_count, "streak_days": streak_detail,
+                    "sessions_this_week": sum(day_counts_detail.values())},
+        "subject_summary": list(subject_map.values()),
         "topic_mastery": topic_mastery_list,
         "recent_sessions": recent_sessions,
         "flagged_topics": flagged_topics,
+        "weekly_activity": weekly_activity,
     }
 
 
@@ -1345,6 +1425,39 @@ def parent_get_child_sessions(
     return result
 
 
+@app.get("/api/parent/family-activity")
+def parent_family_activity(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_parent),
+):
+    """7-day session counts per child — for the family activity chart on Overview."""
+    links = db.query(ParentStudentLink).filter(
+        ParentStudentLink.parent_id == current_user.id
+    ).all()
+    today = datetime.utcnow().date()
+    week_start = datetime.utcnow() - timedelta(days=6)
+    dates = [(today - timedelta(days=6 - i)).isoformat() for i in range(7)]
+    result = []
+    for link in links:
+        child = db.query(User).filter(User.id == link.student_id).first()
+        if not child:
+            continue
+        week_sessions = (db.query(SessionModel)
+                         .filter(SessionModel.student_name == child.name,
+                                 SessionModel.started_at >= week_start).all())
+        day_counts: dict[str, int] = {d: 0 for d in dates}
+        for s in week_sessions:
+            d = s.started_at.date().isoformat()
+            if d in day_counts:
+                day_counts[d] += 1
+        result.append({
+            "child_id": child.id,
+            "child_name": child.name,
+            "activity": [{"date": d, "sessions": day_counts[d]} for d in dates],
+        })
+    return result
+
+
 @app.get("/api/parent/notifications")
 def parent_get_notifications(
     db: Session = Depends(get_db),
@@ -1356,6 +1469,19 @@ def parent_get_notifications(
              "is_read": n.is_read,
              "created_at": n.created_at.isoformat() if n.created_at else None}
             for n in notifs]
+
+
+@app.post("/api/parent/notifications/mark-all-read")
+def parent_mark_all_read(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_parent),
+):
+    db.query(Notification).filter(
+        Notification.user_id == current_user.id,
+        Notification.is_read == False,
+    ).update({"is_read": True})
+    db.commit()
+    return {"message": "All marked as read"}
 
 
 @app.post("/api/parent/notifications/{notification_id}/read")
@@ -1373,3 +1499,219 @@ def parent_mark_read(
     notif.is_read = True
     db.commit()
     return {"message": "Marked as read"}
+
+
+# ─── Student Self-Service Routes ───────────────────────────────────────────────
+
+@app.get("/api/student/dashboard")
+def student_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Home page data: subject progress summary, last session, weekly activity."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    student_name = current_user.name
+    grade = current_user.grade
+
+    # ── All books for this grade ──────────────────────────────────────────
+    books = db.query(Book).filter(Book.grade == grade, Book.ingestion_status == "done").all()
+
+    # Fetch all mastery records for this student in one query
+    all_masteries = db.query(TopicMastery).filter(
+        TopicMastery.student_name == student_name
+    ).all()
+    mastery_by_topic: dict[int, TopicMastery] = {m.topic_id: m for m in all_masteries}
+
+    # Build subject-wise breakdown
+    subject_stats: dict[str, dict] = {}
+    for book in books:
+        subj = book.subject or "Other"
+        if subj not in subject_stats:
+            subject_stats[subj] = {
+                "subject": subj,
+                "total_topics": 0,
+                "attempted": 0,      # has at least 1 session
+                "mastered": 0,       # L3 or above
+                "flagged": 0,
+            }
+        chapters = db.query(Chapter).filter(Chapter.book_id == book.id).all()
+        for ch in chapters:
+            topics = db.query(Topic).filter(Topic.chapter_id == ch.id).all()
+            for t in topics:
+                subject_stats[subj]["total_topics"] += 1
+                m = mastery_by_topic.get(t.id)
+                if m:
+                    subject_stats[subj]["attempted"] += 1
+                    if m.mastery_level in ("L3", "L4", "L5"):
+                        subject_stats[subj]["mastered"] += 1
+                    if m.flagged_for_review:
+                        subject_stats[subj]["flagged"] += 1
+
+    # ── Last practiced topic ──────────────────────────────────────────────
+    last_session = (
+        db.query(SessionModel)
+        .filter(SessionModel.student_name == student_name)
+        .order_by(SessionModel.started_at.desc())
+        .first()
+    )
+    last_practiced = None
+    if last_session:
+        t = db.query(Topic).filter(Topic.id == last_session.topic_id).first()
+        ch = db.query(Chapter).filter(Chapter.id == t.chapter_id).first() if t else None
+        bk = db.query(Book).filter(Book.id == (ch.book_id if ch else None)).first() if ch else None
+        if t:
+            m = mastery_by_topic.get(t.id)
+            last_practiced = {
+                "topic_id": t.id,
+                "topic_title": t.title,
+                "chapter_title": ch.title if ch else "",
+                "book_title": bk.title if bk else "",
+                "subject": bk.subject if bk else "",
+                "mastery_level": m.mastery_level if m else "L1",
+                "session_id": last_session.id,
+                "started_at": last_session.started_at.isoformat() if last_session.started_at else None,
+            }
+
+    # ── Weekly activity — sessions per day over last 7 days ──────────────
+    today = datetime.utcnow().date()
+    week_start = datetime.utcnow() - timedelta(days=6)
+    week_sessions = (
+        db.query(SessionModel)
+        .filter(
+            SessionModel.student_name == student_name,
+            SessionModel.started_at >= week_start,
+        )
+        .all()
+    )
+    day_counts: dict[str, int] = {}
+    for i in range(7):
+        d = (today - timedelta(days=6 - i)).isoformat()
+        day_counts[d] = 0
+    for s in week_sessions:
+        d = s.started_at.date().isoformat()
+        if d in day_counts:
+            day_counts[d] += 1
+
+    weekly_activity = [{"date": d, "sessions": cnt} for d, cnt in sorted(day_counts.items())]
+
+    # ── Streak: consecutive days with at least 1 session (ending today) ──
+    streak = 0
+    for i in range(7):
+        d = (today - timedelta(days=i)).isoformat()
+        if day_counts.get(d, 0) > 0:
+            streak += 1
+        else:
+            break
+
+    return {
+        "student_name": student_name,
+        "grade": grade,
+        "subject_stats": list(subject_stats.values()),
+        "last_practiced": last_practiced,
+        "weekly_activity": weekly_activity,
+        "streak_days": streak,
+        "total_sessions": db.query(SessionModel).filter(
+            SessionModel.student_name == student_name
+        ).count(),
+    }
+
+
+@app.get("/api/student/sessions")
+def student_sessions(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Session history for the Study Time page."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    sessions = (
+        db.query(SessionModel)
+        .filter(SessionModel.student_name == current_user.name)
+        .order_by(SessionModel.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for s in sessions:
+        t = db.query(Topic).filter(Topic.id == s.topic_id).first()
+        ch = db.query(Chapter).filter(Chapter.id == t.chapter_id).first() if t else None
+        bk = db.query(Book).filter(Book.id == ch.book_id).first() if ch else None
+        dur = None
+        if s.started_at and s.ended_at:
+            dur = int((s.ended_at - s.started_at).total_seconds() / 60)
+        result.append({
+            "id": s.id,
+            "topic_title": t.title if t else "",
+            "chapter_title": ch.title if ch else "",
+            "subject": bk.subject if bk else "",
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "duration_minutes": dur,
+            "level_reached": s.current_level,
+            "level_label": level_label(s.current_level),
+            "questions_asked": s.questions_asked,
+            "status": s.status,
+        })
+    return result
+
+
+@app.get("/api/student/progress")
+def student_progress(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Detailed per-book/chapter/topic mastery for the My Progress page."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    student_name = current_user.name
+    grade = current_user.grade
+
+    books = db.query(Book).filter(Book.grade == grade, Book.ingestion_status == "done").all()
+
+    all_masteries = db.query(TopicMastery).filter(
+        TopicMastery.student_name == student_name
+    ).all()
+    mastery_by_topic: dict[int, TopicMastery] = {m.topic_id: m for m in all_masteries}
+
+    result = []
+    for book in books:
+        chapters = (db.query(Chapter).filter(Chapter.book_id == book.id)
+                    .order_by(Chapter.chapter_number).all())
+        ch_data = []
+        for ch in chapters:
+            topics = db.query(Topic).filter(Topic.chapter_id == ch.id).order_by(Topic.id).all()
+            topic_list = []
+            for t in topics:
+                m = mastery_by_topic.get(t.id)
+                topic_list.append({
+                    "id": t.id,
+                    "topic_number": t.topic_number,
+                    "title": t.title,
+                    "mastery_level": m.mastery_level if m else None,
+                    "mastery_sessions": m.total_sessions if m else 0,
+                    "flagged_for_review": m.flagged_for_review if m else False,
+                    "last_practiced_at": m.last_practiced_at.isoformat() if m and m.last_practiced_at else None,
+                })
+            total = len(topic_list)
+            attempted = sum(1 for tl in topic_list if tl["mastery_level"] is not None)
+            mastered = sum(1 for tl in topic_list if tl["mastery_level"] in ("L3", "L4", "L5"))
+            ch_data.append({
+                "id": ch.id,
+                "chapter_number": ch.chapter_number,
+                "title": ch.title,
+                "total_topics": total,
+                "attempted": attempted,
+                "mastered": mastered,
+                "topics": topic_list,
+            })
+        result.append({
+            "book_id": book.id,
+            "title": book.title or book.filename,
+            "subject": book.subject,
+            "chapters": ch_data,
+        })
+    return result

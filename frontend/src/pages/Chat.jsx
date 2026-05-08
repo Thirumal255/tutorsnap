@@ -27,7 +27,7 @@ export default function Chat() {
 
   useEffect(() => {
     const stored = sessionStorage.getItem(`session_${sessionId}`)
-    if (!stored) { navigate('/'); return }
+    if (!stored) { navigate('/practice'); return }
     const data = JSON.parse(stored)
     setSession(data)
     setCurrentLevel(data.currentLevel)

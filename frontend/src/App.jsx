@@ -5,9 +5,14 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { UploadProvider } from './context/UploadContext'
 import Login from './pages/Login'
 import Unauthorized from './pages/Unauthorized'
-import TopicSelect from './pages/TopicSelect'
 import Chat from './pages/Chat'
 import Summary from './pages/Summary'
+import StudentLayout from './pages/student/StudentLayout'
+import StudentHome from './pages/student/StudentHome'
+import StudentPractice from './pages/student/StudentPractice'
+import StudentProgress from './pages/student/StudentProgress'
+import StudentStudyTime from './pages/student/StudentStudyTime'
+import StudentAchievements from './pages/student/StudentAchievements'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminStudents from './pages/admin/AdminStudents'
@@ -33,12 +38,21 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
 
-            {/* Student */}
+            {/* Student — sidebar layout */}
             <Route path="/" element={
               <ProtectedRoute roles={['student']}>
-                <TopicSelect />
+                <StudentLayout />
               </ProtectedRoute>
-            } />
+            }>
+              <Route index element={<Navigate to="/home" replace />} />
+              <Route path="home"         element={<StudentHome />} />
+              <Route path="practice"     element={<StudentPractice />} />
+              <Route path="progress"     element={<StudentProgress />} />
+              <Route path="study-time"   element={<StudentStudyTime />} />
+              <Route path="achievements" element={<StudentAchievements />} />
+            </Route>
+
+            {/* Session / Summary pages (full-screen, no sidebar) */}
             <Route path="/session/:id" element={
               <ProtectedRoute roles={['student']}>
                 <Chat />
