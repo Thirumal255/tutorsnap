@@ -55,22 +55,16 @@ def run_migrations():
     """Apply any pending schema migrations that aren't handled by Alembic."""
     from sqlalchemy import text
     try:
+        # Always run — widening VARCHAR is idempotent and near-instant in Postgres.
+        # The conditional check via information_schema was unreliable (schema path issues).
         with engine.connect() as conn:
-            # Widen topics.topic_number from VARCHAR(20) → VARCHAR(200)
-            # Topic numbers like "Exercise 2H ? mixed questions" exceed 20 chars
-            result = conn.execute(text(
-                "SELECT character_maximum_length FROM information_schema.columns "
-                "WHERE table_name='topics' AND column_name='topic_number'"
+            conn.execute(text(
+                "ALTER TABLE topics ALTER COLUMN topic_number TYPE VARCHAR(200)"
             ))
-            row = result.fetchone()
-            if row and row[0] is not None and row[0] < 200:
-                conn.execute(text(
-                    "ALTER TABLE topics ALTER COLUMN topic_number TYPE VARCHAR(200)"
-                ))
-                conn.commit()
-                print(f"Migration: topics.topic_number widened from VARCHAR({row[0]}) to VARCHAR(200)")
+            conn.commit()
+            print("Migration: topics.topic_number ensured VARCHAR(200)")
     except Exception as e:
-        print(f"Migration check failed (non-fatal): {e}")
+        print(f"Migration run_migrations failed (non-fatal): {e}")
 
 
 _ALLOWED_ORIGINS = [
