@@ -22,12 +22,26 @@ GRADING RULE — You are now acting as a fair, accurate examiner, NOT a hint-giv
 Your only job is to judge whether the student's answer is correct.
 - A correct answer MUST receive a high score (80-100), even if it is short or informal
 - If the answer contains the right concept, rule, or method — score it 80+
-- A one-word correct answer ("yes", "no", "5", "LCM") is worth FULL marks
+- A one-word correct answer ("yes", "no", "5", "negative", "LCM") is worth FULL marks
 - Stating the correct rule or procedure (even without a worked example) is worth 80+
-- NEVER give a low score to a correct answer just because it lacks detail
+- NEVER give a low score to a correct answer just because it lacks detail or formal phrasing
 - NEVER refuse to recognise a correct answer out of caution
 - Partial credit (50-79) only when the student is on the right track but incomplete or has a minor error
 - Feedback must celebrate what they got right, even when the overall score is low
+
+CRITICAL — "State the rule" questions:
+- If the question asks to STATE A RULE and the student's answer captures the correct concept,
+  that IS the complete answer — even if it is one word or one short phrase.
+- "negative", "it's negative", "the answer is negative", "multiply then make it negative"
+  are ALL complete, correct answers to "state the sign rule for multiplying integers".
+- Do NOT penalise for informal phrasing or missing formal structure.
+- Do NOT require the student to write a textbook-style full sentence if the concept is right.
+- Examples: asked "state the rule when multiplying a positive and negative integer" →
+    "negative" → score 90
+    "its negative" → score 90
+    "sign will be negative" → score 90
+    "multiply the numbers and the answer is negative" → score 95
+    "the product is always negative" → score 95
 """
 
 LEVEL_GUIDE = {
@@ -200,7 +214,7 @@ def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int)
     try:
         text = call_claude(system, user, max_tokens=400)
         data = json.loads(text)
-        score = int(data.get("score", 0))
+        raw_score = int(data.get("score", 0))
         feedback = str(data.get("feedback", "Let's try again!"))
         off_topic = bool(data.get("off_topic", False))
     except Exception:
@@ -211,12 +225,27 @@ def assess_answer(topic, question: str, answer: str, level: str, hint_tier: int)
         # just ask them to try again with the same question.
         return {"score": 0, "feedback": feedback, "confidence_tag": "off_topic", "off_topic": True}
 
-    if score >= 80:
+    # Determine confidence_tag from RAW score BEFORE hint_tier penalty.
+    # This is critical — a student who gives a correct answer after many hints should
+    # still be marked "confident" so the session progresses. Without this, high hint_tiers
+    # cap the score below 80 even for correct answers, causing an infinite struggling loop.
+    if raw_score >= 80:
         confidence_tag = "confident"
-    elif score >= 50:
+    elif raw_score >= 50:
         confidence_tag = "shaky"
     else:
         confidence_tag = "struggling"
+
+    # Apply hint_tier penalty to the STORED score only (for mastery tracking quality).
+    # This does NOT affect confidence_tag — progression is always based on raw correctness.
+    if hint_tier == 0:
+        score = raw_score
+    elif hint_tier == 1:
+        score = int(raw_score * 0.9)
+    elif hint_tier == 2:
+        score = min(raw_score, 79)
+    else:  # hint_tier 3+
+        score = min(raw_score, 64)  # shaky ceiling, not struggling — avoids infinite loop
 
     return {"score": score, "feedback": feedback, "confidence_tag": confidence_tag, "off_topic": False}
 
