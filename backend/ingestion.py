@@ -11,6 +11,7 @@ Set CHAPTER_LIMIT env var to limit chapters ingested (useful for testing).
 """
 import fitz  # PyMuPDF
 import json
+import re
 import os
 import base64
 import anthropic
@@ -209,7 +210,7 @@ def _scan_all_topics(doc, ch_page_start: int, ch_page_end: int,
         })
 
         try:
-            text = _call_vision(content, max_tokens=2500, use_fast=True)
+            text = _call_vision(content, max_tokens=4000, use_fast=True)
             data = _parse_json_response(text)
             batch_topics = data.get("topics", [])
             added = 0
@@ -266,14 +267,16 @@ def _extract_exercises(doc, ch_page_start: int, ch_page_end: int,
                 f"Pages from Chapter {chapter_number}: '{chapter_title}'.\n"
                 "Find every exercise question — look for numbered questions in 'Exercise' or 'Practice' sections.\n"
                 "Extract each question EXACTLY as written, including sub-parts (a), (b), (c).\n"
+                "IMPORTANT: Replace any double-quote characters inside question text with single quotes to keep JSON valid.\n"
                 "If no exercise questions are visible, return {\"exercises\": []}.\n"
-                "Return ONLY valid JSON — no markdown:\n"
+                "Return ONLY valid JSON — no markdown fences:\n"
                 '{"exercises": ["Calculate: (-3) + (-5)", "Find the value of 4 - (-2)"]}'
             ),
         })
 
+        text = ''
         try:
-            text = _call_vision(content, max_tokens=1500, use_fast=True)
+            text = _call_vision(content, max_tokens=3000, use_fast=True)
             data = _parse_json_response(text)
             batch_ex = data.get("exercises", [])
             for ex in batch_ex:
@@ -283,6 +286,20 @@ def _extract_exercises(doc, ch_page_start: int, ch_page_end: int,
             if batch_ex:
                 print(f"    Exercises pp.{batch[0]+1}-{batch[-1]+1}: {len(batch_ex)} found")
         except Exception as e:
+            # Regex fallback: extract quoted strings from the exercises array even if JSON is malformed
+            try:
+                m = re.search(r'"exercises"\s*:\s*\[([^\]]*)', text, re.DOTALL)
+                if m:
+                    items = re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))
+                    for ex in items:
+                        ex = ex.strip()
+                        if ex and ex not in all_exercises:
+                            all_exercises.append(ex)
+                    if items:
+                        print(f"    Exercises pp.{batch[0]+1}-{batch[-1]+1}: {len(items)} found (via fallback)")
+                        continue
+            except Exception:
+                pass
             print(f"    Exercise error (pp.{batch[0]+1}-{batch[-1]+1}): {e}")
 
     return all_exercises
@@ -525,8 +542,11 @@ def run_ingestion(book_id: int, filepath: str, db=None):
                   f"{topic_count} topics — will skip those chapters entirely")
 
         def _cancel_check():
-            db.refresh(book)
-            return book.ingestion_status == "failed"
+            try:
+                db.refresh(book)
+                return book.ingestion_status == "failed"
+            except Exception:
+                return False
 
         local_path = get_local_path(filepath)
         set_book_progress(book_id, "reading", 35)
