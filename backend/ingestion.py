@@ -94,6 +94,90 @@ def _is_scanned(doc) -> bool:
     return True
 
 
+# ─── TOC page scan — extracts definitive topic list ──────────────────────────
+
+def _scan_toc(doc, toc_pages_str: str, subject: str = "General", grade: int = 0) -> list[dict]:
+    """
+    Scan admin-specified TOC pages and return a definitive list of chapters+topics.
+    toc_pages_str: "3-5" or "4" (1-based printed page numbers = PDF page indices).
+    Returns: [{"number": 1, "title": "Chapter Title", "page": 7,
+               "topics": [{"number": "1.1", "title": "Topic Title", "page": 8}]}]
+    """
+    parts = toc_pages_str.strip().split("-")
+    try:
+        start = int(parts[0]) - 1   # convert to 0-indexed
+        end   = int(parts[1]) - 1 if len(parts) > 1 else start
+    except (ValueError, IndexError):
+        print(f"  TOC scan: invalid page range '{toc_pages_str}', skipping")
+        return []
+
+    pages = list(range(start, min(end + 1, doc.page_count)))
+    content = []
+    for pg in pages:
+        img_b64 = _render_page_b64(doc[pg], scale=1.2)   # slightly larger for text clarity
+        content.append({"type": "image",
+                         "source": {"type": "base64", "media_type": "image/png", "data": img_b64}})
+        content.append({"type": "text", "text": f"(TOC page {pg + 1})"})
+
+    grade_str = f"Grade {grade} " if grade else ""
+    content.append({"type": "text", "text": (
+        f"This is the Table of Contents of a {grade_str}{subject} textbook.\n"
+        "Extract EVERY chapter and ALL their sub-topics with their printed page numbers.\n"
+        "Return ONLY valid JSON — no markdown:\n"
+        '{"chapters": [{'
+        '"number": 1, "title": "Chapter Title", "page": 7, '
+        '"topics": [{"number": "1.1", "title": "Topic name", "page": 8}, '
+        '{"number": "1.2", "title": "Another topic", "page": 12}]'
+        '}]}\n'
+        "If a chapter has no sub-topics listed in the TOC, return an empty topics array."
+    )})
+
+    try:
+        text = _call_vision(content, max_tokens=4000, use_fast=True)
+        data = _parse_json_response(text)
+        chapters = data.get("chapters", [])
+        topic_count = sum(len(c.get("topics", [])) for c in chapters)
+        print(f"  TOC scan: {len(chapters)} chapters, {topic_count} topics extracted from pp.{start+1}-{end+1}")
+        return chapters
+    except Exception as e:
+        print(f"  TOC scan error: {e}")
+        return []
+
+
+# ─── chapter structure parser ─────────────────────────────────────────────────
+
+def _parse_chapter_structure(structure_str: str) -> list[str]:
+    """
+    Parse "Chapter → Topic → Example → Exercise" into ["Chapter","Topic","Example","Exercise"].
+    Accepts → or --> as separator. Case-insensitive normalisation applied.
+    """
+    if not structure_str:
+        return []
+    # Replace --> and → with a common delimiter
+    normalised = structure_str.replace("-->", "→").replace("->", "→")
+    tokens = [t.strip().capitalize() for t in normalised.split("→") if t.strip()]
+    return tokens
+
+
+def _build_structure_guidance(tokens: list[str]) -> str:
+    """
+    Build a prompt snippet telling Claude what NOT to treat as topic headings.
+    """
+    if not tokens:
+        return ""
+    # Elements that typically appear WITHIN a topic but are not topics themselves
+    non_topic = [t for t in tokens if t not in ("Chapter", "Topic", "Subtopic")]
+    if not non_topic:
+        return ""
+    examples_str = ", ".join(f'"{t}"' for t in non_topic)
+    return (
+        f"\nIMPORTANT — book structure: {' → '.join(tokens)}.\n"
+        f"Within each topic you will find: {', '.join(non_topic)} sections.\n"
+        f"Do NOT list {examples_str} headings as topics — they are sub-sections INSIDE a topic.\n"
+        "Only extract the actual TOPIC headings (e.g. numbered sections like 1.1, 1.2, 2.3)."
+    )
+
+
 # ─── structure detection (TOC) ────────────────────────────────────────────────
 
 def _detect_structure(doc, subject: str = "General", grade: int = 0) -> list[dict]:
@@ -149,7 +233,8 @@ def _detect_structure(doc, subject: str = "General", grade: int = 0) -> list[dic
 
 def _scan_all_topics(doc, ch_page_start: int, ch_page_end: int,
                      chapter_title: str, chapter_number: int,
-                     subject: str = "General", grade: int = 0) -> list[dict]:
+                     subject: str = "General", grade: int = 0,
+                     structure_guidance: str = "") -> list[dict]:
     """
     Scan EVERY page of the chapter in batches of 12 at 0.9× scale using Haiku.
     Merges results across batches so no topic heading is ever missed.
@@ -206,6 +291,7 @@ def _scan_all_topics(doc, ch_page_start: int, ch_page_end: int,
                 "- difficulty_ceiling: L1=recall, L2=explain, L3=apply, L4=analyse, L5=multi-step\n"
                 "- key_concepts: 3-6 core ideas students must learn\n"
                 "- If no topic headings are visible in these pages, return {\"topics\": []}"
+                + structure_guidance
             ),
         })
 
@@ -241,7 +327,8 @@ def _scan_all_topics(doc, ch_page_start: int, ch_page_end: int,
 # ─── exercise extraction (all pages, batched) ─────────────────────────────────
 
 def _extract_exercises(doc, ch_page_start: int, ch_page_end: int,
-                       chapter_title: str, chapter_number: int) -> list[str]:
+                       chapter_title: str, chapter_number: int,
+                       structure_guidance: str = "") -> list[str]:
     """
     Scan ALL chapter pages for Exercise/Practice sections using Haiku at 0.9×.
     Sends pages in batches of 6.
@@ -271,6 +358,7 @@ def _extract_exercises(doc, ch_page_start: int, ch_page_end: int,
                 "If no exercise questions are visible, return {\"exercises\": []}.\n"
                 "Return ONLY valid JSON — no markdown fences:\n"
                 '{"exercises": ["Calculate: (-3) + (-5)", "Find the value of 4 - (-2)"]}'
+                + (f"\nBook structure context: {structure_guidance}" if structure_guidance else "")
             ),
         })
 
@@ -318,7 +406,10 @@ def _extract_native_text(doc, page_start_0: int, page_end_0: int) -> str:
 def _parse_pdf_gen(filepath: str, subject: str = "General", grade: int = 0,
                    progress_callback=None,
                    skip_chapter_numbers: set = None,
-                   cancel_check=None):
+                   cancel_check=None,
+                   toc_chapters: list = None,
+                   structure_guidance: str = "",
+                   chapter_limit_override: int = 0):
     """
     Generator that yields (ch_num, ch_title, ch_ps, ch_pe, ch_chunks) for each
     chapter, one chapter at a time.  Callers can save each chapter immediately
@@ -333,16 +424,37 @@ def _parse_pdf_gen(filepath: str, subject: str = "General", grade: int = 0,
     try:
         total = doc.page_count
         scanned = _is_scanned(doc)
-        chapter_limit = int(os.getenv("CHAPTER_LIMIT", "0"))
+        chapter_limit = chapter_limit_override or int(os.getenv("CHAPTER_LIMIT", "0"))
 
         print(f"  PDF: {total} pages, scanned={scanned}, chapter_limit={chapter_limit or 'none'}")
         print(f"  Models: scan={_SCAN_MODEL}")
+        if structure_guidance:
+            print(f"  Structure guidance active")
 
         _cb = progress_callback or (lambda stage, pct: None)
 
         # ── Chapter structure ──────────────────────────────────────────────────
         toc = doc.get_toc()
         chapters_meta = []
+
+        # Build chapter-number → pre-scanned topics lookup from admin-provided TOC data
+        toc_topics_by_chapter: dict[int, list[dict]] = {}
+        if toc_chapters:
+            for tc in toc_chapters:
+                ch_n = int(tc.get("number", 0))
+                raw_topics = tc.get("topics", [])
+                if ch_n and raw_topics:
+                    toc_topics_by_chapter[ch_n] = [
+                        {
+                            "number": str(t.get("number", f"{ch_n}.{i+1}")),
+                            "title": t.get("title", ""),
+                            "key_concepts": [],
+                            "vocabulary": [],
+                            "difficulty_ceiling": "L3",
+                            "raw_content": "",
+                        }
+                        for i, t in enumerate(raw_topics) if t.get("title")
+                    ]
 
         if len(toc) >= 3:
             for entry in toc:
@@ -351,6 +463,15 @@ def _parse_pdf_gen(filepath: str, subject: str = "General", grade: int = 0,
                     chapters_meta.append({"number": len(chapters_meta) + 1,
                                           "title": title, "page_start": page})
             print(f"  Native TOC: {len(chapters_meta)} chapters")
+        elif toc_chapters:
+            # Use admin-provided TOC scan results for chapter structure too
+            for tc in toc_chapters:
+                chapters_meta.append({
+                    "number": int(tc.get("number", len(chapters_meta) + 1)),
+                    "title": tc.get("title", f"Chapter {len(chapters_meta)+1}"),
+                    "page_start": int(tc.get("page", 1)),
+                })
+            print(f"  Admin TOC scan: {len(chapters_meta)} chapters")
         else:
             print("  No native TOC — using Claude vision for structure...")
             _cb("analysing", 40)
@@ -394,10 +515,17 @@ def _parse_pdf_gen(filepath: str, subject: str = "General", grade: int = 0,
             print(f"  Processing chapter {ch_num}: '{ch_title}' (pp.{ch_ps}-{ch_pe})")
 
             if scanned:
-                topics = _scan_all_topics(doc, ch_ps, ch_pe, ch_title, ch_num,
-                                          subject=subject, grade=grade)
+                # If admin provided TOC topics for this chapter, use them directly
+                if ch_num in toc_topics_by_chapter:
+                    topics = toc_topics_by_chapter[ch_num]
+                    print(f"  Chapter {ch_num}: {len(topics)} topics from TOC (skipping AI scan)")
+                else:
+                    topics = _scan_all_topics(doc, ch_ps, ch_pe, ch_title, ch_num,
+                                              subject=subject, grade=grade,
+                                              structure_guidance=structure_guidance)
                 print(f"  Extracting exercises for chapter {ch_num}...")
-                exercises = _extract_exercises(doc, ch_ps, ch_pe, ch_title, ch_num)
+                exercises = _extract_exercises(doc, ch_ps, ch_pe, ch_title, ch_num,
+                                               structure_guidance=structure_guidance)
                 print(f"  Total exercises found: {len(exercises)}")
             else:
                 raw = _extract_native_text(doc, ch_ps - 1, ch_pe - 1)
@@ -530,6 +658,28 @@ def run_ingestion(book_id: int, filepath: str, db=None):
 
         print(f"\nIngesting book {book_id}: {filepath} | subject={book.subject} grade={book.grade}")
 
+        # ── Read admin-provided TOC and structure settings ─────────────────────
+        toc_chapters = []
+        structure_guidance = ""
+
+        if book.toc_pages:
+            print(f"  Admin TOC pages: {book.toc_pages} — scanning for definitive topic list")
+            try:
+                import fitz as _fitz
+                local_path_for_toc = get_local_path(filepath)
+                _doc_toc = _fitz.open(local_path_for_toc)
+                toc_chapters = _scan_toc(_doc_toc, book.toc_pages,
+                                         subject=book.subject or "General",
+                                         grade=book.grade or 0)
+                _doc_toc.close()
+            except Exception as e:
+                print(f"  TOC scan failed: {e} — will fall back to per-chapter AI scan")
+
+        if book.chapter_structure:
+            tokens = _parse_chapter_structure(book.chapter_structure)
+            structure_guidance = _build_structure_guidance(tokens)
+            print(f"  Chapter structure: {' → '.join(tokens)}")
+
         # ── Checkpoint: find chapters already committed for this book ──────────
         existing_chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
         chapter_map = {ch.chapter_number: ch for ch in existing_chapters}
@@ -564,6 +714,9 @@ def run_ingestion(book_id: int, filepath: str, db=None):
                 progress_callback=lambda stage, pct: set_book_progress(book_id, stage, pct),
                 skip_chapter_numbers=set(chapter_map.keys()),
                 cancel_check=_cancel_check,
+                toc_chapters=toc_chapters,
+                structure_guidance=structure_guidance,
+                chapter_limit_override=book.chapter_limit or 0,
             ):
                 # Create chapter DB record if this is a new chapter
                 if ch_num not in chapter_map:

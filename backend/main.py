@@ -55,14 +55,23 @@ def run_migrations():
     """Apply any pending schema migrations that aren't handled by Alembic."""
     from sqlalchemy import text
     try:
-        # Always run — widening VARCHAR is idempotent and near-instant in Postgres.
-        # The conditional check via information_schema was unreliable (schema path issues).
         with engine.connect() as conn:
+            # Widen topic_number — idempotent
             conn.execute(text(
                 "ALTER TABLE topics ALTER COLUMN topic_number TYPE VARCHAR(200)"
             ))
+            # Add new book fields if they don't exist — idempotent via IF NOT EXISTS
+            conn.execute(text(
+                "ALTER TABLE books ADD COLUMN IF NOT EXISTS toc_pages VARCHAR(20)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE books ADD COLUMN IF NOT EXISTS chapter_structure TEXT"
+            ))
+            conn.execute(text(
+                "ALTER TABLE books ADD COLUMN IF NOT EXISTS chapter_limit INTEGER"
+            ))
             conn.commit()
-            print("Migration: topics.topic_number ensured VARCHAR(200)")
+            print("Migration: schema up to date (toc_pages, chapter_structure, chapter_limit added if missing)")
     except Exception as e:
         print(f"Migration run_migrations failed (non-fatal): {e}")
 
@@ -213,6 +222,9 @@ class InitUploadRequest(BaseModel):
     grade: int
     filename: str
     content_type: str = "application/pdf"
+    toc_pages: Optional[str] = None          # e.g. "3-5"
+    chapter_structure: Optional[str] = None  # e.g. "Chapter → Topic → Example → Exercise"
+    chapter_limit: Optional[int] = None      # limit chapters for test runs
 
 
 # ─── Phase B: Auth Routes ──────────────────────────────────────────────────
@@ -397,6 +409,9 @@ def init_upload(
         ingestion_status="pending",
         upload_stage="uploading",
         upload_progress=0,
+        toc_pages=req.toc_pages.strip() if req.toc_pages else None,
+        chapter_structure=req.chapter_structure.strip() if req.chapter_structure else None,
+        chapter_limit=req.chapter_limit if req.chapter_limit and req.chapter_limit > 0 else None,
     )
     db.add(book)
     db.commit()

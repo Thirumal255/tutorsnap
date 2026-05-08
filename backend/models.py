@@ -82,6 +82,9 @@ class Book(Base):
     topic_count = Column(Integer, default=0)
     upload_stage = Column(String(50), nullable=True)   # uploading|reading|analysing|saving|done|failed
     upload_progress = Column(Integer, default=0)        # 0-100
+    toc_pages = Column(String(20), nullable=True)       # e.g. "3-5" — PDF pages containing the TOC/index
+    chapter_structure = Column(Text, nullable=True)     # e.g. "Chapter → Topic → Example → Exercise"
+    chapter_limit = Column(Integer, nullable=True)      # if set, ingest only first N chapters (for test runs)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     chapters = relationship("Chapter", back_populates="book")

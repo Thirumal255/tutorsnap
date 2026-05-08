@@ -207,6 +207,10 @@ export default function AdminBooks() {
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('Mathematics')
   const [grade, setGrade] = useState(6)
+  const [tocPages, setTocPages] = useState('')
+  const [chapterStructure, setChapterStructure] = useState('')
+  const [chapterLimit, setChapterLimit] = useState('')
+  const [structurePreview, setStructurePreview] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [expanded, setExpanded] = useState({})
@@ -225,6 +229,16 @@ export default function AdminBooks() {
     } catch {}
   }
 
+  function previewStructure() {
+    const raw = chapterStructure.trim()
+    if (!raw) return setStructurePreview(null)
+    const tokens = raw.replace(/-->/g, '→').replace(/->/g, '→')
+      .split('→').map(t => t.trim()).filter(Boolean)
+    const nonTopics = tokens.filter(t => !['chapter','topic','subtopic'].includes(t.toLowerCase()))
+    if (!tokens.length) return setStructurePreview({ error: 'Could not parse — use → to separate elements.' })
+    setStructurePreview({ tokens, nonTopics })
+  }
+
   async function handleUpload() {
     if (!file || !title.trim()) return
     setUploading(true)
@@ -237,12 +251,15 @@ export default function AdminBooks() {
       const initRes = await initUpload({
         title: bookTitle, subject, grade,
         filename: file.name, content_type: 'application/pdf',
+        toc_pages: tocPages.trim() || null,
+        chapter_structure: chapterStructure.trim() || null,
+        chapter_limit: chapterLimit ? parseInt(chapterLimit, 10) : null,
       })
       const { book_id, upload_url, use_signed_url } = initRes.data
 
       if (use_signed_url && upload_url) {
         startJob(book_id, bookTitle)
-        setFile(null); setTitle(''); setUploading(false)
+        setFile(null); setTitle(''); setTocPages(''); setChapterStructure(''); setChapterLimit(''); setStructurePreview(null); setUploading(false)
 
         await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest()
@@ -377,6 +394,81 @@ export default function AdminBooks() {
               {GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
             </select>
           </div>
+        </div>
+
+        {/* TOC pages + Chapter limit row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-[#8892B0] font-semibold mb-1 block">
+              TOC Page Range
+              <span className="text-[#4A5568] font-normal ml-1">(optional — e.g. 3-5)</span>
+            </label>
+            <input
+              placeholder="e.g. 3-5"
+              value={tocPages}
+              onChange={e => setTocPages(e.target.value)}
+              className="blox-input w-full"
+            />
+            <p className="text-xs text-[#4A5568] mt-1">PDF pages that contain the Table of Contents. AI will scan these for the definitive topic list.</p>
+          </div>
+          <div>
+            <label className="text-xs text-[#8892B0] font-semibold mb-1 block">
+              Test Mode — First N Chapters
+              <span className="text-[#4A5568] font-normal ml-1">(optional)</span>
+            </label>
+            <input
+              type="number" min="1" max="50"
+              placeholder="e.g. 5"
+              value={chapterLimit}
+              onChange={e => setChapterLimit(e.target.value)}
+              className="blox-input w-full"
+            />
+            <p className="text-xs text-[#4A5568] mt-1">Leave blank to ingest the full book. Set to 4 or 5 to test first.</p>
+          </div>
+        </div>
+
+        {/* Chapter structure */}
+        <div>
+          <label className="text-xs text-[#8892B0] font-semibold mb-1 block">
+            Chapter Structure
+            <span className="text-[#4A5568] font-normal ml-1">(optional)</span>
+          </label>
+          <div className="flex gap-2 items-start">
+            <div className="flex-1">
+              <textarea
+                rows={2}
+                placeholder="Chapter → Topic → Example → Exercise"
+                value={chapterStructure}
+                onChange={e => { setChapterStructure(e.target.value); setStructurePreview(null) }}
+                className="blox-input w-full resize-none font-mono text-sm"
+              />
+              <p className="text-xs text-[#4A5568] mt-1">
+                Tokens: <span className="text-[#8892B0]">Chapter · Topic · SubTopic · Example · Exercise · Activity · Practice · Review · Summary · Note</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={previewStructure}
+              className="text-xs border border-[#2D2B5A] text-[#8892B0] hover:text-white hover:border-[#00A2FF] rounded-xl px-3 py-2 transition-all whitespace-nowrap mt-0"
+            >
+              Preview ▶
+            </button>
+          </div>
+          {structurePreview && (
+            <div className={`mt-2 rounded-xl px-4 py-3 text-xs ${structurePreview.error ? 'bg-[#FF3333]/10 border border-[#FF3333]/30 text-[#FF6B6B]' : 'bg-[#00A2FF]/10 border border-[#00A2FF]/30'}`}>
+              {structurePreview.error ? structurePreview.error : (
+                <>
+                  <p className="text-[#00A2FF] font-semibold mb-1">✓ Understood as:</p>
+                  <p className="text-white">Structure: <span className="font-mono">{structurePreview.tokens.join(' → ')}</span></p>
+                  {structurePreview.nonTopics.length > 0 && (
+                    <p className="text-[#8892B0] mt-1">
+                      <span className="font-semibold text-[#FFD700]">{structurePreview.nonTopics.join(', ')}</span> headings will NOT be treated as topics — they are sub-sections inside each topic.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div>
