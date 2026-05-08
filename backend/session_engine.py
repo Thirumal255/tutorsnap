@@ -291,6 +291,8 @@ def assess_answer(
         f"Be GENEROUS — recognise correct answers even if brief or informally worded.\n\n"
         f"Return ONLY valid JSON — no markdown, no code fences, no text outside the JSON:\n"
         f'{{"score": 85, "feedback": "...", "off_topic": false}}\n\n'
+        f"IMPORTANT — score must reflect ONLY the correctness of the answer (0-100).\n"
+        f"Do NOT apply any hint tier adjustment to the score — that is handled elsewhere.\n\n"
         f"If off_topic is TRUE:\n"
         f"  - score: 0\n"
         f"  - feedback: warm, playful redirect. Use humour. Make them smile and want to try again.\n"
@@ -301,13 +303,7 @@ def assess_answer(
         f"  - feedback: 1-2 sentences, encouraging, never condescending\n"
         f"  - Celebrate what they got right, even when overall score is low\n"
         f"  - Correct answers: 'Spot on!', 'Exactly right!', 'Perfect!', 'Brilliant!' etc.\n"
-        f"  - Wrong answers: encourage the attempt without revealing the answer\n\n"
-        f"Hint tier weighting (apply to score only, NOT to confidence determination):\n"
-        f"  - hint_tier 0: score unchanged\n"
-        f"  - hint_tier 1: multiply score by 0.9\n"
-        f"  - hint_tier 2: cap score at 79 maximum\n"
-        f"  - hint_tier 3+: cap score at 64 maximum\n"
-        f"Current hint_tier: {hint_tier}"
+        f"  - Wrong answers: encourage the attempt without revealing the answer"
     )
     try:
         raw = call_claude(system, user, max_tokens=400)
