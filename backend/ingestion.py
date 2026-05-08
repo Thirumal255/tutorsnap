@@ -296,134 +296,158 @@ def _extract_native_text(doc, page_start_0: int, page_end_0: int) -> str:
     return text[:4000]
 
 
-# ─── public parse_pdf ──────────────────────────────────────────────────────────
+# ─── parse_pdf (generator + batch) ───────────────────────────────────────────
 
-def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
-              progress_callback=None,
-              skip_chapter_numbers: set = None,
-              cancel_check=None) -> list[dict]:
+def _parse_pdf_gen(filepath: str, subject: str = "General", grade: int = 0,
+                   progress_callback=None,
+                   skip_chapter_numbers: set = None,
+                   cancel_check=None):
+    """
+    Generator that yields (ch_num, ch_title, ch_ps, ch_pe, ch_chunks) for each
+    chapter, one chapter at a time.  Callers can save each chapter immediately
+    after receiving it — this gives true checkpoint resume: if saving fails on
+    chapter N, chapters 1..N-1 are already committed and will be skipped on retry.
+    """
     try:
         doc = fitz.open(filepath)
     except Exception as e:
         raise ValueError(f"Cannot open PDF: {filepath}") from e
 
-    total = doc.page_count
-    scanned = _is_scanned(doc)
-    chapter_limit = int(os.getenv("CHAPTER_LIMIT", "0"))
+    try:
+        total = doc.page_count
+        scanned = _is_scanned(doc)
+        chapter_limit = int(os.getenv("CHAPTER_LIMIT", "0"))
 
-    print(f"  PDF: {total} pages, scanned={scanned}, chapter_limit={chapter_limit or 'none'}")
-    print(f"  Models: scan={_SCAN_MODEL}")
+        print(f"  PDF: {total} pages, scanned={scanned}, chapter_limit={chapter_limit or 'none'}")
+        print(f"  Models: scan={_SCAN_MODEL}")
 
-    _cb = progress_callback or (lambda stage, pct: None)
+        _cb = progress_callback or (lambda stage, pct: None)
 
-    # ── Chapter structure ──────────────────────────────────────────────────────
-    toc = doc.get_toc()
-    chapters_meta = []
+        # ── Chapter structure ──────────────────────────────────────────────────
+        toc = doc.get_toc()
+        chapters_meta = []
 
-    if len(toc) >= 3:
-        for entry in toc:
-            level, title, page = entry
-            if level == 1:
-                chapters_meta.append({"number": len(chapters_meta) + 1,
-                                      "title": title, "page_start": page})
-        print(f"  Native TOC: {len(chapters_meta)} chapters")
-    else:
-        print("  No native TOC — using Claude vision for structure...")
-        _cb("analysing", 40)
-        chapters_meta = _detect_structure(doc, subject=subject, grade=grade)
-
-    if not chapters_meta:
-        print("  Fallback: treating whole PDF as one chapter")
-        chapters_meta = [{"number": 1, "title": subject, "page_start": 1}]
-
-    if chapter_limit > 0:
-        chapters_meta = chapters_meta[:chapter_limit]
-        print(f"  Limiting to {chapter_limit} chapters")
-
-    # Assign page_end
-    for i, ch in enumerate(chapters_meta):
-        ch["page_end"] = chapters_meta[i + 1]["page_start"] - 1 if i + 1 < len(chapters_meta) else total
-        ch["page_start"] = max(1, ch["page_start"])
-
-    _skip = skip_chapter_numbers or set()
-    chunks = []
-    total_chapters = max(len(chapters_meta), 1)
-
-    for ch_idx, ch in enumerate(chapters_meta):
-        ch_num  = ch["number"]
-        ch_title = ch["title"]
-        ch_ps   = ch["page_start"]
-        ch_pe   = ch["page_end"]
-
-        # ── Cancellation check — stop between chapters if admin cancelled ────
-        if cancel_check and cancel_check():
-            print(f"  Cancellation flag detected — stopping before chapter {ch_num}")
-            break
-
-        # ── Checkpoint skip — chapter already fully saved in DB ─────────────
-        if ch_num in _skip:
-            print(f"  Skipping chapter {ch_num} '{ch_title}' (already saved)")
-            continue
-
-        ch_pct = 45 + int(ch_idx / total_chapters * 40)
-        _cb("analysing", ch_pct)
-
-        print(f"  Processing chapter {ch_num}: '{ch_title}' (pp.{ch_ps}-{ch_pe})")
-
-        if scanned:
-            # Full-page topic scan — no topics missed
-            topics = _scan_all_topics(doc, ch_ps, ch_pe, ch_title, ch_num,
-                                      subject=subject, grade=grade)
-            print(f"  Extracting exercises for chapter {ch_num}...")
-            exercises = _extract_exercises(doc, ch_ps, ch_pe, ch_title, ch_num)
-            print(f"  Total exercises found: {len(exercises)}")
+        if len(toc) >= 3:
+            for entry in toc:
+                level, title, page = entry
+                if level == 1:
+                    chapters_meta.append({"number": len(chapters_meta) + 1,
+                                          "title": title, "page_start": page})
+            print(f"  Native TOC: {len(chapters_meta)} chapters")
         else:
-            raw = _extract_native_text(doc, ch_ps - 1, ch_pe - 1)
-            topics = [{
-                "number": f"{ch_num}.1",
-                "title": ch_title,
-                "raw_content": raw,
-                "key_concepts": None,
-                "vocabulary": None,
-                "difficulty_ceiling": None,
-            }]
-            exercises = []
+            print("  No native TOC — using Claude vision for structure...")
+            _cb("analysing", 40)
+            chapters_meta = _detect_structure(doc, subject=subject, grade=grade)
 
-        # Distribute exercises across topics
-        n_topics = max(len(topics), 1)
-        chunk_size = max(1, len(exercises) // n_topics) if exercises else 0
+        if not chapters_meta:
+            print("  Fallback: treating whole PDF as one chapter")
+            chapters_meta = [{"number": 1, "title": subject, "page_start": 1}]
 
-        for t_idx, topic in enumerate(topics):
-            t_num = topic.get("number") or f"{ch_num}.{t_idx + 1}"
-            if exercises and chunk_size:
-                start = t_idx * chunk_size
-                end = start + chunk_size if t_idx < n_topics - 1 else len(exercises)
-                topic_exercises = exercises[start:end]
+        if chapter_limit > 0:
+            chapters_meta = chapters_meta[:chapter_limit]
+            print(f"  Limiting to {chapter_limit} chapters")
+
+        # Assign page_end
+        for i, ch in enumerate(chapters_meta):
+            ch["page_end"] = chapters_meta[i + 1]["page_start"] - 1 if i + 1 < len(chapters_meta) else total
+            ch["page_start"] = max(1, ch["page_start"])
+
+        _skip = skip_chapter_numbers or set()
+        total_chapters = max(len(chapters_meta), 1)
+
+        for ch_idx, ch in enumerate(chapters_meta):
+            ch_num   = ch["number"]
+            ch_title = ch["title"]
+            ch_ps    = ch["page_start"]
+            ch_pe    = ch["page_end"]
+
+            # ── Cancellation check ───────────────────────────────────────────
+            if cancel_check and cancel_check():
+                print(f"  Cancellation flag detected — stopping before chapter {ch_num}")
+                break
+
+            # ── Checkpoint skip — chapter already committed in DB ────────────
+            if ch_num in _skip:
+                print(f"  Skipping chapter {ch_num} '{ch_title}' (already saved)")
+                continue
+
+            ch_pct = 45 + int(ch_idx / total_chapters * 40)
+            _cb("analysing", ch_pct)
+
+            print(f"  Processing chapter {ch_num}: '{ch_title}' (pp.{ch_ps}-{ch_pe})")
+
+            if scanned:
+                topics = _scan_all_topics(doc, ch_ps, ch_pe, ch_title, ch_num,
+                                          subject=subject, grade=grade)
+                print(f"  Extracting exercises for chapter {ch_num}...")
+                exercises = _extract_exercises(doc, ch_ps, ch_pe, ch_title, ch_num)
+                print(f"  Total exercises found: {len(exercises)}")
             else:
-                topic_exercises = []
+                raw = _extract_native_text(doc, ch_ps - 1, ch_pe - 1)
+                topics = [{
+                    "number": f"{ch_num}.1",
+                    "title": ch_title,
+                    "raw_content": raw,
+                    "key_concepts": None,
+                    "vocabulary": None,
+                    "difficulty_ceiling": None,
+                }]
+                exercises = []
 
-            # Always guarantee lists so structure_topic never falls back to a Claude call
-            kc = topic.get("key_concepts")
-            vc = topic.get("vocabulary")
-            chunks.append({
-                "chapter_number": ch_num,
-                "chapter_title": ch_title,
-                "chapter_page_start": ch_ps,
-                "chapter_page_end": ch_pe,
-                "topic_number": str(t_num),
-                "topic_title": topic.get("title", ch_title),
-                "page_start": ch_ps,
-                "page_end": ch_pe,
-                "raw_text": (topic.get("raw_content") or "")[:4000],
-                # Use list or None — but for scanned PDFs force an empty list rather than None
-                # so structure_topic skips the Claude fallback call entirely
-                "_key_concepts": kc if isinstance(kc, list) else [],
-                "_vocabulary": vc if isinstance(vc, list) else [],
-                "_difficulty_ceiling": topic.get("difficulty_ceiling") or "L3",
-                "_exercises": topic_exercises,
-            })
+            # Distribute exercises across topics
+            n_topics = max(len(topics), 1)
+            chunk_size = max(1, len(exercises) // n_topics) if exercises else 0
 
-    doc.close()
+            ch_chunks = []
+            for t_idx, topic in enumerate(topics):
+                t_num = topic.get("number") or f"{ch_num}.{t_idx + 1}"
+                if exercises and chunk_size:
+                    start = t_idx * chunk_size
+                    end = start + chunk_size if t_idx < n_topics - 1 else len(exercises)
+                    topic_exercises = exercises[start:end]
+                else:
+                    topic_exercises = []
+
+                kc = topic.get("key_concepts")
+                vc = topic.get("vocabulary")
+                ch_chunks.append({
+                    "chapter_number": ch_num,
+                    "chapter_title": ch_title,
+                    "chapter_page_start": ch_ps,
+                    "chapter_page_end": ch_pe,
+                    "topic_number": str(t_num),
+                    "topic_title": topic.get("title", ch_title),
+                    "page_start": ch_ps,
+                    "page_end": ch_pe,
+                    "raw_text": (topic.get("raw_content") or "")[:4000],
+                    # Force list (even empty) so structure_topic skips Claude fallback
+                    "_key_concepts": kc if isinstance(kc, list) else [],
+                    "_vocabulary": vc if isinstance(vc, list) else [],
+                    "_difficulty_ceiling": topic.get("difficulty_ceiling") or "L3",
+                    "_exercises": topic_exercises,
+                })
+
+            # Yield this chapter's data — caller saves immediately
+            yield ch_num, ch_title, ch_ps, ch_pe, ch_chunks
+
+    finally:
+        doc.close()
+
+
+def parse_pdf(filepath: str, subject: str = "General", grade: int = 0,
+              progress_callback=None,
+              skip_chapter_numbers: set = None,
+              cancel_check=None) -> list[dict]:
+    """
+    Batch wrapper around _parse_pdf_gen — returns all chunks at once.
+    Kept for backward compatibility with any direct callers.
+    run_ingestion uses _parse_pdf_gen directly for per-chapter checkpoint saves.
+    """
+    chunks = []
+    for _, _, _, _, ch_chunks in _parse_pdf_gen(
+        filepath, subject, grade, progress_callback, skip_chapter_numbers, cancel_check
+    ):
+        chunks.extend(ch_chunks)
     return chunks
 
 
@@ -480,7 +504,7 @@ def run_ingestion(book_id: int, filepath: str, db=None):
             print(f"Book {book_id} not found")
             return
 
-        # Only reset to processing if not already cancelled (shouldn't happen, but guard)
+        # Only reset to processing if not already cancelled
         if book.ingestion_status != "failed":
             book.ingestion_status = "processing"
             book.upload_stage = "reading"
@@ -489,7 +513,7 @@ def run_ingestion(book_id: int, filepath: str, db=None):
 
         print(f"\nIngesting book {book_id}: {filepath} | subject={book.subject} grade={book.grade}")
 
-        # ── Checkpoint: find chapters already saved for this book ─────────────
+        # ── Checkpoint: find chapters already committed for this book ──────────
         existing_chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
         chapter_map = {ch.chapter_number: ch for ch in existing_chapters}
         topic_count = sum(
@@ -498,7 +522,7 @@ def run_ingestion(book_id: int, filepath: str, db=None):
         )
         if chapter_map:
             print(f"  Checkpoint resume: {len(chapter_map)} chapters already saved, "
-                  f"{topic_count} topics — skipping those chapters")
+                  f"{topic_count} topics — will skip those chapters entirely")
 
         def _cancel_check():
             db.refresh(book)
@@ -508,82 +532,65 @@ def run_ingestion(book_id: int, filepath: str, db=None):
         set_book_progress(book_id, "reading", 35)
 
         try:
-            chunks = parse_pdf(
+            # ── Stream one chapter at a time: scan → commit → next ─────────────
+            # _parse_pdf_gen yields (ch_num, ch_title, ch_ps, ch_pe, ch_chunks) for
+            # each chapter as soon as its AI scan completes.  We save immediately,
+            # so every committed chapter is a checkpoint.  On retry, skip_chapter_numbers
+            # causes the generator to skip those chapters' expensive AI work entirely.
+            for ch_num, ch_title, ch_ps, ch_pe, ch_chunks in _parse_pdf_gen(
                 local_path,
                 subject=book.subject or "General",
                 grade=book.grade or 0,
                 progress_callback=lambda stage, pct: set_book_progress(book_id, stage, pct),
                 skip_chapter_numbers=set(chapter_map.keys()),
                 cancel_check=_cancel_check,
-            )
+            ):
+                # Create chapter DB record if this is a new chapter
+                if ch_num not in chapter_map:
+                    chapter = Chapter(
+                        book_id=book_id,
+                        chapter_number=ch_num,
+                        title=ch_title,
+                        page_start=ch_ps,
+                        page_end=ch_pe,
+                    )
+                    db.add(chapter)
+                    db.flush()   # get the chapter id within the transaction
+                    chapter_map[ch_num] = chapter
+                    print(f"  Creating chapter {ch_num}: {ch_title} ({len(ch_chunks)} topics)")
+
+                ch_id = chapter_map[ch_num].id
+
+                # Insert all topics for this chapter
+                for chunk in ch_chunks:
+                    structured = structure_topic(chunk, book.subject, book.grade)
+                    db.add(Topic(
+                        chapter_id=ch_id,
+                        topic_number=(chunk["topic_number"] or "")[:200],
+                        title=(chunk["topic_title"] or "")[:300],
+                        key_concepts=structured.get("key_concepts") or [],
+                        vocabulary=structured.get("vocabulary") or [],
+                        exercises=chunk.get("_exercises") or None,
+                        difficulty_ceiling=structured.get("difficulty_ceiling") or "L3",
+                        raw_content=chunk["raw_text"],
+                        page_start=chunk["page_start"],
+                        page_end=chunk["page_end"],
+                    ))
+                    topic_count += 1
+
+                # Commit after each chapter — this IS the checkpoint
+                db.commit()
+                print(f"  Saved chapter {ch_num}: {len(ch_chunks)} topics committed")
+                set_book_progress(book_id, "saving", min(97, 85 + len(chapter_map)))
+
         finally:
             cleanup_temp(local_path)
 
-        # Check if cancelled during scanning phase
+        # Check if cancelled mid-stream (generator exited early via cancel_check)
         db.refresh(book)
         if book.ingestion_status == "failed":
-            print("  Ingestion cancelled during PDF scanning — partial data preserved in DB")
+            print("  Ingestion cancelled — partial data preserved in DB")
             return
-
-        print(f"  Parsed {len(chunks)} new topic chunks (plus {len(chapter_map)} existing chapters)")
-        set_book_progress(book_id, "saving", 85)
-
-        # ── Group chunks by chapter so we commit once per chapter, not per topic ──
-        # This cuts DB round trips from O(topics) → O(chapters) and avoids
-        # flooding the connection pool with set_book_progress calls.
-        from collections import defaultdict
-        chunks_by_chapter: dict = defaultdict(list)
-        for chunk in chunks:
-            chunks_by_chapter[chunk["chapter_number"]].append(chunk)
-
-        new_chapters = sorted(chunks_by_chapter.keys())
-        total_new_chapters = max(len(new_chapters), 1)
-
-        for ch_idx, ch_num in enumerate(new_chapters):
-            ch_chunks = chunks_by_chapter[ch_num]
-
-            # Create chapter record if not already in map (from existing DB data)
-            if ch_num not in chapter_map:
-                first = ch_chunks[0]
-                chapter = Chapter(
-                    book_id=book_id,
-                    chapter_number=ch_num,
-                    title=first["chapter_title"],
-                    page_start=first["chapter_page_start"],
-                    page_end=first["chapter_page_end"],
-                )
-                db.add(chapter)
-                db.flush()   # get the chapter id without a full commit
-                chapter_map[ch_num] = chapter
-                print(f"  Creating chapter {ch_num}: {first['chapter_title']} ({len(ch_chunks)} topics)")
-
-            ch_id = chapter_map[ch_num].id
-
-            # Add all topics for this chapter in one transaction
-            for chunk in ch_chunks:
-                structured = structure_topic(chunk, book.subject, book.grade)
-                topic_exercises = chunk.get("_exercises") or []
-                db.add(Topic(
-                    chapter_id=ch_id,
-                    topic_number=(chunk["topic_number"] or "")[:200],  # guard against VARCHAR overflow
-                    title=(chunk["topic_title"] or "")[:300],
-                    key_concepts=structured.get("key_concepts") or [],
-                    vocabulary=structured.get("vocabulary") or [],
-                    exercises=topic_exercises or None,
-                    difficulty_ceiling=structured.get("difficulty_ceiling") or "L3",
-                    raw_content=chunk["raw_text"],
-                    page_start=chunk["page_start"],
-                    page_end=chunk["page_end"],
-                ))
-                topic_count += 1
-
-            # One commit per chapter (was: one commit per topic)
-            db.commit()
-            print(f"  Saved chapter {ch_num}: {len(ch_chunks)} topics committed")
-
-            # One progress update per chapter (was: one per topic)
-            save_pct = 85 + int((ch_idx + 1) / total_new_chapters * 12)
-            set_book_progress(book_id, "saving", min(97, save_pct))
 
         book.ingestion_status = "done"
         book.chapter_count = len(chapter_map)
