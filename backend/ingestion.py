@@ -565,8 +565,8 @@ def run_ingestion(book_id: int, filepath: str, db=None):
                 topic_exercises = chunk.get("_exercises") or []
                 db.add(Topic(
                     chapter_id=ch_id,
-                    topic_number=chunk["topic_number"],
-                    title=chunk["topic_title"],
+                    topic_number=(chunk["topic_number"] or "")[:200],  # guard against VARCHAR overflow
+                    title=(chunk["topic_title"] or "")[:300],
                     key_concepts=structured.get("key_concepts") or [],
                     vocabulary=structured.get("vocabulary") or [],
                     exercises=topic_exercises or None,

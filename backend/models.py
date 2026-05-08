@@ -107,7 +107,7 @@ class Topic(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     chapter_id = Column(Integer, ForeignKey("chapters.id"), nullable=False)
-    topic_number = Column(String(20), nullable=True)
+    topic_number = Column(String(200), nullable=True)
     title = Column(String(300), nullable=False)
     key_concepts = Column(JSON, nullable=True)
     vocabulary = Column(JSON, nullable=True)
