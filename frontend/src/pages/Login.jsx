@@ -60,9 +60,12 @@ export default function Login() {
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth')
 
-      // Step 1 – initialise
+      // Step 1 – initialise (pass clientId explicitly to bypass strings.xml lookup)
       try {
-        await GoogleAuth.initialize()
+        await GoogleAuth.initialize({
+          clientId: '322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com',
+          scopes: ['profile', 'email'],
+        })
       } catch (e) {
         setError(`[init] ${e?.message || JSON.stringify(e)}`)
         return

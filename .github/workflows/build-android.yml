@@ -60,6 +60,14 @@ jobs:
         working-directory: frontend/android
         run: ./gradlew assembleDebug --no-daemon
 
+      - name: Verify APK signing certificate SHA-1
+        run: |
+          APK=frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          echo "=== APK Signing Certificate ==="
+          $ANDROID_SDK_ROOT/build-tools/$(ls $ANDROID_SDK_ROOT/build-tools | tail -1)/apksigner verify --print-certs "$APK" | grep -E "SHA-1|SHA1|signer"
+          echo "=== Keystore SHA-1 used by CI ==="
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep "SHA1:"
+
       - name: Rename APK
         run: mv frontend/android/app/build/outputs/apk/debug/app-debug.apk frontend/android/app/build/outputs/apk/debug/StudyBlox.apk
 
