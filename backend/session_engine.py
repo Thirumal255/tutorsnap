@@ -57,6 +57,39 @@ LEVEL_ORDER = ["L1", "L2", "L3", "L4", "L5"]
 
 _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+# Model tiers — Sonnet for quality-critical calls, Haiku for speed-critical ones
+_SONNET = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+_HAIKU  = os.getenv("CLAUDE_HAIKU_MODEL", "claude-haiku-4-5-20250929")
+
+# Level cap: after this many questions stuck at the same level, trigger a concept reset
+_LEVEL_CAP = 5
+
+# ── LaTeX cleanup ──────────────────────────────────────────────────────────
+# Textbook PDFs often embed LaTeX that looks broken in plain-text chat.
+_LATEX_SUBS = [
+    (r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1/\2'),   # \frac{a}{b} → a/b
+    (r'\\sqrt\{([^}]+)\}',             r'√(\1)'),    # \sqrt{x}    → √(x)
+    (r'\^\{([^}]+)\}',                 r'^\1'),       # ^{n}        → ^n
+    (r'_\{([^}]+)\}',                  r'_\1'),       # _{n}        → _n
+    (r'\\times',  '×'), (r'\\div',    '÷'),
+    (r'\\leq',    '≤'), (r'\\geq',   '≥'),
+    (r'\\neq',    '≠'), (r'\\approx','≈'),
+    (r'\\cdot',   '·'), (r'\\pm',    '±'),
+    (r'\\[a-zA-Z]+\{([^}]*)\}', r'\1'),              # \cmd{x}     → x
+    (r'\\[a-zA-Z]+',             ''),                 # remaining \cmd → ''
+    (r'\$+',                     ''),                 # $ delimiters
+    (r'\s{2,}',                  ' '),                # collapse whitespace
+]
+
+
+def strip_latex(text: str) -> str:
+    """Remove LaTeX markup from textbook-extracted strings."""
+    if not text:
+        return text
+    for pattern, repl in _LATEX_SUBS:
+        text = re.sub(pattern, repl, text)
+    return text.strip()
+
 
 def get_next_level(current: str) -> str:
     idx = LEVEL_ORDER.index(current) if current in LEVEL_ORDER else 0
@@ -72,7 +105,7 @@ def build_topic_context(topic) -> str:
     chapter_title = topic.chapter.title if topic.chapter else ""
     key_concepts = ", ".join(topic.key_concepts or [])
     vocabulary = ", ".join(topic.vocabulary or [])
-    raw = (topic.raw_content or "")[:1500]
+    raw = strip_latex((topic.raw_content or "")[:1500])
 
     # Pull grade/subject from the book via chapter → book relationship
     book = getattr(topic.chapter, "book", None) if topic.chapter else None
@@ -82,8 +115,9 @@ def build_topic_context(topic) -> str:
     exercises_section = ""
     exercises = getattr(topic, "exercises", None) or []
     if exercises:
-        ex_lines = "\n".join(f"  - {q}" for q in exercises[:20])
-        exercises_section = f"\nReal exercise questions from the textbook (use these as inspiration):\n{ex_lines}\n"
+        clean_exercises = [strip_latex(q) for q in exercises[:20] if q]
+        ex_lines = "\n".join(f"  - {q}" for q in clean_exercises)
+        exercises_section = f"\nReal exercise questions from the textbook:\n{ex_lines}\n"
 
     return (
         f"Subject: {subject}\n"
@@ -106,10 +140,11 @@ def get_subject_label(topic) -> str:
     return f"Grade {grade} {subject}"
 
 
-def call_claude(system: str, user: str, max_tokens: int = 800) -> str:
+def call_claude(system: str, user: str, max_tokens: int = 800, model: str = None) -> str:
+    m = model or _SONNET
     try:
         response = _client.messages.create(
-            model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
+            model=m,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
@@ -119,7 +154,7 @@ def call_claude(system: str, user: str, max_tokens: int = 800) -> str:
         raise RuntimeError(f"Claude API call failed: {e}") from e
 
 
-def generate_question(topic, level: str, previous_questions: list[str]) -> dict:
+def generate_question(topic, level: str, previous_questions: list[str], recent_formats: list[str] = None) -> dict:
     """Generate a question and return a dict with question, expected_key_points, answer_format."""
     subject_label = get_subject_label(topic)
     system = (
@@ -171,6 +206,17 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> dict:
             "Generate a question based strictly on the textbook content above.\n"
         )
 
+    # Answer-format variety enforcement
+    recent = recent_formats or []
+    if len(recent) >= 2 and len(set(recent[-2:])) == 1:
+        avoid_format = recent[-1]
+        variety_rule = (
+            f"\nVARIETY RULE — the last two questions were both '{avoid_format}' format. "
+            f"Choose a DIFFERENT answer_format this time to keep the session varied.\n"
+        )
+    else:
+        variety_rule = ""
+
     # Level-specific question starter guidance
     LEVEL_STARTERS = {
         "L1": (
@@ -207,34 +253,60 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> dict:
         ),
     }
 
+    few_shot = """
+FEW-SHOT EXAMPLES — study these carefully, they show the expected output format:
+
+Example A — L1 recall, rule format:
+{"question": "📘 Prime Numbers — State the definition of a prime number.",
+ "expected_key_points": ["exactly two factors", "divisible only by 1 and itself"],
+ "answer_format": "rule"}
+
+Example B — L3 application, working format:
+{"question": "📘 LCM and HCF — Find the LCM of 8 and 12. Show your steps.",
+ "expected_key_points": ["24"],
+ "answer_format": "working"}
+
+Example C — L2 comprehension, explanation format:
+{"question": "📘 Fractions — Explain in one or two sentences what a proper fraction is.",
+ "expected_key_points": ["numerator smaller than denominator", "value less than 1"],
+ "answer_format": "explanation"}
+
+Example D — MCQ converted to open-ended, yes_no format:
+Original MCQ: "Which is NOT a prime? A) 7  B) 11  C) 15  D) 17"
+Converted: {"question": "📘 Prime Numbers — True or false: 15 is a prime number? Explain your answer briefly.",
+            "expected_key_points": ["false", "divisible by 3 and 5", "more than two factors"],
+            "answer_format": "yes_no"}
+
+Example E — L4 analysis, explanation format:
+{"question": "📘 Divisibility Rules — A student says that 132 is divisible by 9 because 1 + 3 + 2 = 6. Is this correct? Explain why or why not.",
+ "expected_key_points": ["incorrect", "digits must add to 9 or multiple of 9", "6 is not divisible by 9"],
+ "answer_format": "explanation"}
+"""
+
     user = (
         f"Generate exactly ONE practice question at difficulty level {level}.\n"
         f"Level {level} means: {LEVEL_GUIDE[level]}\n\n"
         f"{exercise_instruction}\n"
         f"LEVEL GUIDANCE:\n{LEVEL_STARTERS.get(level, '')}\n\n"
+        f"{variety_rule}"
         f"QUESTION CLARITY RULES — make the answer type obvious from the wording:\n"
         f"  number      → start with 'Calculate', 'Find', 'What is the value of'\n"
         f"  yes_no      → start with 'True or false:' or end with '— Yes or No?'\n"
         f"  rule        → start with 'State the rule for', 'Define', 'Complete this statement:'\n"
         f"  explanation → start with 'Explain in one or two sentences' or 'Describe in your own words'\n"
         f"  working     → end with 'Show all your working.' or 'Show your steps.'\n\n"
-        f"TOPIC ANCHOR — the question MUST begin with a one-line anchor so the student knows the context:\n"
+        f"TOPIC ANCHOR — the question MUST begin with a one-line anchor:\n"
         f"  Format: '📘 [Topic name] — [the actual question]'\n"
-        f"  Example: '📘 Divisibility Rules — State the divisibility rule for 9.'\n"
-        f"  Example: '📘 LCM and HCF — Find the HCF of 36 and 48. Show your steps.'\n\n"
+        f"  Example: '📘 Divisibility Rules — State the divisibility rule for 9.'\n\n"
         f"The student can only see the chat — they do NOT have the textbook open.\n"
         f"Every question must be fully self-contained (include all given values and context).\n"
         f"Do NOT repeat any of these previous questions: {prev}\n\n"
         f"After composing the question, also determine:\n"
         f"1. expected_key_points — 2-5 short strings capturing what a correct answer MUST contain.\n"
         f"   Write these as a student would naturally say them, NOT as a textbook definition.\n"
-        f"   Examples:\n"
-        f"   - 'State the divisibility rule for 5' → [\"ends in 0 or 5\", \"last digit 0 or 5\"]\n"
-        f"   - 'Is 21 divisible by 3?' → [\"yes\", \"digits add to 3\"]\n"
-        f"   - 'Find the LCM of 12 and 18' → [\"36\"]\n"
-        f"   - 'Explain what LCM means' → [\"smallest multiple\", \"common to both numbers\"]\n"
         f"   Keep each point short — a student partial match should still score it.\n\n"
         f"2. answer_format — ONE of: \"number\", \"yes_no\", \"rule\", \"explanation\", \"working\"\n\n"
+        f"{few_shot}\n"
         f"Return ONLY valid JSON — no markdown, no code fences, no text before or after:\n"
         f'{{"question": "...", "expected_key_points": ["...", "..."], "answer_format": "..."}}'
     )
@@ -347,7 +419,7 @@ def assess_answer(
         f"Apply the FORMAT RULE strictly.\n"
         f"Be GENEROUS — recognise correct answers even if brief or informally worded.\n\n"
         f"Return ONLY valid JSON — no markdown, no code fences, no text outside the JSON:\n"
-        f'{{"score": 85, "feedback": "...", "off_topic": false}}\n\n'
+        f'{{"score": 85, "feedback": "...", "off_topic": false, "missed_key_points": []}}\n\n'
         f"IMPORTANT — score must reflect ONLY the correctness of the answer (0-100).\n"
         f"Do NOT apply any hint tier adjustment to the score — that is handled elsewhere.\n\n"
         f"If off_topic is TRUE:\n"
@@ -359,7 +431,7 @@ def assess_answer(
         f"If off_topic is FALSE:\n"
         f"  - feedback: 1-2 sentences max, warm and encouraging, never condescending\n"
         f"  - CORRECT answers (score 80+): celebrate clearly — 'Spot on!', 'Exactly!', 'Perfect!', 'Brilliant!'\n"
-        f"  - PARTIALLY correct (score 50-79): name what they got right, then point at the gap\n"
+        f"  - PARTIALLY correct (score 50-79): name what they got right, then point at the gap without revealing the answer\n"
         f"      ✓ Good: 'You're right that it involves multiples — but check what *least* common means.'\n"
         f"      ✗ Bad:  'Not quite, try again!' — too vague, student learns nothing\n"
         f"  - WRONG answers (score < 50): name specifically what is off (not the answer itself)\n"
@@ -367,21 +439,27 @@ def assess_answer(
         f"      ✓ Good: 'You've found a common multiple, but is it the *smallest* one?'\n"
         f"      ✗ Bad:  'Keep trying!' — gives no direction\n"
         f"  - NEVER reveal the correct answer in feedback — that is the hint system's job\n"
-        f"  - NEVER say 'I can see you tried' or 'Good effort' for clearly wrong answers — be honest but kind"
+        f"  - NEVER say 'Good effort' or 'I can see you tried' for clearly wrong answers — be honest but kind\n\n"
+        f"Also return missed_key_points: list the reference key points the student's answer did NOT address.\n"
+        f"  - Leave as [] if all points covered, or if off_topic is true, or if there are no reference points.\n"
+        f"  - Example: reference=[\"digits add to 9\",\"last digit 0 or 5\"], student said only last digit rule → missed=[\"digits add to 9\"]"
     )
     try:
-        raw = call_claude(system, user, max_tokens=400)
+        raw = call_claude(system, user, max_tokens=450, model=_SONNET)
         cleaned = re.sub(r"```[a-z]*\n?", "", raw).strip()
         data = json.loads(cleaned)
         raw_score = int(data.get("score", 0))
         feedback = str(data.get("feedback", "Let's try again!"))
         off_topic = bool(data.get("off_topic", False))
+        missed_key_points = list(data.get("missed_key_points") or [])
     except Exception:
-        return {"score": 0, "feedback": "Let's try again!", "confidence_tag": "struggling", "off_topic": False}
+        return {"score": 0, "feedback": "Let's try again!", "confidence_tag": "struggling",
+                "off_topic": False, "missed_key_points": []}
 
     if off_topic:
         # Off-topic answers: don't penalise, just ask them to try the same question again.
-        return {"score": 0, "feedback": feedback, "confidence_tag": "off_topic", "off_topic": True}
+        return {"score": 0, "feedback": feedback, "confidence_tag": "off_topic",
+                "off_topic": True, "missed_key_points": []}
 
     # Confidence tag is derived from RAW score BEFORE hint_tier penalty.
     # Critical: a student who nails the answer after hints must still be marked "confident"
@@ -403,10 +481,12 @@ def assess_answer(
     else:  # hint_tier 3+
         score = min(raw_score, 64)  # shaky ceiling, avoids infinite struggle loop
 
-    return {"score": score, "feedback": feedback, "confidence_tag": confidence_tag, "off_topic": False}
+    return {"score": score, "feedback": feedback, "confidence_tag": confidence_tag,
+            "off_topic": False, "missed_key_points": missed_key_points}
 
 
-def get_hint(topic, question: str, student_answer: str, hint_tier: int) -> str:
+def get_hint(topic, question: str, student_answer: str, hint_tier: int,
+             missed_key_points: list = None) -> str:
     subject_label = get_subject_label(topic)
     system = (
         f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
@@ -418,13 +498,24 @@ def get_hint(topic, question: str, student_answer: str, hint_tier: int) -> str:
         f"{build_topic_context(topic)}"
     )
 
+    # Sharpen tier-1 and tier-2 hints using the specific gaps the grader found
+    missed_section = ""
+    if missed_key_points:
+        missed_section = (
+            f"\nThe grader identified these SPECIFIC GAPS in the student's answer — "
+            f"address these directly (without revealing the answer):\n"
+            + "\n".join(f"  - Missing: {p}" for p in missed_key_points)
+            + "\n"
+        )
+
     if hint_tier == 1:
         tier_instruction = (
             f"The student got this question wrong and needs a gentle nudge.\n"
             f"QUESTION THEY WERE ASKED: {question}\n"
-            f"THEIR INCORRECT ANSWER: {student_answer}\n\n"
-            f"Give a Tier 1 hint: a conceptual recall nudge.\n"
-            f"- Identify what is specifically wrong or missing in their answer\n"
+            f"THEIR INCORRECT ANSWER: {student_answer}\n"
+            f"{missed_section}\n"
+            f"Give a Tier 1 hint: a targeted conceptual nudge.\n"
+            f"- Address the specific gap identified above (if any), otherwise identify what is wrong\n"
             f"- Remind them of the relevant concept WITHOUT giving structure or steps\n"
             f"- Do NOT show any worked examples\n"
             f"- Do NOT break the problem into steps\n"
@@ -473,7 +564,9 @@ def get_hint(topic, question: str, student_answer: str, hint_tier: int) -> str:
             f"- This is their last chance before we move to a full concept explanation"
         )
 
-    return call_claude(system, tier_instruction, max_tokens=600)
+    # Haiku is fast enough for guidance hints (tiers 1-3); Sonnet for heavy scaffolding (4-5)
+    hint_model = _HAIKU if hint_tier <= 3 else _SONNET
+    return call_claude(system, tier_instruction, max_tokens=600, model=hint_model)
 
 
 def get_concept_explanation(topic, question: str) -> str:
@@ -513,11 +606,22 @@ def get_session_summary(session, topic, turns: list) -> str:
         f"4. Encourage them to keep going\n\n"
         f"Keep it warm, specific, and age-appropriate for an 11-13 year old."
     )
-    return call_claude(system, user, max_tokens=300)
+    return call_claude(system, user, max_tokens=300, model=_HAIKU)
 
 
-def determine_next_action(session, confidence_tag: str, topic) -> dict:
-    # Off-topic answers: don't penalise, just ask them to try the same question again
+def determine_next_action(session, confidence_tag: str, topic, raw_score: int = 0) -> dict:
+    """
+    Decide what happens next after a student submits an answer.
+
+    Improvements vs original:
+    - Fast advancement: a perfect no-hint answer (raw_score >= 90, hint_tier == 0) counts
+      as 2 consecutive confident answers, so the student advances immediately.
+    - Level cap: after _LEVEL_CAP questions at the same level without advancing, a concept
+      reset is triggered automatically rather than letting the student loop forever.
+    """
+    lqc = getattr(session, 'level_question_count', 0) or 0
+
+    # Off-topic: retry the same question, no penalties
     if confidence_tag == "off_topic":
         return {
             "action": "retry_question",
@@ -526,7 +630,10 @@ def determine_next_action(session, confidence_tag: str, topic) -> dict:
         }
 
     if confidence_tag == "confident":
-        session.consecutive_confident += 1
+        # Fast advancement: perfect answer with no hints counts double
+        clean_run = (raw_score >= 90 and session.hint_tier == 0)
+        session.consecutive_confident += 2 if clean_run else 1
+
         if session.consecutive_confident >= 2:
             if session.current_level == topic.difficulty_ceiling:
                 return {
@@ -540,6 +647,7 @@ def determine_next_action(session, confidence_tag: str, topic) -> dict:
                 session.consecutive_confident = 0
                 session.hint_tier = 0
                 session.concept_reset_done = False
+                session.level_question_count = 0   # reset cap for new level
                 return {
                     "action": "advance_level",
                     "new_level": new_level,
@@ -548,6 +656,7 @@ def determine_next_action(session, confidence_tag: str, topic) -> dict:
         else:
             session.hint_tier = 0
             session.concept_reset_done = False
+            session.level_question_count = lqc + 1
             return {
                 "action": "next_question",
                 "new_level": session.current_level,
@@ -558,6 +667,18 @@ def determine_next_action(session, confidence_tag: str, topic) -> dict:
         session.consecutive_confident = 0
         session.hint_tier = 0
         session.concept_reset_done = False
+        new_lqc = lqc + 1
+        session.level_question_count = new_lqc
+
+        # Level cap: too many shaky/struggling attempts at this level → concept reset
+        if new_lqc >= _LEVEL_CAP and not session.concept_reset_done:
+            session.concept_reset_done = True
+            session.level_question_count = 0
+            return {
+                "action": "level_cap_reset",
+                "new_level": session.current_level,
+                "show_hint_button": False,
+            }
         return {
             "action": "next_question",
             "new_level": session.current_level,
@@ -566,6 +687,18 @@ def determine_next_action(session, confidence_tag: str, topic) -> dict:
 
     else:  # struggling
         session.consecutive_confident = 0
+        new_lqc = lqc + 1
+        session.level_question_count = new_lqc
+
+        # Level cap: too many struggling attempts → concept reset
+        if new_lqc >= _LEVEL_CAP and not session.concept_reset_done:
+            session.concept_reset_done = True
+            session.level_question_count = 0
+            return {
+                "action": "level_cap_reset",
+                "new_level": session.current_level,
+                "show_hint_button": False,
+            }
         return {
             "action": "show_hint_button",
             "new_level": session.current_level,

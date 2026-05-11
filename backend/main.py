@@ -78,6 +78,12 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS answer_format VARCHAR(30)"
             ))
+            conn.execute(text(
+                "ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS missed_key_points TEXT"
+            ))
+            conn.execute(text(
+                "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS level_question_count INTEGER DEFAULT 0"
+            ))
             conn.commit()
             print("Migration: schema up to date (session_turns.expected_key_points, answer_format added if missing)")
     except Exception as e:
@@ -715,7 +721,7 @@ def start_session(
                       .order_by(SessionTurn.created_at.desc()).limit(10).all())
         previous_questions = [t.question_text for t in prev_turns]
 
-    q = generate_question(topic, start_level, previous_questions)
+    q = generate_question(topic, start_level, previous_questions, recent_formats=[])
     db.add(SessionTurn(
         session_id=session.id, turn_number=1,
         question_text=q["question"], level=start_level,
@@ -770,9 +776,13 @@ def submit_answer(
     current_turn.assessment_score = assessment["score"]
     current_turn.confidence_tag = assessment["confidence_tag"]
     current_turn.hint_tier_used = session.hint_tier
+    current_turn.missed_key_points = json.dumps(assessment.get("missed_key_points") or [])
     db.commit()
 
-    next_action = determine_next_action(session, assessment["confidence_tag"], topic)
+    next_action = determine_next_action(
+        session, assessment["confidence_tag"], topic,
+        raw_score=assessment["score"],
+    )
     db.commit()
 
     if next_action["action"] == "session_complete":
@@ -792,15 +802,44 @@ def submit_answer(
 
     next_question = None
     next_answer_format = None
+    concept_explanation = None
     new_turn_number = current_turn.turn_number
+
+    # Helper: last 3 answer formats in this session (for variety enforcement)
+    def _recent_formats():
+        recent = (db.query(SessionTurn.answer_format)
+                  .filter(SessionTurn.session_id == session.id,
+                          SessionTurn.answer_format != None)
+                  .order_by(SessionTurn.turn_number.desc())
+                  .limit(3).all())
+        return [r[0] for r in recent]
 
     if next_action["action"] == "retry_question":
         next_question = current_turn.question_text
         next_answer_format = current_turn.answer_format
+
+    elif next_action["action"] == "level_cap_reset":
+        # Student stuck at this level — give concept explanation then a fresh question
+        concept_explanation = get_concept_explanation(topic, current_turn.question_text)
+        prev_qs = [t.question_text for t in
+                   db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
+        nq = generate_question(topic, session.current_level, prev_qs, _recent_formats())
+        next_question = nq["question"]
+        next_answer_format = nq["answer_format"]
+        new_turn_number = current_turn.turn_number + 1
+        db.add(SessionTurn(
+            session_id=session.id, turn_number=new_turn_number,
+            question_text=nq["question"], level=session.current_level,
+            expected_key_points=json.dumps(nq["expected_key_points"]),
+            answer_format=nq["answer_format"],
+        ))
+        session.questions_asked += 1
+        db.commit()
+
     elif next_action["action"] in ("advance_level", "next_question"):
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-        nq = generate_question(topic, session.current_level, prev_qs)
+        nq = generate_question(topic, session.current_level, prev_qs, _recent_formats())
         next_question = nq["question"]
         next_answer_format = nq["answer_format"]
         new_turn_number = current_turn.turn_number + 1
@@ -819,6 +858,7 @@ def submit_answer(
             "level_label": level_label(session.current_level),
             "show_hint_button": next_action.get("show_hint_button", False),
             "session_complete": False, "next_question": next_question,
+            "concept_explanation": concept_explanation,
             "answer_format": next_answer_format,
             "turn_number": new_turn_number}
 
@@ -846,12 +886,19 @@ def request_hint(
     session.hint_tier += 1
     max_hints = int(_get_setting("max_hint_tiers", os.getenv("MAX_HINT_TIERS", "5"), db))
 
+    # Collect recent formats for variety enforcement when generating the fresh question
+    recent_hint_formats = [r[0] for r in (
+        db.query(SessionTurn.answer_format)
+        .filter(SessionTurn.session_id == session.id, SessionTurn.answer_format != None)
+        .order_by(SessionTurn.turn_number.desc()).limit(3).all()
+    )]
+
     if session.hint_tier > max_hints and not session.concept_reset_done:
         session.concept_reset_done = True
         explanation = get_concept_explanation(topic, current_turn.question_text)
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-        fq = generate_question(topic, session.current_level, prev_qs)
+        fq = generate_question(topic, session.current_level, prev_qs, recent_hint_formats)
         new_turn_number = current_turn.turn_number + 1
         db.add(SessionTurn(
             session_id=session.id, turn_number=new_turn_number,
@@ -872,7 +919,6 @@ def request_hint(
         _update_mastery(db, session, topic, flagged=True)
         session.status = "completed"
         session.ended_at = datetime.utcnow()
-        # Notify parents
         student_user = (db.query(User).filter(User.id == session.user_id).first()
                         if session.user_id else None)
         _notify_parents(db, session, topic, student_user)
@@ -882,8 +928,13 @@ def request_hint(
                 "hint_tier": session.hint_tier, "is_final_hint": True,
                 "is_concept_reset": False, "flagged": True, "fresh_question": None}
 
-    hint_text = get_hint(topic, current_turn.question_text,
-                         current_turn.student_answer or "", session.hint_tier)
+    # Pass missed_key_points so the hint can address the specific gap
+    missed_kp = json.loads(current_turn.missed_key_points) if current_turn.missed_key_points else None
+    hint_text = get_hint(
+        topic, current_turn.question_text,
+        current_turn.student_answer or "", session.hint_tier,
+        missed_key_points=missed_kp,
+    )
     db.commit()
     return {"session_id": session.id, "hint_message": hint_text,
             "hint_tier": session.hint_tier, "is_final_hint": session.hint_tier >= max_hints,

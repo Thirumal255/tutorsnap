@@ -22,6 +22,7 @@ export default function Chat() {
   const [showEndModal, setShowEndModal] = useState(false)
   const [ending, setEnding] = useState(false)
   const [xpGained, setXpGained] = useState(null)
+  const [levelUpBanner, setLevelUpBanner] = useState(null)  // { level, label }
   const [answerFormat, setAnswerFormat] = useState(null)
   const bottomRef = useRef(null)
   const slowTimerRef = useRef(null)
@@ -102,10 +103,26 @@ export default function Chat() {
 
       if (d.action === 'advance_level') {
         showXP('+50 XP')
-        addMessage('buddy', `🎉 Level Up! Let's try something harder!\n\n${d.next_question}`)
+        // Show level-up banner for 2.5 s
+        setLevelUpBanner({ level: d.current_level, label: d.level_label })
+        setTimeout(() => setLevelUpBanner(null), 2500)
+        addMessage('buddy', `🚀 You levelled up to **${d.level_label}**! Here's your next challenge:\n\n${d.next_question}`)
         setHintTier(0)
         setShowHintButton(false)
         if (d.answer_format) setAnswerFormat(d.answer_format)
+      } else if (d.action === 'level_cap_reset') {
+        // Student was stuck — show concept explanation then fresh question
+        if (d.concept_explanation) {
+          addMessage('buddy', `💡 Let me walk you through this concept again:\n\n${d.concept_explanation}`)
+        }
+        if (d.next_question) {
+          setTimeout(() => {
+            addMessage('buddy', d.next_question)
+            if (d.answer_format) setAnswerFormat(d.answer_format)
+          }, 600)
+        }
+        setHintTier(0)
+        setShowHintButton(false)
       } else if (d.action === 'retry_question' && d.next_question) {
         addMessage('buddy', d.next_question)
         setShowHintButton(false)
@@ -252,6 +269,15 @@ export default function Chat() {
       {xpGained && (
         <div className="absolute top-16 right-4 z-50 font-fredoka font-bold text-[#FFD700] text-lg animate-coin-pop pointer-events-none">
           {xpGained} ⭐
+        </div>
+      )}
+
+      {/* Level-up banner */}
+      {levelUpBanner && (
+        <div className="fixed inset-x-0 top-16 z-40 flex justify-center px-4 pointer-events-none">
+          <div className="bg-gradient-to-r from-[#FFD700] to-[#FF6B9D] text-[#0F0F23] font-fredoka font-bold text-base px-6 py-3 rounded-2xl shadow-2xl animate-bounce-in flex items-center gap-2">
+            🚀 LEVEL UP! &nbsp;→&nbsp; {levelUpBanner.label}
+          </div>
         </div>
       )}
 

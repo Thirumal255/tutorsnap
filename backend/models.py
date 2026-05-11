@@ -143,6 +143,7 @@ class Session(Base):
     concept_reset_done = Column(Boolean, default=False)
     flagged_for_review = Column(Boolean, default=False)
     final_confidence = Column(String(20), nullable=True)
+    level_question_count = Column(Integer, default=0)  # questions asked at current level; resets on level-up
 
     topic = relationship("Topic", back_populates="sessions")
     turns = relationship("SessionTurn", back_populates="session")
@@ -163,6 +164,7 @@ class SessionTurn(Base):
     confidence_tag = Column(String(20), nullable=True)
     hint_tier_used = Column(Integer, default=0)
     level = Column(String(5), nullable=True)
+    missed_key_points = Column(Text, nullable=True)   # JSON list — key points student missed; used to sharpen hints
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("Session", back_populates="turns")
