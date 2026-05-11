@@ -134,14 +134,42 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> dict:
     unused_exercises = [q for q in exercises if q not in used]
 
     if unused_exercises:
-        exercise_instruction = (
-            f"PRIORITY: Use one of these real textbook exercise questions (pick the most appropriate for level {level}):\n"
-            + "\n".join(f"  {i+1}. {q}" for i, q in enumerate(unused_exercises[:10]))
-            + "\n\nAdapt the wording slightly if needed to match the level, but keep the mathematical content identical.\n"
-            f"If none of the above exercises suit level {level}, generate a fresh question instead.\n"
+        exercise_pool_label = "UNUSED textbook exercises (not yet asked this session)"
+        exercise_pool = unused_exercises[:10]
+        recycle_note = ""
+    elif exercises:
+        # All exercises used — recycle with varied numbers
+        exercise_pool_label = "textbook exercises to recycle (all have been used — vary the numbers)"
+        exercise_pool = exercises[:10]
+        recycle_note = (
+            "\nBecause all exercises have been used, pick one and change the numbers "
+            "so it feels like a fresh problem. Keep the same concept and structure.\n"
         )
     else:
-        exercise_instruction = "Generate a fresh question based on the textbook content above.\n"
+        exercise_pool_label = None
+        exercise_pool = []
+        recycle_note = ""
+
+    if exercise_pool:
+        exercise_instruction = (
+            f"SOURCE — you MUST base your question on one of these {exercise_pool_label}:\n"
+            + "\n".join(f"  {i+1}. {q}" for i, q in enumerate(exercise_pool))
+            + f"\n{recycle_note}\n"
+            f"Rules for using the exercise:\n"
+            f"  • Pick the exercise whose CONCEPT best suits level {level}.\n"
+            f"  • If the exercise is Multiple Choice (has options A/B/C/D or (a)/(b)/(c)):  \n"
+            f"      – REMOVE all the options entirely.\n"
+            f"      – Rewrite as a direct open-ended question that asks for the answer outright.\n"
+            f"      – Example: 'Which of these is divisible by 3? A) 14 B) 21 C) 25'  \n"
+            f"        → becomes: 'Which of the following numbers is divisible by 3: 14, 21, or 25? State the rule you used.'\n"
+            f"  • You may change numbers/values to create variety, but the concept must stay identical.\n"
+            f"  • Do NOT invent a completely new question — always start from a real exercise above.\n"
+        )
+    else:
+        exercise_instruction = (
+            "No textbook exercises are stored for this topic. "
+            "Generate a question based strictly on the textbook content above.\n"
+        )
 
     user = (
         f"Generate exactly ONE practice question at difficulty level {level}.\n"
@@ -149,35 +177,25 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> dict:
         f"{exercise_instruction}\n"
         f"The question must:\n"
         f"- Be appropriate for a {subject_label} student\n"
-        f"- Be clearly worded and unambiguous about what kind of answer is expected\n"
-        f"- Not repeat any of these previous questions: {prev}\n\n"
-        f"IMPORTANT — question clarity rules by level:\n"
-        f"  L1 (Recall): Ask the student to STATE a fact, rule, or definition.\n"
-        f"    ✓ Good: 'State the divisibility rule for 5.'\n"
-        f"    ✗ Bad:  'Use the rule to find out if 1275 is divisible.' (this mixes recall + application)\n"
-        f"  L2 (Comprehension): Ask the student to EXPLAIN something in their own words.\n"
-        f"    ✓ Good: 'Explain in your own words what LCM means.'\n"
-        f"  L3 (Application): Give a specific problem and ask for a worked answer.\n"
-        f"    ✓ Good: 'Find the LCM of 12 and 18. Show your steps.'\n"
-        f"    ✓ Good: 'Is 1275 divisible by 5? State the rule you used and give your answer.'\n"
-        f"  L4 (Analysis): Ask the student to reason, compare, or spot an error.\n"
-        f"  L5 (Synthesis): Multi-step word problem combining two or more concepts.\n\n"
-        f"The question must make it obvious what a correct answer looks like — "
-        f"never leave the student guessing whether to give a number, a rule, a yes/no, or a worked solution.\n\n"
+        f"- NOT repeat any of these previous questions: {prev}\n\n"
+        f"QUESTION CLARITY RULES — make the answer type unambiguous:\n"
+        f"  number      → start with 'Calculate', 'Find', 'What is the value of'\n"
+        f"  yes_no      → start with 'True or false:' or 'Is ... yes or no?'\n"
+        f"  rule        → start with 'State the rule for', 'Define', 'Complete this statement:'\n"
+        f"  explanation → start with 'Explain in one or two sentences', 'Describe in your own words'\n"
+        f"  working     → end with 'Show all your working.' or 'Show your steps.'\n\n"
+        f"The student can only see the chat — they do NOT have the textbook open.\n"
+        f"Make sure the question is fully self-contained (all given values and context included).\n\n"
         f"After composing the question, also determine:\n"
-        f"1. expected_key_points — a list of 2-5 short strings capturing what a CORRECT answer MUST contain.\n"
-        f"   These are used by the grader, NOT shown to the student.\n"
+        f"1. expected_key_points — 2-5 short strings capturing what a correct answer MUST contain.\n"
+        f"   Write these as a student would naturally say them, NOT as a textbook definition.\n"
         f"   Examples:\n"
-        f"   - 'State the divisibility rule for 5' → [\"ends in 0 or 5\", \"last digit is 0 or 5\"]\n"
-        f"   - 'Is 1275 divisible by 5?' → [\"yes\", \"ends in 5\"]\n"
-        f"   - 'Find the LCM of 12 and 18' → [\"36\", \"LCM is 36\"]\n"
-        f"   - 'Explain what LCM means' → [\"smallest multiple\", \"common to both\", \"least common multiple\"]\n\n"
-        f"2. answer_format — ONE of these exact strings describing the expected answer type:\n"
-        f"   - \"number\"      — the answer is a specific number or calculation result\n"
-        f"   - \"yes_no\"      — the answer is yes or no\n"
-        f"   - \"rule\"        — the answer is a rule, definition, or law stated in words\n"
-        f"   - \"explanation\" — the answer is an explanation or description in words\n"
-        f"   - \"working\"     — a full worked solution with steps is required\n\n"
+        f"   - 'State the divisibility rule for 5' → [\"ends in 0 or 5\", \"last digit 0 or 5\"]\n"
+        f"   - 'Is 21 divisible by 3?' → [\"yes\", \"digits add up to 3\"]\n"
+        f"   - 'Find the LCM of 12 and 18' → [\"36\"]\n"
+        f"   - 'Explain what LCM means' → [\"smallest multiple\", \"common to both numbers\"]\n"
+        f"   Keep each point short — a student partial match should still score it.\n\n"
+        f"2. answer_format — ONE of: \"number\", \"yes_no\", \"rule\", \"explanation\", \"working\"\n\n"
         f"Return ONLY valid JSON — no markdown, no code fences, no text before or after:\n"
         f'{{"question": "...", "expected_key_points": ["...", "..."], "answer_format": "..."}}'
     )
