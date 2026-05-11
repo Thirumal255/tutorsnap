@@ -171,27 +171,66 @@ def generate_question(topic, level: str, previous_questions: list[str]) -> dict:
             "Generate a question based strictly on the textbook content above.\n"
         )
 
+    # Level-specific question starter guidance
+    LEVEL_STARTERS = {
+        "L1": (
+            "L1 is RECALL — the student must state a fact, rule, or definition from memory.\n"
+            "  Use openers like: 'State the rule for...', 'Define...', 'What is...', 'True or false:'\n"
+            "  ✓ Good: 'State the divisibility rule for 6.'\n"
+            "  ✗ Bad:  'Is 42 divisible by 6?' — that's application (L3), not recall."
+        ),
+        "L2": (
+            "L2 is COMPREHENSION — the student must explain a concept in their own words.\n"
+            "  Use openers like: 'Explain in one or two sentences...', 'Describe in your own words...', 'What does ... mean?'\n"
+            "  ✓ Good: 'Explain in your own words what it means for a number to be divisible by another.'\n"
+            "  ✗ Bad:  'Calculate the LCM of 6 and 9.' — that's application (L3)."
+        ),
+        "L3": (
+            "L3 is APPLICATION — give a specific problem and ask for a direct answer.\n"
+            "  Use openers like: 'Find...', 'Calculate...', 'Is ... divisible by ...? Yes or No — state the rule you used.'\n"
+            "  Always include all the numbers/values the student needs.\n"
+            "  ✓ Good: 'Find the LCM of 8 and 12. Show your steps.'\n"
+            "  ✓ Good: 'Is 144 divisible by 9? State the rule and give your answer.'"
+        ),
+        "L4": (
+            "L4 is ANALYSIS — the student must reason, spot an error, or compare approaches.\n"
+            "  Use structures like: 'A student says [wrong claim]. Is this correct? Explain why or why not.'\n"
+            "  Or: 'Two students solved this differently — which method is correct and why?'\n"
+            "  ✓ Good: 'Arun says the LCM of 4 and 6 is 24. Is he correct? Explain your reasoning.'"
+        ),
+        "L5": (
+            "L5 is SYNTHESIS — multi-step word problem requiring two or more concepts.\n"
+            "  Write a real-world scenario with all given information, then ask a clear question.\n"
+            "  End with 'Show all your working.'\n"
+            "  ✓ Good: 'Two buses leave the same stop. Bus A comes every 12 minutes and Bus B every 18 minutes. "
+            "If they both leave at 9:00 am, when will they next leave together? Show all your working.'"
+        ),
+    }
+
     user = (
         f"Generate exactly ONE practice question at difficulty level {level}.\n"
         f"Level {level} means: {LEVEL_GUIDE[level]}\n\n"
         f"{exercise_instruction}\n"
-        f"The question must:\n"
-        f"- Be appropriate for a {subject_label} student\n"
-        f"- NOT repeat any of these previous questions: {prev}\n\n"
-        f"QUESTION CLARITY RULES — make the answer type unambiguous:\n"
+        f"LEVEL GUIDANCE:\n{LEVEL_STARTERS.get(level, '')}\n\n"
+        f"QUESTION CLARITY RULES — make the answer type obvious from the wording:\n"
         f"  number      → start with 'Calculate', 'Find', 'What is the value of'\n"
-        f"  yes_no      → start with 'True or false:' or 'Is ... yes or no?'\n"
+        f"  yes_no      → start with 'True or false:' or end with '— Yes or No?'\n"
         f"  rule        → start with 'State the rule for', 'Define', 'Complete this statement:'\n"
-        f"  explanation → start with 'Explain in one or two sentences', 'Describe in your own words'\n"
+        f"  explanation → start with 'Explain in one or two sentences' or 'Describe in your own words'\n"
         f"  working     → end with 'Show all your working.' or 'Show your steps.'\n\n"
+        f"TOPIC ANCHOR — the question MUST begin with a one-line anchor so the student knows the context:\n"
+        f"  Format: '📘 [Topic name] — [the actual question]'\n"
+        f"  Example: '📘 Divisibility Rules — State the divisibility rule for 9.'\n"
+        f"  Example: '📘 LCM and HCF — Find the HCF of 36 and 48. Show your steps.'\n\n"
         f"The student can only see the chat — they do NOT have the textbook open.\n"
-        f"Make sure the question is fully self-contained (all given values and context included).\n\n"
+        f"Every question must be fully self-contained (include all given values and context).\n"
+        f"Do NOT repeat any of these previous questions: {prev}\n\n"
         f"After composing the question, also determine:\n"
         f"1. expected_key_points — 2-5 short strings capturing what a correct answer MUST contain.\n"
         f"   Write these as a student would naturally say them, NOT as a textbook definition.\n"
         f"   Examples:\n"
         f"   - 'State the divisibility rule for 5' → [\"ends in 0 or 5\", \"last digit 0 or 5\"]\n"
-        f"   - 'Is 21 divisible by 3?' → [\"yes\", \"digits add up to 3\"]\n"
+        f"   - 'Is 21 divisible by 3?' → [\"yes\", \"digits add to 3\"]\n"
         f"   - 'Find the LCM of 12 and 18' → [\"36\"]\n"
         f"   - 'Explain what LCM means' → [\"smallest multiple\", \"common to both numbers\"]\n"
         f"   Keep each point short — a student partial match should still score it.\n\n"
@@ -318,10 +357,17 @@ def assess_answer(
         f"    'Oops, brain wandered! Let\\'s bring it back — '\n"
         f"  - End by briefly restating what the question asks. Do NOT hint at the answer.\n\n"
         f"If off_topic is FALSE:\n"
-        f"  - feedback: 1-2 sentences, encouraging, never condescending\n"
-        f"  - Celebrate what they got right, even when overall score is low\n"
-        f"  - Correct answers: 'Spot on!', 'Exactly right!', 'Perfect!', 'Brilliant!' etc.\n"
-        f"  - Wrong answers: encourage the attempt without revealing the answer"
+        f"  - feedback: 1-2 sentences max, warm and encouraging, never condescending\n"
+        f"  - CORRECT answers (score 80+): celebrate clearly — 'Spot on!', 'Exactly!', 'Perfect!', 'Brilliant!'\n"
+        f"  - PARTIALLY correct (score 50-79): name what they got right, then point at the gap\n"
+        f"      ✓ Good: 'You're right that it involves multiples — but check what *least* common means.'\n"
+        f"      ✗ Bad:  'Not quite, try again!' — too vague, student learns nothing\n"
+        f"  - WRONG answers (score < 50): name specifically what is off (not the answer itself)\n"
+        f"      ✓ Good: 'The method is right but check your arithmetic in the last step.'\n"
+        f"      ✓ Good: 'You've found a common multiple, but is it the *smallest* one?'\n"
+        f"      ✗ Bad:  'Keep trying!' — gives no direction\n"
+        f"  - NEVER reveal the correct answer in feedback — that is the hint system's job\n"
+        f"  - NEVER say 'I can see you tried' or 'Good effort' for clearly wrong answers — be honest but kind"
     )
     try:
         raw = call_claude(system, user, max_tokens=400)
