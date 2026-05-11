@@ -154,6 +154,63 @@ def call_claude(system: str, user: str, max_tokens: int = 800, model: str = None
         raise RuntimeError(f"Claude API call failed: {e}") from e
 
 
+def call_claude_vision(system: str, user_text: str, image_base64: str,
+                       max_tokens: int = 800) -> str:
+    """Call Claude with a base64 image + text for handwriting / drawing assessment."""
+    try:
+        response = _client.messages.create(
+            model=_SONNET,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": image_base64,
+                    },
+                },
+                {"type": "text", "text": user_text},
+            ]}],
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        raise RuntimeError(f"Claude Vision API call failed: {e}") from e
+
+
+def generate_sub_question(topic, original_question: str, confusion_type: str = None) -> str:
+    """Generate a simpler stepping-stone sub-question when a student is stuck."""
+    subject_label = get_subject_label(topic)
+    system = (
+        f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
+        f"{ABSOLUTE_RULE}\n"
+        f"{build_topic_context(topic)}"
+    )
+    confusion_ctx = {
+        "formula": "The student cannot remember the formula or rule needed.",
+        "apply":   "The student knows the concept but cannot apply it to this specific problem.",
+        "concept": "The student does not understand the underlying concept at all.",
+    }.get(confusion_type or "", "The student is stuck and does not know how to start.")
+
+    user = (
+        f"The student is stuck on this question:\n"
+        f"ORIGINAL QUESTION: {original_question}\n\n"
+        f"Why they are stuck: {confusion_ctx}\n\n"
+        f"Your job: ask ONE short, simpler stepping-stone question that:\n"
+        f"  1. Targets the gap identified above\n"
+        f"  2. Is easier than the original question — it builds toward answering it\n"
+        f"  3. Stays on the same topic and concept\n"
+        f"  4. Does NOT reveal the answer to the original question\n"
+        f"  5. Is encouraging and warm in tone (you can use a friendly emoji)\n\n"
+        f"Return ONLY the question text — no preamble, no JSON, no explanation."
+    )
+    try:
+        return call_claude(system, user, max_tokens=200, model=_HAIKU)
+    except Exception:
+        return "Let's try a simpler step first — can you recall the key rule or formula for this topic?"
+
+
 def generate_question(topic, level: str, previous_questions: list[str], recent_formats: list[str] = None) -> dict:
     """Generate a question and return a dict with question, expected_key_points, answer_format."""
     subject_label = get_subject_label(topic)
@@ -337,10 +394,12 @@ def assess_answer(
     hint_tier: int,
     expected_key_points: list | None = None,
     answer_format: str | None = None,
+    image_data: str | None = None,
 ) -> dict:
     """
     Two-phase scoring: compare the student's answer against the reference key points
     using a per-format rubric, rather than doing blind open-ended grading.
+    When image_data (base64 JPEG) is provided the answer is handwritten — use vision.
     """
     subject_label = get_subject_label(topic)
     system = (
@@ -445,7 +504,16 @@ def assess_answer(
         f"  - Example: reference=[\"digits add to 9\",\"last digit 0 or 5\"], student said only last digit rule → missed=[\"digits add to 9\"]"
     )
     try:
-        raw = call_claude(system, user, max_tokens=450, model=_SONNET)
+        if image_data:
+            # Handwritten answer — use vision model; inject image + text prompt
+            vision_user = (
+                f"The student wrote their answer by hand (see the image above).\n"
+                f"Please read the handwriting carefully and assess it as if it were typed text.\n\n"
+                + user
+            )
+            raw = call_claude_vision(system, vision_user, image_data, max_tokens=450)
+        else:
+            raw = call_claude(system, user, max_tokens=450, model=_SONNET)
         cleaned = re.sub(r"```[a-z]*\n?", "", raw).strip()
         data = json.loads(cleaned)
         raw_score = int(data.get("score", 0))

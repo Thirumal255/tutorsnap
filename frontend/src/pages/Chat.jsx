@@ -1,9 +1,32 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { submitAnswer, requestHint, endSession } from '../api/client'
+import { submitAnswer, requestHint, requestSubQuestion, endSession } from '../api/client'
 import ChatBubble from '../components/ChatBubble'
 import HintButton from '../components/HintButton'
 import ProgressBadge from '../components/ProgressBadge'
+import WritingCanvas from '../components/WritingCanvas'
+
+// ── Give-up detection ──────────────────────────────────────────────────────
+const GIVEUP_PHRASES = new Set([
+  "i don't know", "i dont know", "idk", "i give up", "no idea", "no clue",
+  "help", "stuck", "skip", "pass", "can't", "cant", "don't know", "dont know",
+  "?", "??", "???", "i have no idea", "no", "nope", "clueless", "i'm lost",
+  "im lost", "lost", "confused", "i'm confused", "im confused", "i don't get it",
+  "i dont get it",
+])
+
+function isGivingUp(text) {
+  const t = text.trim().toLowerCase().replace(/[!.?…]+$/, '')
+  return GIVEUP_PHRASES.has(t) || t.length < 4 && /^[?!]+$/.test(t)
+}
+
+// ── Give-up stages ─────────────────────────────────────────────────────────
+// 0 = normal  1 = encourage guess  2 = confusion picker  3 = sub-question  4 = hint
+const CONFUSION_OPTIONS = [
+  { key: 'formula', label: "I can't remember the rule / formula", icon: '📐' },
+  { key: 'apply',   label: "I know the concept but can't apply it", icon: '🔧' },
+  { key: 'concept', label: "I don't understand the concept at all", icon: '🧠' },
+]
 
 export default function Chat() {
   const { id } = useParams()
@@ -22,8 +45,17 @@ export default function Chat() {
   const [showEndModal, setShowEndModal] = useState(false)
   const [ending, setEnding] = useState(false)
   const [xpGained, setXpGained] = useState(null)
-  const [levelUpBanner, setLevelUpBanner] = useState(null)  // { level, label }
+  const [levelUpBanner, setLevelUpBanner] = useState(null)
   const [answerFormat, setAnswerFormat] = useState(null)
+
+  // Give-up scaffolding
+  const [giveUpStage, setGiveUpStage] = useState(0)  // 0-4
+  const [subQLoading, setSubQLoading] = useState(false)
+
+  // Canvas (handwriting) mode
+  const [canvasMode, setCanvasMode] = useState(false)
+  const canvasRef = useRef(null)
+
   const bottomRef = useRef(null)
   const slowTimerRef = useRef(null)
 
@@ -39,9 +71,8 @@ export default function Chat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, showHintButton])
+  }, [messages, showHintButton, giveUpStage])
 
-  // Clear slow-loading timer on unmount
   useEffect(() => () => clearTimeout(slowTimerRef.current), [])
 
   function addMessage(sender, text) {
@@ -63,18 +94,97 @@ export default function Chat() {
     setSlowLoading(false)
   }
 
+  // Reset give-up stage when a new question arrives
+  function resetGiveUp() {
+    setGiveUpStage(0)
+  }
+
+  function handleGiveUp() {
+    if (giveUpStage === 0) {
+      // Stage 1 — encourage a guess (no API call)
+      setGiveUpStage(1)
+      addMessage('buddy',
+        "🤔 It's okay to feel stuck! Before we get help, give it your best guess — " +
+        "even if you think you're wrong. Trying is how you learn! What would you say?"
+      )
+    } else if (giveUpStage === 1) {
+      // Stage 2 — confusion picker (no API call)
+      setGiveUpStage(2)
+      addMessage('buddy',
+        "No worries! Let's figure out exactly where you're stuck so I can help better. " +
+        "Which of these matches how you feel?"
+      )
+    }
+    // Stages 3+ are handled by handleConfusionPick / handleHint
+  }
+
+  async function handleConfusionPick(key) {
+    setGiveUpStage(3)
+    setSubQLoading(true)
+    addMessage('student', CONFUSION_OPTIONS.find(o => o.key === key)?.label || key)
+    addMessage('buddy', null)  // loading bubble
+    try {
+      const res = await requestSubQuestion(sessionId, key)
+      const subQ = res.data.sub_question
+      setMessages((prev) => {
+        const next = [...prev]
+        next[next.length - 1] = {
+          sender: 'buddy',
+          text: `Let's work up to it step by step! 🪜\n\n${subQ}`,
+        }
+        return next
+      })
+    } catch {
+      setMessages((prev) => {
+        const next = [...prev]
+        next[next.length - 1] = {
+          sender: 'buddy',
+          text: "Hmm, let me try a different angle. Can you recall any rule or formula related to this topic?",
+        }
+        return next
+      })
+    } finally {
+      setSubQLoading(false)
+      // After sub-question, show the hint button as a next safety net
+      setShowHintButton(true)
+    }
+  }
+
   async function handleSend() {
-    if (!input.trim() || loading) return
-    const answer = input.trim()
+    if (loading || subQLoading) return
+
+    // Canvas mode: grab image
+    let imageData = null
+    let answer = ''
+
+    if (canvasMode) {
+      if (!canvasRef.current || canvasRef.current.isEmpty()) return
+      imageData = canvasRef.current.getImageData()
+      answer = '[handwritten answer]'
+    } else {
+      if (!input.trim()) return
+      answer = input.trim()
+
+      // Give-up detection — if still in early stages, escalate
+      if (isGivingUp(answer) && giveUpStage < 2) {
+        setInput('')
+        addMessage('student', answer)
+        handleGiveUp()
+        return
+      }
+    }
+
     setInput('')
-    addMessage('student', answer)
+    if (!canvasMode) addMessage('student', answer)
+    else addMessage('student', '✏️ [handwritten answer submitted]')
+
     setShowHintButton(false)
     setLoading(true)
     startSlowTimer()
     addMessage('buddy', null)
 
     try {
-      const res = await submitAnswer(sessionId, answer)
+      const res = await submitAnswer(sessionId, answer, imageData)
       const d = res.data
 
       setMessages((prev) => {
@@ -84,6 +194,10 @@ export default function Chat() {
       })
 
       setCurrentLevel(d.current_level)
+      resetGiveUp()
+
+      // Clear canvas after successful submission
+      if (canvasMode && canvasRef.current) canvasRef.current.clear()
 
       if (d.session_complete) {
         showXP('+100 XP')
@@ -103,7 +217,6 @@ export default function Chat() {
 
       if (d.action === 'advance_level') {
         showXP('+50 XP')
-        // Show level-up banner for 2.5 s
         setLevelUpBanner({ level: d.current_level, label: d.level_label })
         setTimeout(() => setLevelUpBanner(null), 2500)
         addMessage('buddy', `🚀 You levelled up to **${d.level_label}**! Here's your next challenge:\n\n${d.next_question}`)
@@ -111,7 +224,6 @@ export default function Chat() {
         setShowHintButton(false)
         if (d.answer_format) setAnswerFormat(d.answer_format)
       } else if (d.action === 'level_cap_reset') {
-        // Student was stuck — show concept explanation then fresh question
         if (d.concept_explanation) {
           addMessage('buddy', `💡 Let me walk you through this concept again:\n\n${d.concept_explanation}`)
         }
@@ -126,7 +238,6 @@ export default function Chat() {
       } else if (d.action === 'retry_question' && d.next_question) {
         addMessage('buddy', d.next_question)
         setShowHintButton(false)
-        // keep existing answerFormat for retry
       } else if (d.next_question) {
         showXP('+10 XP')
         addMessage('buddy', d.next_question)
@@ -163,11 +274,13 @@ export default function Chat() {
       const d = res.data
       setHintTier(d.hint_tier)
       addMessage('buddy', d.hint_message)
+      setGiveUpStage(4)  // Beyond sub-question — in hint system now
 
       if (d.is_concept_reset && d.fresh_question) {
         addMessage('buddy', d.fresh_question)
         setShowHintButton(false)
         setHintTier(0)
+        resetGiveUp()
         if (d.answer_format) setAnswerFormat(d.answer_format)
       } else if (d.flagged) {
         setShowHintButton(false)
@@ -197,6 +310,8 @@ export default function Chat() {
   }
 
   if (!session) return null
+
+  const isBlocked = loading || subQLoading
 
   return (
     <div className="flex flex-col h-screen bg-[#0F0F23]">
@@ -287,12 +402,28 @@ export default function Chat() {
           <ChatBubble key={i} sender={m.sender} message={m.text} isLoading={m.text === null} />
         ))}
 
-        {/* Slow-loading nudge — appears after 8 s */}
+        {/* Slow-loading nudge */}
         {slowLoading && (
           <div className="flex justify-start mb-3">
             <div className="bg-[#1A1A3E] border border-[#2D2B5A] rounded-2xl px-4 py-2 text-xs text-[#8892B0] italic">
               ⏳ Still thinking… Claude is working on it!
             </div>
+          </div>
+        )}
+
+        {/* ── Give-up stage 2: confusion picker ─────────────────────── */}
+        {giveUpStage === 2 && !isBlocked && (
+          <div className="flex flex-col gap-2 mb-4 animate-bounce-in">
+            {CONFUSION_OPTIONS.map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => handleConfusionPick(opt.key)}
+                className="flex items-center gap-3 bg-[#16213E] border border-[#2D2B5A] hover:border-[#00A2FF] hover:bg-[#00A2FF]/10 text-left rounded-2xl px-4 py-3 text-sm text-white font-nunito transition-all"
+              >
+                <span className="text-xl">{opt.icon}</span>
+                <span>{opt.label}</span>
+              </button>
+            ))}
           </div>
         )}
 
@@ -302,9 +433,11 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
+      {/* Input area */}
       <div className="flex-shrink-0 bg-[#16213E] border-t border-[#2D2B5A] px-4 py-3">
-        {answerFormat && !loading && (
+
+        {/* Answer format label */}
+        {answerFormat && !isBlocked && !canvasMode && (
           <div className="mb-2 flex items-center gap-1.5">
             <span className="text-[10px] text-[#2D2B5A] uppercase tracking-widest">Answer type:</span>
             <span className="text-[10px] text-[#00A2FF]/70 font-semibold">
@@ -316,29 +449,82 @@ export default function Chat() {
             </span>
           </div>
         )}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Type your answer here… 💬"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={loading}
-            className="blox-input flex-1"
-          />
-          <button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            className="btn-blox-primary px-5 py-2.5 text-sm flex items-center gap-2"
-          >
-            {loading ? (
-              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-              </svg>
-            ) : '⚡ Send'}
-          </button>
-        </div>
+
+        {/* Canvas mode: drawing surface + controls */}
+        {canvasMode ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-[#8892B0] font-nunito">✏️ Draw your answer</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => canvasRef.current?.undo()}
+                  className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#8892B0] transition-all"
+                >
+                  ↩ Undo
+                </button>
+                <button
+                  onClick={() => canvasRef.current?.clear()}
+                  className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#FF3333] transition-all"
+                >
+                  🗑 Clear
+                </button>
+              </div>
+            </div>
+            <WritingCanvas ref={canvasRef} />
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => setCanvasMode(false)}
+                className="flex-1 text-sm text-[#8892B0] border border-[#2D2B5A] rounded-xl py-2.5 hover:border-[#8892B0] hover:text-white transition-all font-nunito"
+              >
+                ⌨️ Type instead
+              </button>
+              <button
+                onClick={handleSend}
+                disabled={isBlocked}
+                className="flex-1 btn-blox-primary text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isBlocked ? (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                ) : '⚡ Submit'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Text mode */
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCanvasMode(true)}
+              title="Switch to handwriting mode"
+              className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border border-[#2D2B5A] text-[#8892B0] hover:border-[#00A2FF] hover:text-[#00A2FF] transition-all text-lg"
+            >
+              ✏️
+            </button>
+            <input
+              type="text"
+              placeholder="Type your answer here… 💬"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isBlocked}
+              className="blox-input flex-1"
+            />
+            <button
+              onClick={handleSend}
+              disabled={isBlocked || !input.trim()}
+              className="btn-blox-primary px-5 py-2.5 text-sm flex items-center gap-2"
+            >
+              {isBlocked ? (
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+              ) : '⚡ Send'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

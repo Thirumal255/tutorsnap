@@ -42,8 +42,10 @@ export const cancelIngestion = (bookId) => api.post(`/books/${bookId}/cancel`)
 export const retryIngestion  = (bookId) => api.post(`/books/${bookId}/retry`)
 export const startSession = (studentName, topicId) =>
   api.post('/session/start', { student_name: studentName, topic_id: topicId })
-export const submitAnswer = (sessionId, answer) =>
-  api.post('/session/answer', { session_id: sessionId, answer })
+export const submitAnswer = (sessionId, answer, imageData = null) =>
+  api.post('/session/answer', { session_id: sessionId, answer, ...(imageData ? { image_data: imageData } : {}) })
+export const requestSubQuestion = (sessionId, confusionType = null) =>
+  api.post('/session/sub-question', { session_id: sessionId, confusion_type: confusionType })
 export const requestHint = (sessionId) => api.post('/session/hint', { session_id: sessionId })
 export const endSession = (sessionId) => api.post('/session/end', { session_id: sessionId })
 

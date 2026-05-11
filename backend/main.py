@@ -27,6 +27,7 @@ from auth import get_current_user, require_admin, require_parent, verify_google_
 from session_engine import (
     generate_question, assess_answer, get_hint, get_concept_explanation,
     get_session_summary, determine_next_action, get_start_level,
+    generate_sub_question,
     LEVEL_GUIDE, LEVEL_ORDER,
 )
 
@@ -205,6 +206,11 @@ class StartSessionRequest(BaseModel):
 class AnswerRequest(BaseModel):
     session_id: int
     answer: str
+    image_data: Optional[str] = None   # base64 JPEG from handwriting canvas
+
+class SubQuestionRequest(BaseModel):
+    session_id: int
+    confusion_type: Optional[str] = None  # "formula" | "apply" | "concept" | None
 
 class HintRequest(BaseModel):
     session_id: int
@@ -770,6 +776,7 @@ def submit_answer(
         session.current_level, session.hint_tier,
         expected_key_points=ekp,
         answer_format=current_turn.answer_format,
+        image_data=req.image_data or None,
     )
 
     current_turn.student_answer = req.answer
@@ -861,6 +868,35 @@ def submit_answer(
             "concept_explanation": concept_explanation,
             "answer_format": next_answer_format,
             "turn_number": new_turn_number}
+
+
+@app.post("/api/session/sub-question")
+def request_sub_question(
+    req: SubQuestionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a simpler stepping-stone question when a student is stuck."""
+    session = db.query(SessionModel).filter(SessionModel.id == req.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.user_id and session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your session")
+
+    topic = db.query(Topic).filter(Topic.id == session.topic_id).first()
+    topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
+
+    current_turn = (db.query(SessionTurn).filter(SessionTurn.session_id == session.id)
+                    .order_by(SessionTurn.turn_number.desc()).first())
+
+    original_question = current_turn.question_text if current_turn else "the current question"
+
+    try:
+        sub_q = generate_sub_question(topic, original_question, req.confusion_type)
+    except Exception:
+        sub_q = "Let's try a simpler step first — can you recall the key rule for this topic?"
+
+    return {"sub_question": sub_q}
 
 
 @app.post("/api/session/hint")
