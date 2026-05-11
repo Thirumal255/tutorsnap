@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "322472504855",
+    "project_id": "tutorsnap",
+    "storage_bucket": "tutorsnap.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:322472504855:android:428f5d03a919da0eea7652",
+        "android_client_info": {
+          "package_name": "com.tutorsnap.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "322472504855-c0cf6jjchnou45lv4r31rl70unpbkgv6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tutorsnap.app",
+            "certificate_hash": "4d1a1cd93163f5a30b7631c9dafcd32213517bea"
+          }
+        },
+        {
+          "client_id": "322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBdu5VehDkbs7ihGnPHroUxUiy9i_YCDx0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

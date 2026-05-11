@@ -17,22 +17,38 @@ from models import User
 
 
 def verify_google_token(token: str) -> dict:
-    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-    try:
-        idinfo = id_token.verify_oauth2_token(
-            token,
-            google_requests.Request(),
-            client_id
-        )
-        return {
-            "google_id": idinfo["sub"],
-            "email": idinfo["email"],
-            "name": idinfo.get("name", ""),
-            "avatar_url": idinfo.get("picture", None),
-        }
-    except Exception as e:
-        logger.error(f"Token verification failed. client_id={client_id!r} token_len={len(token) if token else 0} error={e!r}")
-        raise ValueError(f"Invalid Google token: {e}")
+    # Support multiple client IDs so both web and mobile tokens are accepted.
+    # GOOGLE_CLIENT_IDS = comma-separated list (preferred).
+    # Falls back to GOOGLE_CLIENT_ID for backward compatibility.
+    raw = os.getenv("GOOGLE_CLIENT_IDS", os.getenv("GOOGLE_CLIENT_ID", ""))
+    client_ids = [c.strip() for c in raw.split(",") if c.strip()]
+
+    if not client_ids:
+        raise ValueError("No GOOGLE_CLIENT_ID(S) configured on server")
+
+    last_error: Exception = Exception("No client IDs tried")
+    for client_id in client_ids:
+        try:
+            idinfo = id_token.verify_oauth2_token(
+                token,
+                google_requests.Request(),
+                client_id,
+            )
+            return {
+                "google_id": idinfo["sub"],
+                "email": idinfo["email"],
+                "name": idinfo.get("name", ""),
+                "avatar_url": idinfo.get("picture", None),
+            }
+        except Exception as e:
+            last_error = e
+            continue
+
+    logger.error(
+        f"Token verification failed for all client_ids={client_ids!r} "
+        f"token_len={len(token) if token else 0} last_error={last_error!r}"
+    )
+    raise ValueError(f"Invalid Google token: {last_error}")
 
 
 def create_jwt(user_id: int, email: str, role: str) -> str:
