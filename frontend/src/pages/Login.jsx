@@ -59,22 +59,46 @@ export default function Login() {
     setError('')
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth')
-      await GoogleAuth.initialize()
-      const result = await GoogleAuth.signIn()
-      const idToken = result.authentication.idToken
-      if (!idToken) {
-        setError('Google sign-in did not return a token. Please try again.')
+
+      // Step 1 – initialise
+      try {
+        await GoogleAuth.initialize()
+      } catch (e) {
+        setError(`[init] ${e?.message || JSON.stringify(e)}`)
         return
       }
-      const res = await googleLogin(idToken)
-      const { access_token, user: userData } = res.data
-      login(access_token, userData)
-      redirectByRole(userData.role)
+
+      // Step 2 – sign in
+      let result
+      try {
+        result = await GoogleAuth.signIn()
+      } catch (e) {
+        const msg = e?.message || e?.error || e?.code || JSON.stringify(e)
+        setError(`[signIn] ${msg}`)
+        return
+      }
+
+      // Step 3 – extract token
+      const idToken = result?.authentication?.idToken
+      if (!idToken) {
+        setError(`[token] none. auth=${JSON.stringify(result?.authentication)}`)
+        return
+      }
+
+      // Step 4 – call backend
+      try {
+        const res = await googleLogin(idToken)
+        const { access_token, user: userData } = res.data
+        login(access_token, userData)
+        redirectByRole(userData.role)
+      } catch (e) {
+        const detail = e?.response?.data?.detail
+        const msg = detail || e?.message || JSON.stringify(e)
+        setError(`[backend] ${msg}`)
+      }
+
     } catch (err) {
-      // Show the real error message so we can diagnose what's failing
-      const msg = err?.message || err?.error || err?.code || JSON.stringify(err)
-      console.error('Native Google login error:', err)
-      setError(`Login failed: ${msg}`)
+      setError(`[outer] ${err?.message || JSON.stringify(err)}`)
     }
   }
 
