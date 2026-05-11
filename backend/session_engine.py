@@ -58,8 +58,8 @@ LEVEL_ORDER = ["L1", "L2", "L3", "L4", "L5"]
 _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 # Model tiers — Sonnet for quality-critical calls, Haiku for speed-critical ones
-_SONNET = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-_HAIKU  = os.getenv("CLAUDE_HAIKU_MODEL", "claude-haiku-4-5-20250929")
+_SONNET = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20251001")
+_HAIKU  = os.getenv("CLAUDE_FAST_MODEL", os.getenv("CLAUDE_HAIKU_MODEL", "claude-haiku-4-5-20251001"))
 
 # Level cap: after this many questions stuck at the same level, trigger a concept reset
 _LEVEL_CAP = 5
