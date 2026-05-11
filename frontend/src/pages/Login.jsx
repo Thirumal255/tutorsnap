@@ -73,8 +73,9 @@ export default function Login() {
       try {
         result = await GoogleAuth.signIn()
       } catch (e) {
-        const msg = e?.message || e?.error || e?.code || JSON.stringify(e)
-        setError(`[signIn] ${msg}`)
+        const msg = e?.message || 'unknown'
+        const code = e?.code || e?.error || 'no-code'
+        setError(`[signIn] ${msg} | code:${code}`)
         return
       }
 
