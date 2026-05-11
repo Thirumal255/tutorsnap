@@ -47,10 +47,25 @@ jobs:
         working-directory: frontend
         run: npx cap sync android
 
-      - name: Restore debug keystore
+      - name: Generate stable debug keystore
         run: |
           mkdir -p ~/.android
-          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > ~/.android/debug.keystore
+          keytool -genkeypair -v \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Print keystore SHA-1 (add this to Firebase)
+        run: |
+          echo "====== KEYSTORE SHA-1 — ADD THIS TO FIREBASE ======"
+          keytool -list -v \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -storepass android | grep "SHA1:"
+          echo "===================================================="
 
       - name: Make Gradle executable
         working-directory: frontend/android
