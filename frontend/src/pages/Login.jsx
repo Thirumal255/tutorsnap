@@ -62,12 +62,19 @@ export default function Login() {
       await GoogleAuth.initialize()
       const result = await GoogleAuth.signIn()
       const idToken = result.authentication.idToken
+      if (!idToken) {
+        setError('Google sign-in did not return a token. Please try again.')
+        return
+      }
       const res = await googleLogin(idToken)
       const { access_token, user: userData } = res.data
       login(access_token, userData)
       redirectByRole(userData.role)
     } catch (err) {
-      setError('Login failed. Please try again.')
+      // Show the real error message so we can diagnose what's failing
+      const msg = err?.message || err?.error || err?.code || JSON.stringify(err)
+      console.error('Native Google login error:', err)
+      setError(`Login failed: ${msg}`)
     }
   }
 
