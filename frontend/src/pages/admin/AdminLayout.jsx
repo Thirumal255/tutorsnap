@@ -12,6 +12,14 @@ const NAV = [
   { to: '/admin/settings', label: 'Settings',  icon: '⚙️' },
 ]
 
+// On mobile, show a condensed set in the bottom nav
+const MOBILE_NAV = [
+  { to: '/admin',          label: 'Home',     icon: '🏠', end: true },
+  { to: '/admin/students', label: 'Students', icon: '🎮' },
+  { to: '/admin/flagged',  label: 'Flagged',  icon: '🚩' },
+  { to: '/admin/settings', label: 'More',     icon: '⚙️' },
+]
+
 export default function AdminLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -29,8 +37,9 @@ export default function AdminLayout() {
 
   return (
     <div className="flex h-screen bg-[#0F0F23]">
-      {/* Sidebar */}
-      <aside className="w-60 bg-[#16213E] border-r border-[#2D2B5A] flex flex-col flex-shrink-0">
+
+      {/* ── Desktop Sidebar (hidden on mobile) ─────────────── */}
+      <aside className="hidden md:flex w-60 bg-[#16213E] border-r border-[#2D2B5A] flex-col flex-shrink-0">
         {/* Logo */}
         <div className="px-5 py-5 border-b border-[#2D2B5A]">
           <p className="text-xl font-fredoka font-bold text-white">
@@ -89,10 +98,49 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      {/* Main */}
-      <main className="flex-1 overflow-y-auto bg-[#0F0F23]">
+      {/* ── Main content ───────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto bg-[#0F0F23] pb-20 md:pb-0">
         <Outlet />
       </main>
+
+      {/* ── Mobile Bottom Nav (hidden on desktop) ──────────── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#16213E] border-t border-[#2D2B5A] z-50">
+        <div className="flex items-stretch">
+          {MOBILE_NAV.map(({ to, label, icon, end }) => (
+            <NavLink key={to} to={to} end={end}
+              className={({ isActive }) =>
+                `flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-nunito font-semibold transition-all relative ${
+                  isActive ? 'text-[#00A2FF]' : 'text-[#8892B0]'
+                }`
+              }
+            >
+              <span className="text-xl leading-none relative">
+                {icon}
+                {label === 'Flagged' && flaggedCount > 0 && (
+                  <span className="absolute -top-1 -right-2 bg-[#FF3333] text-white text-[9px] font-bold px-1 rounded-full leading-none min-w-[14px] text-center">
+                    {flaggedCount}
+                  </span>
+                )}
+              </span>
+              <span>{label}</span>
+            </NavLink>
+          ))}
+
+          {/* Sign out button */}
+          <button
+            onClick={handleLogout}
+            className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-nunito font-semibold text-[#8892B0]"
+          >
+            {user?.avatar_url
+              ? <img src={user.avatar_url} className="w-6 h-6 rounded-full border border-[#2D2B5A]" alt="" />
+              : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#00A2FF] to-[#0066CC] flex items-center justify-center text-white font-bold text-xs">
+                  {user?.name?.[0]}
+                </div>
+            }
+            <span>Sign out</span>
+          </button>
+        </div>
+      </nav>
 
     </div>
   )

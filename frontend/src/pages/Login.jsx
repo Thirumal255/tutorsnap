@@ -59,50 +59,22 @@ export default function Login() {
     setError('')
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth')
-
-      // Step 1 – initialise (pass clientId explicitly to bypass strings.xml lookup)
-      try {
-        await GoogleAuth.initialize({
-          clientId: '322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com',
-          scopes: ['profile', 'email'],
-        })
-      } catch (e) {
-        setError(`[init] ${e?.message || JSON.stringify(e)}`)
-        return
-      }
-
-      // Step 2 – sign in
-      let result
-      try {
-        result = await GoogleAuth.signIn()
-      } catch (e) {
-        const msg = e?.message || 'unknown'
-        const code = e?.code || e?.error || 'no-code'
-        setError(`[signIn] ${msg} | code:${code}`)
-        return
-      }
-
-      // Step 3 – extract token
+      await GoogleAuth.initialize({
+        clientId: '322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com',
+        scopes: ['profile', 'email'],
+      })
+      const result = await GoogleAuth.signIn()
       const idToken = result?.authentication?.idToken
       if (!idToken) {
-        setError(`[token] none. auth=${JSON.stringify(result?.authentication)}`)
+        setError('Sign-in failed. Please try again.')
         return
       }
-
-      // Step 4 – call backend
-      try {
-        const res = await googleLogin(idToken)
-        const { access_token, user: userData } = res.data
-        login(access_token, userData)
-        redirectByRole(userData.role)
-      } catch (e) {
-        const detail = e?.response?.data?.detail
-        const msg = detail || e?.message || JSON.stringify(e)
-        setError(`[backend] ${msg}`)
-      }
-
-    } catch (err) {
-      setError(`[outer] ${err?.message || JSON.stringify(err)}`)
+      const res = await googleLogin(idToken)
+      const { access_token, user: userData } = res.data
+      login(access_token, userData)
+      redirectByRole(userData.role)
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || 'Sign-in failed. Please try again.')
     }
   }
 

@@ -3,27 +3,35 @@ import { useAuth } from '../../auth/AuthContext'
 import { logout as apiLogout } from '../../api/client'
 
 const NAV = [
-  { to: '/home',         label: 'Home',         icon: '🏠', end: true },
-  { to: '/practice',     label: 'Practice',      icon: '⚔️' },
-  { to: '/progress',     label: 'My Progress',   icon: '📈' },
-  { to: '/study-time',   label: 'Study Time',    icon: '⏱️' },
-  { to: '/achievements', label: 'Achievements',  icon: '🏆' },
+  { to: '/home',         label: 'Home',        icon: '🏠', end: true },
+  { to: '/practice',     label: 'Practice',     icon: '⚔️' },
+  { to: '/progress',     label: 'My Progress',  icon: '📈' },
+  { to: '/study-time',   label: 'Study Time',   icon: '⏱️' },
+  { to: '/achievements', label: 'Achievements', icon: '🏆' },
+]
+
+// Condensed for mobile bottom bar (max 5 fits fine here)
+const MOBILE_NAV = [
+  { to: '/home',         label: 'Home',    icon: '🏠', end: true },
+  { to: '/practice',     label: 'Practice', icon: '⚔️' },
+  { to: '/progress',     label: 'Progress', icon: '📈' },
+  { to: '/achievements', label: 'Awards',   icon: '🏆' },
 ]
 
 const SUBJECT_COLOR = {
-  Mathematics:      'from-[#00A2FF] to-[#0066CC]',
-  Science:          'from-[#00CC88] to-[#007755]',
-  English:          'from-[#FF6B9D] to-[#CC3366]',
-  'Social Studies': 'from-[#FFB347] to-[#CC7700]',
-  History:          'from-[#C084FC] to-[#7E22CE]',
-  Geography:        'from-[#34D399] to-[#059669]',
-  Physics:          'from-[#60A5FA] to-[#2563EB]',
-  Chemistry:        'from-[#F472B6] to-[#DB2777]',
-  Biology:          'from-[#4ADE80] to-[#16A34A]',
+  Mathematics:       'from-[#00A2FF] to-[#0066CC]',
+  Science:           'from-[#00CC88] to-[#007755]',
+  English:           'from-[#FF6B9D] to-[#CC3366]',
+  'Social Studies':  'from-[#FFB347] to-[#CC7700]',
+  History:           'from-[#C084FC] to-[#7E22CE]',
+  Geography:         'from-[#34D399] to-[#059669]',
+  Physics:           'from-[#60A5FA] to-[#2563EB]',
+  Chemistry:         'from-[#F472B6] to-[#DB2777]',
+  Biology:           'from-[#4ADE80] to-[#16A34A]',
   'Computer Science':'from-[#A78BFA] to-[#7C3AED]',
-  Tamil:            'from-[#FBBF24] to-[#D97706]',
-  Hindi:            'from-[#FB923C] to-[#EA580C]',
-  Other:            'from-[#94A3B8] to-[#475569]',
+  Tamil:             'from-[#FBBF24] to-[#D97706]',
+  Hindi:             'from-[#FB923C] to-[#EA580C]',
+  Other:             'from-[#94A3B8] to-[#475569]',
 }
 export { SUBJECT_COLOR }
 
@@ -39,8 +47,9 @@ export default function StudentLayout() {
 
   return (
     <div className="flex h-screen bg-[#0F0F23]">
-      {/* ── Sidebar ───────────────────────────────────────────────── */}
-      <aside className="w-56 bg-[#16213E] border-r border-[#2D2B5A] flex flex-col flex-shrink-0">
+
+      {/* ── Desktop Sidebar (hidden on mobile) ─────────────── */}
+      <aside className="hidden md:flex w-56 bg-[#16213E] border-r border-[#2D2B5A] flex-col flex-shrink-0">
 
         {/* Logo */}
         <div className="px-5 py-5 border-b border-[#2D2B5A]">
@@ -68,7 +77,7 @@ export default function StudentLayout() {
           ))}
         </nav>
 
-        {/* User card at bottom */}
+        {/* User card */}
         <div className="px-4 py-4 border-t border-[#2D2B5A]">
           <div className="flex items-center gap-2 mb-3">
             {user?.avatar_url
@@ -91,10 +100,45 @@ export default function StudentLayout() {
         </div>
       </aside>
 
-      {/* ── Main content ──────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto bg-[#0F0F23]">
+      {/* ── Main content ───────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto bg-[#0F0F23] pb-20 md:pb-0">
         <Outlet />
       </main>
+
+      {/* ── Mobile Bottom Nav (hidden on desktop) ──────────── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#16213E] border-t border-[#2D2B5A] z-50">
+        <div className="flex items-stretch">
+          {MOBILE_NAV.map(({ to, label, icon, end }) => (
+            <NavLink key={to} to={to} end={end}
+              className={({ isActive }) =>
+                `flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-nunito font-semibold transition-all ${
+                  isActive ? 'text-[#00A2FF]' : 'text-[#8892B0]'
+                }`
+              }
+            >
+              <span className="text-xl leading-none">{icon}</span>
+              <span>{label}</span>
+            </NavLink>
+          ))}
+
+          {/* Sign out */}
+          <button
+            onClick={handleLogout}
+            className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-nunito font-semibold text-[#8892B0]"
+          >
+            {user?.avatar_url
+              ? <img src={user.avatar_url} className="w-6 h-6 rounded-full border border-[#2D2B5A]" alt="" />
+              : (
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#FF6B9D] to-[#FF3333] flex items-center justify-center text-white font-bold text-xs">
+                  {user?.name?.[0]}
+                </div>
+              )
+            }
+            <span>Sign out</span>
+          </button>
+        </div>
+      </nav>
+
     </div>
   )
 }
