@@ -1,7 +1,8 @@
-# TutorSnap
+# StudyBlox 🎮
 
-AI-powered Cambridge Mathematics study assistant for Grade 6 students.
-Students practice questions with escalating hints, parents track progress, and admins manage the content.
+> AI-powered adaptive tutoring platform — gamified learning for students, real-time insights for parents, full control for admins.
+
+Students practice curriculum topics in a Roblox-inspired interface with escalating hints, XP rewards, streaks, and buddy avatars. Parents track their children's progress with weekly reports and alerts. Admins manage textbooks, students, and platform analytics.
 
 ---
 
@@ -12,6 +13,7 @@ Students practice questions with escalating hints, parents track progress, and a
 | Frontend (web) | https://tutorsnap.web.app |
 | Backend API | https://tutorsnap-api-yfxhelshwq-el.a.run.app |
 | Admin panel | https://tutorsnap.web.app/admin |
+| Parent portal | https://tutorsnap.web.app/parent |
 | Android APK | GitHub → Actions → "Build Android APK" → Artifacts |
 
 ---
@@ -19,18 +21,17 @@ Students practice questions with escalating hints, parents track progress, and a
 ## Architecture
 
 ```
-Browser / Android app (React + Capacitor)
+Browser / Android app (React 18 + Capacitor 8)
         │  HTTPS
         ▼
 Firebase Hosting  ─── static files (dist/)
-        │
-        │  /api/* requests
+        │  /api/* proxy
         ▼
 Cloud Run  (FastAPI, Python 3.11, Docker)
         │
-        ├── Cloud SQL (PostgreSQL 15)  — session + mastery data
+        ├── Cloud SQL (PostgreSQL 15)  — all relational data
         ├── Cloud Storage              — uploaded PDF textbooks
-        └── Secret Manager            — all credentials
+        └── Secret Manager            — all credentials / env vars
 ```
 
 ### GCP Project
@@ -48,26 +49,82 @@ Cloud Run  (FastAPI, Python 3.11, Docker)
 | ORM | SQLAlchemy 2.0, Alembic migrations |
 | Database | Cloud SQL PostgreSQL 15 (`tutorsnap-db`) |
 | File storage | Cloud Storage (`tutorsnap-uploads-tutorsnap`) |
-| AI | Anthropic Claude (`claude-sonnet-4-20250514`) |
+| AI | Anthropic Claude (`claude-sonnet-4-20250514` + Haiku for fast ops) |
 | PDF parsing | PyMuPDF |
 | Auth | Google OAuth 2.0 + HS256 JWT |
 | Frontend | React 18, Vite 5, Tailwind CSS 3 |
+| Fonts | Fredoka One (headings), Nunito (body) |
 | Mobile | Capacitor 8 (Android wrapper) |
 | CI/CD | GitHub Actions (3 workflows) |
 | Hosting | Firebase Hosting |
-| Container registry | Artifact Registry (`asia-south1-docker.pkg.dev/tutorsnap/tutorsnap/api`) |
+| Container registry | Artifact Registry |
 
 ---
 
 ## User Roles
 
-| Role | How they sign in | Access |
+| Role | Sign-in | Access |
 |---|---|---|
-| **Admin** | Google OAuth (email in `ADMIN_EMAILS`) | Everything — upload PDFs, manage students/parents, settings |
-| **Student** | Google OAuth | Practice sessions at `/` |
-| **Parent** | Google OAuth (admin pre-registers them) | Read-only dashboard for linked children at `/parent` |
+| **Admin** | Google OAuth (email in `ADMIN_EMAILS`) | Upload PDFs, manage students/parents, view analytics, platform settings |
+| **Student** | Google OAuth | Practice sessions, progress map, flashcards, exam mode, mistake journal, leaderboard, achievements |
+| **Parent** | Google OAuth (admin pre-creates account) | Read-only dashboard for linked children — weekly report, session history, alerts |
 
-Admin email: `thirumalreddym1982@gmail.com`
+---
+
+## Feature Overview
+
+### 🎮 Student — Engagement & Gamification
+| Feature | Description |
+|---|---|
+| **XP System** | Earn XP on every practice session — +10 per correct answer, +50 on level-up, +100 on session complete |
+| **Daily Streaks** | 🔥 Consecutive days practised, shown in home and parent view |
+| **Buddy Customiser** | Choose avatar (robot/fox/panda/lion/dolphin/owl/dragon/wizard) + custom name; appears in chat |
+| **Weekly Challenge** | One cross-topic question per grade per week; 50 XP bonus on correct answer |
+| **XP Leaderboard** | All-time and this-week rankings, privacy opt-in/out toggle |
+| **Achievements / Badges** | 14 badges across XP milestones, streaks, sessions, and mastery levels |
+
+### 🧠 Student — Learning Effectiveness
+| Feature | Description |
+|---|---|
+| **Adaptive Sessions** | Questions escalate L1→L5; consecutive confident answers trigger level-up |
+| **Spaced Repetition** | Review intervals: L1=1d, L2=3d, L3=7d, L4=14d, L5=21d; 🔁 due indicators everywhere |
+| **Mistake Journal** | All low-score answers logged; filterable by subject, sortable by date/score; one-click re-practice |
+| **Exam Mode** | Timed full-screen exam (5/10/15 questions, 10/15/20 min); concurrent Claude generation; per-question score + XP |
+| **Flashcard Mode** | SM-2-inspired interval growth; tap-to-reveal key concepts; Know it / Need practice tracking |
+| **Concept Map** | Visual grid of all topics colour-coded by mastery level (list/map toggle on Progress page) |
+| **Hint System** | Up to 5 progressive hint tiers before answer reveal; flagged after max hints |
+| **Give-up Scaffolding** | 4-stage scaffolding (rephrase → sub-question → hint → answer); confusion type picker |
+| **Handwriting Input** | Canvas mode (✏️ button) using HTML5 Canvas + PointerEvent API; Claude Vision assesses handwriting |
+| **Sub-questions** | Student can request a simpler sub-question when stuck; generated by Haiku for speed |
+
+### 👨‍👩‍👧 Parent Portal
+| Feature | Description |
+|---|---|
+| **Family Dashboard** | All linked children in cards with sessions, mastery, streak, flags; 7-day grouped bar chart |
+| **Weekly Report** | Week-over-week comparison: sessions ↑/↓, topics count, XP earned, new L3+ mastery badges |
+| **Child Detail** | Subject progress bars, topic mastery list, session history (paginated), flagged topics alert |
+| **Notifications/Alerts** | Flagged topic alerts, progress milestones; grouped by date, unread badge in nav |
+
+### 🔧 Admin Portal
+| Feature | Description |
+|---|---|
+| **Dashboard** | Platform overview: total students, active this week, sessions, flagged count, books, topics |
+| **Analytics** | 14-day session trend chart, grade breakdown, subject performance, mastery donut, top-5 XP leaderboard |
+| **Student Management** | Add students, grade assignment, activate/deactivate, grade filter, CSV export |
+| **Parent Management** | Add parents, link/unlink children, view linked students |
+| **Flagged Students** | View all flagged topics grouped by student, resolve with one click |
+| **Book Management** | Upload PDF textbooks (direct-to-GCS signed URLs), track ingestion progress, retry/cancel |
+| **Platform Settings** | Max questions per session, max hint tiers, session timeout — persisted in DB |
+
+### ✨ UX / Quality of Life
+| Feature | Description |
+|---|---|
+| **Toast Notifications** | Global toast system (success/error/info/warn), auto-dismiss, stacks up to 5 — replaces all `alert()` |
+| **Dark Theme** | Consistent Roblox-inspired dark UI across all roles (`#0F0F23` background) |
+| **Mobile-first** | Bottom nav bar on mobile for all three roles; full desktop sidebar on larger screens |
+| **Responsive Chat** | Session/summary pages full-screen with buddy avatar + XP pops |
+| **Activity Heatmap** | 12-week GitHub-style heatmap on Study Time page |
+| **Real-time Upload Progress** | Floating widget during PDF ingestion with per-chapter progress bar |
 
 ---
 
@@ -77,10 +134,10 @@ Admin email: `thirumalreddym1982@gmail.com`
 - Python 3.11+
 - Node 22+
 - PostgreSQL running locally
-- `backend/.env` file (see below)
+- `backend/.env` (see below)
 
 ### Backend `.env`
-```
+```env
 DATABASE_URL=postgresql+psycopg2://postgres:yourpassword@localhost/tutorsnap
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_CLIENT_ID=322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com
@@ -89,6 +146,7 @@ JWT_SECRET=<random 32-char hex>
 JWT_EXPIRY_HOURS=72
 ADMIN_EMAILS=thirumalreddym1982@gmail.com
 CLAUDE_MODEL=claude-sonnet-4-20250514
+CLAUDE_FAST_MODEL=claude-haiku-4-5-20251001
 MAX_HINT_TIERS=5
 USE_GCS=false
 ```
@@ -104,17 +162,22 @@ uvicorn main:app --reload --port 8000
 # Terminal 2 — Frontend
 cd frontend
 npm install
-npm run dev
-# Opens on http://localhost:5173
+npm run dev          # http://localhost:5173
 ```
 
 The Vite dev server proxies `/api/*` → `http://localhost:8000`.
 
+### Dev login (bypass Google OAuth)
+```bash
+curl -X POST http://localhost:8000/api/auth/dev-login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@example.com"}'
+```
+Returns a JWT token. Paste it into DevTools → Application → Local Storage → `tutorsnap_token`.
+
 ---
 
 ## CI/CD — GitHub Actions
-
-Three workflows trigger on push to `main`:
 
 | Workflow | Trigger path | What it does |
 |---|---|---|
@@ -122,63 +185,20 @@ Three workflows trigger on push to `main`:
 | `deploy-frontend.yml` | `frontend/**` (excl. `android/`) | `npm run build` → Firebase Hosting |
 | `build-android.yml` | `frontend/**` | `npm run build` → Capacitor sync → Gradle assembleDebug → APK artifact |
 
-### Auth: Workload Identity Federation (keyless)
-No service account keys in GitHub. The workflows authenticate via OIDC:
-- **Pool**: `github-pool` (global)
+### Workload Identity Federation (keyless auth)
+No service-account JSON keys in GitHub. OIDC-based:
+- **Pool**: `github-pool`
 - **Provider**: `github-provider`
-- **WIF provider resource**: `projects/322472504855/locations/global/workloadIdentityPools/github-pool/providers/github-provider`
+- **WIF resource**: `projects/322472504855/locations/global/workloadIdentityPools/github-pool/providers/github-provider`
 - **Service account**: `tutorsnap-api@tutorsnap.iam.gserviceaccount.com`
 
-### GitHub Secrets required
+### Required GitHub Secrets
 | Secret | Value |
 |---|---|
-| `WIF_PROVIDER` | WIF provider resource name (above) |
+| `WIF_PROVIDER` | WIF provider resource name |
 | `WIF_SERVICE_ACCOUNT` | `tutorsnap-api@tutorsnap.iam.gserviceaccount.com` |
-| `VITE_GOOGLE_CLIENT_ID` | `322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com` |
+| `VITE_GOOGLE_CLIENT_ID` | OAuth client ID |
 | `VITE_API_BASE` | `https://tutorsnap-api-yfxhelshwq-el.a.run.app` |
-
-(`FIREBASE_SERVICE_ACCOUNT` not needed — deploy-frontend uses WIF + firebase-tools ADC.)
-
----
-
-## Download Android APK
-
-After every push to `main`:
-1. Go to GitHub → Actions → "Build Android APK" → latest run
-2. Scroll to **Artifacts** → click `tutorsnap-debug-<sha>`
-3. Unzip → `app-debug.apk`
-4. Transfer to Android phone → install (allow "Install from unknown sources" in Settings)
-
----
-
-## GCP Infrastructure
-
-### Service Account IAM roles
-`tutorsnap-api@tutorsnap.iam.gserviceaccount.com` has:
-- `roles/artifactregistry.writer`
-- `roles/cloudsql.client`
-- `roles/firebase.admin`
-- `roles/run.admin`
-- `roles/run.developer`
-- `roles/secretmanager.secretAccessor`
-- `roles/storage.objectAdmin`
-
-### Secret Manager secrets
-| Secret | Purpose |
-|---|---|
-| `DATABASE_URL` | Cloud SQL connection string (socket path for Cloud Run) |
-| `ANTHROPIC_API_KEY` | Claude API key |
-| `GOOGLE_CLIENT_ID` | OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
-| `JWT_SECRET` | HS256 signing key |
-| `ADMIN_EMAILS` | Comma-separated admin email list |
-| `GCS_BUCKET_NAME` | `tutorsnap-uploads-tutorsnap` |
-| `FRONTEND_URL` | `https://tutorsnap.web.app` (used in CORS) |
-
-### Cloud SQL
-- Instance: `tutorsnap-db` (PostgreSQL 15, `db-f1-micro`, `asia-south1`)
-- Database: `tutorsnap`
-- User: `tutorsnap_user`
 
 ---
 
@@ -188,24 +208,43 @@ After every push to `main`:
 tutorsnap/
 ├── backend/
 │   ├── Dockerfile
-│   ├── .dockerignore
 │   ├── requirements.txt
 │   ├── alembic.ini
-│   ├── alembic/versions/       — DB migration files
-│   ├── main.py                 — FastAPI app + all routes
-│   ├── auth.py                 — Google OAuth + JWT
-│   ├── database.py             — SQLAlchemy engine + session
-│   ├── models.py               — ORM models (User, Session, Topic, …)
-│   ├── ingestion.py            — PDF parse + Claude structuring
-│   ├── session_engine.py       — question generation + hint logic
-│   └── storage.py              — GCS + local dual-mode storage
+│   ├── alembic/versions/          — 8 migration files
+│   ├── main.py                    — FastAPI app + all 55 API routes
+│   ├── auth.py                    — Google OAuth 2.0 + HS256 JWT
+│   ├── database.py                — SQLAlchemy engine + session factory
+│   ├── models.py                  — 13 ORM models
+│   ├── ingestion.py               — PDF parse + Claude structuring
+│   ├── session_engine.py          — adaptive Q&A + hint + vision logic
+│   ├── storage.py                 — GCS / local dual-mode storage
+│   └── progress.py                — in-memory ingestion progress tracker
 ├── frontend/
 │   ├── src/
-│   │   ├── api/client.js       — Axios + auth interceptors
-│   │   ├── auth/               — AuthContext, ProtectedRoute
-│   │   ├── pages/              — Admin, Parent, Student pages
-│   │   └── components/         — ChatBubble, HintButton, ProgressBadge
-│   ├── android/                — Capacitor Android project (committed)
+│   │   ├── api/client.js          — Axios instance + all API call functions
+│   │   ├── auth/
+│   │   │   ├── AuthContext.jsx    — user state, login, logout, refreshUser
+│   │   │   └── ProtectedRoute.jsx — role-based route guard
+│   │   ├── context/
+│   │   │   ├── ToastContext.jsx   — global toast system
+│   │   │   └── UploadContext.jsx  — PDF upload progress state
+│   │   ├── components/
+│   │   │   ├── BuddyCustomizer.jsx — avatar + name picker modal
+│   │   │   ├── ChatBubble.jsx     — message bubble with buddy emoji
+│   │   │   ├── HintButton.jsx     — progressive hint reveal
+│   │   │   ├── ProgressBadge.jsx  — mastery level badge
+│   │   │   └── WritingCanvas.jsx  — HTML5 Canvas handwriting input
+│   │   └── pages/
+│   │       ├── Chat.jsx           — live session (Q&A + hints + canvas)
+│   │       ├── Summary.jsx        — post-session summary with XP
+│   │       ├── ExamMode.jsx       — full-screen timed exam (3 phases)
+│   │       ├── FlashcardMode.jsx  — full-screen flashcard review
+│   │       ├── Login.jsx          — Google OAuth sign-in
+│   │       ├── TopicSelect.jsx    — topic browser (legacy)
+│   │       ├── admin/             — 8 admin pages
+│   │       ├── parent/            — 4 parent pages
+│   │       └── student/           — 7 student pages
+│   ├── android/                   — Capacitor Android project
 │   ├── capacitor.config.ts
 │   ├── firebase.json
 │   └── .firebaserc
@@ -213,27 +252,68 @@ tutorsnap/
 │   ├── deploy-backend.yml
 │   ├── deploy-frontend.yml
 │   └── build-android.yml
-├── spec.md                     — original MVP build spec
-├── auth_spec.md                — auth + admin + parent build spec
-└── deploy_spec_v2.md           — GCP deployment spec
+├── README.md                      — this file
+├── CHANGELOG.md                   — full feature changelog
+├── backend/README.md              — API reference
+├── frontend/README.md             — frontend component reference
+├── spec.md                        — original MVP build spec
+├── auth_spec.md                   — auth + admin + parent spec
+└── deploy_spec_v2.md              — GCP deployment spec
 ```
 
 ---
 
-## Google OAuth Console — Required Origins
+## Database Schema (13 models)
 
-Make sure these are in **Authorised JavaScript origins** for your OAuth 2.0 Client:
-```
-http://localhost:5173
-https://tutorsnap.web.app
-https://tutorsnap-api-yfxhelshwq-el.a.run.app
-```
+| Model | Purpose |
+|---|---|
+| `User` | Students, parents, admins — with XP, streak, buddy, leaderboard fields |
+| `ParentStudentLink` | Many-to-many parent↔student relationships |
+| `Notification` | Parent alerts for flags and progress milestones |
+| `AppSettings` | Key-value platform config (persisted in DB) |
+| `Book` | Uploaded PDF textbooks with ingestion status |
+| `Chapter` | Chapters within a book |
+| `Topic` | Topics within a chapter, with key_concepts JSON |
+| `Session` | One practice session per student per topic |
+| `SessionTurn` | Each Q&A turn within a session |
+| `TopicMastery` | Per-student per-topic mastery level + spaced repetition dates |
+| `WeeklyChallenge` | One challenge question per grade per week |
+| `WeeklyChallengeCompletion` | Which students completed which challenge |
+| `ExamSession` | Full exam record with all questions, answers, scores |
 
-And in **Authorised redirect URIs**:
-```
-http://localhost:5173
-https://tutorsnap.web.app
-```
+---
+
+## GCP Infrastructure
+
+### IAM roles for `tutorsnap-api@tutorsnap.iam.gserviceaccount.com`
+`artifactregistry.writer`, `cloudsql.client`, `firebase.admin`, `run.admin`, `run.developer`, `secretmanager.secretAccessor`, `storage.objectAdmin`
+
+### Secret Manager secrets
+| Secret | Purpose |
+|---|---|
+| `DATABASE_URL` | Cloud SQL socket connection string |
+| `ANTHROPIC_API_KEY` | Claude API key |
+| `GOOGLE_CLIENT_ID` | OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
+| `JWT_SECRET` | HS256 signing key |
+| `ADMIN_EMAILS` | Comma-separated admin emails |
+| `GCS_BUCKET_NAME` | `tutorsnap-uploads-tutorsnap` |
+| `FRONTEND_URL` | `https://tutorsnap.web.app` (CORS) |
+| `CLAUDE_MODEL` | Primary model name |
+| `CLAUDE_FAST_MODEL` | Fast/cheap model for hints & sub-questions |
+
+### Cloud SQL
+- Instance: `tutorsnap-db` (PostgreSQL 15, `db-f1-micro`, `asia-south1`)
+- Database: `tutorsnap` / User: `tutorsnap_user`
+
+---
+
+## Download Android APK
+
+After every push to `main`:
+1. Go to GitHub → Actions → **Build Android APK** → latest run
+2. Scroll to **Artifacts** → click `tutorsnap-debug-<sha>`
+3. Unzip → install `app-debug.apk` (enable "Install from unknown sources")
 
 ---
 
@@ -247,4 +327,4 @@ https://tutorsnap.web.app
 | Firebase Hosting | $0 |
 | Artifact Registry (<1 GB) | $0 |
 | GitHub Actions (free tier) | $0 |
-| **Total** | **~$7–15** |
+| **Total** | **~$7–15 / month** |
