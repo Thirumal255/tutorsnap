@@ -145,6 +145,26 @@ export default function StudentPractice() {
         <p className="text-[#8892B0] text-sm mt-0.5">Pick a topic and battle it out!</p>
       </div>
 
+      {/* Quick-access: Exam Mode + Flashcards */}
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => navigate('/exam')}
+          className="blox-card p-4 text-left hover:border-[#FF6B9D]/60 transition-all blox-hover group"
+        >
+          <div className="text-3xl mb-2">🎯</div>
+          <p className="font-fredoka font-bold text-white text-base">Exam Mode</p>
+          <p className="text-xs text-[#8892B0] mt-0.5">Timed test · No hints</p>
+        </button>
+        <button
+          onClick={() => navigate('/flashcard')}
+          className="blox-card p-4 text-left hover:border-[#00CC88]/60 transition-all blox-hover group"
+        >
+          <div className="text-3xl mb-2">⚡</div>
+          <p className="font-fredoka font-bold text-white text-base">Flashcards</p>
+          <p className="text-xs text-[#8892B0] mt-0.5">Quick review · Spaced rep</p>
+        </button>
+      </div>
+
       {loading && (
         <div className="text-center py-16">
           <div className="text-4xl animate-bounce mb-3">🎮</div>

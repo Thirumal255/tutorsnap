@@ -78,7 +78,13 @@ export const getLeaderboard       = () => api.get('/student/leaderboard')
 export const getWeeklyChallenge   = () => api.get('/student/weekly-challenge')
 export const submitWeeklyChallenge = (challengeId, answer) =>
   api.post('/student/weekly-challenge/submit', { challenge_id: challengeId, answer })
-export const getStudentProgress = () => api.get('/student/progress')
+export const getStudentProgress    = () => api.get('/student/progress')
+export const getReviewQueue        = () => api.get('/student/review-queue')
+export const getMistakes           = () => api.get('/student/mistakes')
+export const startExam             = (data) => api.post('/exam/start', data)
+export const submitExam            = (data) => api.post('/exam/submit', data)
+export const getFlashcardQuestion  = (topicId) => api.post('/flashcard/question', { topic_id: topicId })
+export const markFlashcard         = (topicId, known) => api.post('/flashcard/mark', { topic_id: topicId, known })
 export const getStudentSessions = (limit = 50) => api.get('/student/sessions', { params: { limit } })
 
 // Parent

@@ -19,10 +19,11 @@ load_dotenv(override=True)
 
 from database import get_db, SessionLocal, engine
 import random
+from concurrent.futures import ThreadPoolExecutor as _TPool, as_completed as _as_completed
 from models import (
     Book, Chapter, Topic, Session as SessionModel, SessionTurn, TopicMastery,
     AppSettings, User, ParentStudentLink, Notification,
-    WeeklyChallenge, WeeklyChallengeCompletion,
+    WeeklyChallenge, WeeklyChallengeCompletion, ExamSession,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -202,7 +203,13 @@ def _notify_parents(db: Session, session, topic, student_user: Optional[User]):
         ))
 
 
+_REVIEW_INTERVALS = {"L1": 1, "L2": 3, "L3": 7, "L4": 14, "L5": 21}
+
+
 def _update_mastery(db: Session, session, topic, flagged: bool = False):
+    interval = _REVIEW_INTERVALS.get(session.current_level, 3)
+    next_review = datetime.utcnow() + timedelta(days=interval)
+
     mastery = db.query(TopicMastery).filter(
         TopicMastery.student_name == session.student_name,
         TopicMastery.topic_id == session.topic_id,
@@ -211,6 +218,8 @@ def _update_mastery(db: Session, session, topic, flagged: bool = False):
         mastery.mastery_level = session.current_level
         mastery.last_practiced_at = datetime.utcnow()
         mastery.total_sessions += 1
+        mastery.next_review_at = next_review
+        mastery.review_interval_days = interval
         if flagged or session.flagged_for_review:
             mastery.flagged_for_review = True
     else:
@@ -221,6 +230,8 @@ def _update_mastery(db: Session, session, topic, flagged: bool = False):
             last_practiced_at=datetime.utcnow(),
             total_sessions=1,
             flagged_for_review=flagged or session.flagged_for_review,
+            next_review_at=next_review,
+            review_interval_days=interval,
         ))
     db.commit()
 
@@ -2049,6 +2060,396 @@ def submit_weekly_challenge(
     }
 
 
+# ─── Learning Effectiveness Endpoints ─────────────────────────────────────────
+
+class ExamStartRequest(BaseModel):
+    subjects: Optional[list] = None   # empty = all subjects
+    question_count: int = 10
+    time_limit_minutes: int = 15
+
+class ExamSubmitRequest(BaseModel):
+    exam_id: int
+    answers: list   # list of strings, same length as questions
+
+class FlashcardMarkRequest(BaseModel):
+    topic_id: int
+    known: bool
+
+
+@app.get("/api/student/review-queue")
+def get_review_queue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Topics where next_review_at has passed — ordered soonest-overdue first."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    now = datetime.utcnow()
+    due = (
+        db.query(TopicMastery)
+        .filter(
+            TopicMastery.student_name == current_user.name,
+            TopicMastery.next_review_at != None,
+            TopicMastery.next_review_at <= now,
+            TopicMastery.flagged_for_review == False,
+        )
+        .order_by(TopicMastery.next_review_at)
+        .limit(10)
+        .all()
+    )
+
+    result = []
+    for m in due:
+        t = db.query(Topic).filter(Topic.id == m.topic_id).first()
+        if not t: continue
+        ch = db.query(Chapter).filter(Chapter.id == t.chapter_id).first()
+        bk = db.query(Book).filter(Book.id == ch.book_id).first() if ch else None
+        overdue_days = max(0, (now - m.next_review_at).days)
+        result.append({
+            "topic_id": t.id,
+            "title": t.title,
+            "subject": bk.subject if bk else "",
+            "chapter_title": ch.title if ch else "",
+            "mastery_level": m.mastery_level,
+            "overdue_days": overdue_days,
+        })
+
+    return {"due": result, "count": len(result)}
+
+
+@app.get("/api/student/mistakes")
+def get_mistakes(
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Questions where the student struggled (score < 50), one per topic, most recent."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    # Get this student's completed session IDs
+    session_ids = [
+        row[0] for row in
+        db.query(SessionModel.id).filter(
+            SessionModel.user_id == current_user.id,
+        ).all()
+    ]
+    if not session_ids:
+        return {"mistakes": []}
+
+    # Get struggling turns
+    turns = (
+        db.query(SessionTurn)
+        .filter(
+            SessionTurn.session_id.in_(session_ids),
+            SessionTurn.confidence_tag == "struggling",
+            SessionTurn.student_answer != None,
+        )
+        .order_by(SessionTurn.created_at.desc())
+        .limit(300)
+        .all()
+    )
+
+    # Build a session_id → topic_id lookup
+    sess_map = {
+        row[0]: row[1]
+        for row in db.query(SessionModel.id, SessionModel.topic_id)
+        .filter(SessionModel.id.in_([t.session_id for t in turns]))
+        .all()
+    }
+
+    # Deduplicate: keep most recent struggling turn per topic
+    seen: dict[int, SessionTurn] = {}
+    for turn in turns:
+        tid = sess_map.get(turn.session_id)
+        if tid and tid not in seen:
+            seen[tid] = turn
+
+    # Build response
+    result = []
+    for topic_id, turn in list(seen.items())[:limit]:
+        t = db.query(Topic).filter(Topic.id == topic_id).first()
+        if not t: continue
+        ch = db.query(Chapter).filter(Chapter.id == t.chapter_id).first()
+        bk = db.query(Book).filter(Book.id == ch.book_id).first() if ch else None
+        m = db.query(TopicMastery).filter(
+            TopicMastery.student_name == current_user.name,
+            TopicMastery.topic_id == topic_id,
+        ).first()
+        result.append({
+            "topic_id": topic_id,
+            "topic_title": t.title,
+            "subject": bk.subject if bk else "",
+            "chapter_title": ch.title if ch else "",
+            "mastery_level": m.mastery_level if m else None,
+            "question": turn.question_text,
+            "my_answer": turn.student_answer,
+            "score": turn.assessment_score or 0,
+            "practiced_at": turn.created_at.isoformat() if turn.created_at else None,
+        })
+
+    return {"mistakes": result}
+
+
+@app.post("/api/exam/start")
+def start_exam(
+    req: ExamStartRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a timed mock exam. Questions are produced in parallel from Claude."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+    if not current_user.grade:
+        raise HTTPException(status_code=400, detail="Grade not set")
+
+    count = max(3, min(req.question_count, 15))
+    time_limit = max(5, min(req.time_limit_minutes, 30)) * 60  # convert to seconds
+
+    # Build topic pool
+    topic_query = (
+        db.query(Topic)
+        .join(Chapter, Chapter.id == Topic.chapter_id)
+        .join(Book, Book.id == Chapter.book_id)
+        .filter(Book.grade == current_user.grade, Book.ingestion_status == "done")
+    )
+    if req.subjects:
+        topic_query = topic_query.filter(Book.subject.in_(req.subjects))
+
+    all_topics = topic_query.all()
+    if not all_topics:
+        raise HTTPException(status_code=400, detail="No topics available for selected subjects")
+
+    # Pre-load chapter → book for context (needed by generate_question)
+    for t in all_topics:
+        t.chapter = db.query(Chapter).filter(Chapter.id == t.chapter_id).first()
+
+    # Pick diverse set of topics (try different chapters)
+    chosen = _pick_diverse_topics(all_topics, count)
+
+    # Generate questions in parallel
+    def _gen(args):
+        topic, level = args
+        bk = db.query(Book).filter(Book.id == topic.chapter.book_id).first() if topic.chapter else None
+        return generate_question(topic, level, []), topic, bk
+
+    # Exam uses L2-L3 level for variety
+    exam_level = "L3"
+    questions = []
+    with _TPool(max_workers=min(len(chosen), 6)) as pool:
+        futures = {pool.submit(_gen, (t, exam_level)): t for t in chosen}
+        for fut in _as_completed(futures, timeout=90):
+            try:
+                nq, topic, book = fut.result(timeout=30)
+                questions.append({
+                    "topic_id": topic.id,
+                    "topic_title": topic.title,
+                    "subject": book.subject if book else "",
+                    "question": nq["question"],
+                    "expected_key_points": nq["expected_key_points"],
+                    "answer_format": nq["answer_format"],
+                })
+            except Exception:
+                pass
+
+    if not questions:
+        raise HTTPException(status_code=500, detail="Failed to generate exam questions")
+
+    exam = ExamSession(
+        user_id=current_user.id,
+        grade=current_user.grade,
+        subjects_json=json.dumps(req.subjects or []),
+        questions_json=json.dumps(questions),
+        time_limit_seconds=time_limit,
+        question_count=len(questions),
+        status="active",
+    )
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    return {
+        "exam_id": exam.id,
+        "questions": questions,
+        "time_limit_seconds": time_limit,
+        "question_count": len(questions),
+    }
+
+
+def _pick_diverse_topics(topics: list, count: int) -> list:
+    """Pick up to `count` topics, preferring variety across chapters."""
+    if len(topics) <= count:
+        return topics
+    # Group by chapter and pick round-robin
+    by_chapter: dict = {}
+    for t in topics:
+        cid = t.chapter_id
+        if cid not in by_chapter:
+            by_chapter[cid] = []
+        by_chapter[cid].append(t)
+    chosen = []
+    chapters = list(by_chapter.values())
+    random.shuffle(chapters)
+    idx = 0
+    while len(chosen) < count:
+        bucket = chapters[idx % len(chapters)]
+        if bucket:
+            chosen.append(bucket.pop(random.randint(0, len(bucket) - 1)))
+        idx += 1
+        if all(len(b) == 0 for b in chapters):
+            break
+    return chosen
+
+
+@app.post("/api/exam/submit")
+def submit_exam(
+    req: ExamSubmitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Batch-assess all answers; update XP; mark exam complete."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    exam = db.query(ExamSession).filter(
+        ExamSession.id == req.exam_id,
+        ExamSession.user_id == current_user.id,
+    ).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.status == "completed":
+        # Idempotent — return stored results
+        return {
+            "total_score": exam.total_score,
+            "xp_earned": exam.xp_earned,
+            "results": json.loads(exam.scores_json or "[]"),
+        }
+
+    questions = json.loads(exam.questions_json)
+    answers = req.answers
+
+    # Pad/trim to match question count
+    while len(answers) < len(questions):
+        answers.append("")
+    answers = answers[:len(questions)]
+
+    # Assess in parallel
+    def _assess_one(args):
+        q, ans = args
+        if not ans.strip():
+            return {"score": 0, "feedback": "No answer provided.", "confidence_tag": "struggling",
+                    "off_topic": True, "missed_key_points": []}
+        topic = db.query(Topic).filter(Topic.id == q["topic_id"]).first()
+        if not topic:
+            return {"score": 0, "feedback": "Topic not found.", "confidence_tag": "struggling",
+                    "off_topic": False, "missed_key_points": []}
+        topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
+        return assess_answer(
+            topic, q["question"], ans, "L3", hint_tier=0,
+            expected_key_points=q.get("expected_key_points"),
+            answer_format=q.get("answer_format"),
+        )
+
+    results = []
+    with _TPool(max_workers=min(len(questions), 6)) as pool:
+        futures = {pool.submit(_assess_one, (q, answers[i])): i
+                   for i, q in enumerate(questions)}
+        result_map = {}
+        for fut in _as_completed(futures, timeout=120):
+            i = futures[fut]
+            try:
+                result_map[i] = fut.result(timeout=30)
+            except Exception:
+                result_map[i] = {"score": 0, "feedback": "Assessment failed.", "confidence_tag": "struggling",
+                                  "off_topic": False, "missed_key_points": []}
+
+    for i, q in enumerate(questions):
+        r = result_map.get(i, {"score": 0, "feedback": "", "confidence_tag": "struggling",
+                                "off_topic": False, "missed_key_points": []})
+        results.append({
+            "question_num": i + 1,
+            "topic_title": q["topic_title"],
+            "subject": q["subject"],
+            "question": q["question"],
+            "my_answer": answers[i],
+            "score": r["score"],
+            "feedback": r["feedback"],
+            "answer_format": q.get("answer_format"),
+        })
+
+    total_score = int(sum(r["score"] for r in results) / len(results)) if results else 0
+    xp_earned = max(0, total_score)  # 1 XP per score point, max 100
+
+    exam.answers_json = json.dumps(answers)
+    exam.scores_json = json.dumps(results)
+    exam.ended_at = datetime.utcnow()
+    exam.status = "completed"
+    exam.total_score = total_score
+    exam.xp_earned = xp_earned
+    _update_user_xp(db, current_user.id, xp_earned)
+    db.commit()
+
+    return {"total_score": total_score, "xp_earned": xp_earned, "results": results}
+
+
+@app.post("/api/flashcard/question")
+def get_flashcard_question(
+    req: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a fresh L1 flashcard question for a topic."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    topic_id = req.get("topic_id")
+    if not topic_id:
+        raise HTTPException(status_code=400, detail="topic_id required")
+
+    topic = db.query(Topic).filter(Topic.id == topic_id).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
+
+    nq = generate_question(topic, "L1", [])
+    return {
+        "topic_id": topic.id,
+        "topic_title": topic.title,
+        "question": nq["question"],
+        "expected_key_points": nq["expected_key_points"],
+        "answer_format": nq["answer_format"],
+    }
+
+
+@app.post("/api/flashcard/mark")
+def mark_flashcard(
+    req: FlashcardMarkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update spaced-repetition interval based on whether student knew the answer."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    mastery = db.query(TopicMastery).filter(
+        TopicMastery.student_name == current_user.name,
+        TopicMastery.topic_id == req.topic_id,
+    ).first()
+
+    now = datetime.utcnow()
+    if mastery:
+        if req.known:
+            new_interval = min(int((mastery.review_interval_days or 1) * 1.5), 21)
+        else:
+            new_interval = 1
+        mastery.review_interval_days = new_interval
+        mastery.next_review_at = now + timedelta(days=new_interval)
+        db.commit()
+
+    return {"updated": bool(mastery), "next_review_days": mastery.review_interval_days if mastery else 1}
+
+
 @app.get("/api/student/sessions")
 def student_sessions(
     limit: int = Query(50, ge=1, le=200),
@@ -2122,10 +2523,12 @@ def student_progress(
                     "id": t.id,
                     "topic_number": t.topic_number,
                     "title": t.title,
+                    "key_concepts": t.key_concepts or [],
                     "mastery_level": m.mastery_level if m else None,
                     "mastery_sessions": m.total_sessions if m else 0,
                     "flagged_for_review": m.flagged_for_review if m else False,
                     "last_practiced_at": m.last_practiced_at.isoformat() if m and m.last_practiced_at else None,
+                    "next_review_at": m.next_review_at.isoformat() if m and m.next_review_at else None,
                 })
             total = len(topic_list)
             attempted = sum(1 for tl in topic_list if tl["mastery_level"] is not None)

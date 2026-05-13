@@ -6,15 +6,17 @@ const NAV = [
   { to: '/home',         label: 'Home',        icon: '🏠', end: true },
   { to: '/practice',     label: 'Practice',     icon: '⚔️' },
   { to: '/progress',     label: 'My Progress',  icon: '📈' },
+  { to: '/mistakes',     label: 'Mistakes',     icon: '📝' },
   { to: '/study-time',   label: 'Study Time',   icon: '⏱️' },
   { to: '/achievements', label: 'Achievements', icon: '🏆' },
 ]
 
 // Condensed for mobile bottom bar (max 5 fits fine here)
 const MOBILE_NAV = [
-  { to: '/home',         label: 'Home',    icon: '🏠', end: true },
+  { to: '/home',         label: 'Home',     icon: '🏠', end: true },
   { to: '/practice',     label: 'Practice', icon: '⚔️' },
   { to: '/progress',     label: 'Progress', icon: '📈' },
+  { to: '/mistakes',     label: 'Mistakes', icon: '📝' },
   { to: '/achievements', label: 'Awards',   icon: '🏆' },
 ]
 

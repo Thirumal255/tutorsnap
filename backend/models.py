@@ -223,6 +223,31 @@ class TopicMastery(Base):
     last_practiced_at = Column(DateTime, nullable=True)
     total_sessions = Column(Integer, default=1)
 
+    # ── Spaced repetition ─────────────────────────────────────────────────
+    next_review_at = Column(DateTime, nullable=True)       # when to resurface this topic
+    review_interval_days = Column(Integer, default=1)      # current interval (grows after "know it")
+
     __table_args__ = (UniqueConstraint("student_name", "topic_id"),)
 
     topic = relationship("Topic", back_populates="masteries")
+
+
+class ExamSession(Base):
+    """Stores a timed mock-exam: questions generated upfront, answers submitted in bulk."""
+    __tablename__ = "exam_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    grade = Column(Integer, nullable=False)
+    subjects_json = Column(Text, nullable=True)    # JSON list of subject names chosen
+    questions_json = Column(Text, nullable=False)  # JSON list of question objects
+    answers_json = Column(Text, nullable=True)     # JSON list of student answer strings
+    scores_json = Column(Text, nullable=True)      # JSON list of int scores
+    feedbacks_json = Column(Text, nullable=True)   # JSON list of feedback strings
+    time_limit_seconds = Column(Integer, default=900)
+    question_count = Column(Integer, default=10)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="active")  # active / completed
+    total_score = Column(Integer, nullable=True)   # 0-100 average
+    xp_earned = Column(Integer, nullable=True)

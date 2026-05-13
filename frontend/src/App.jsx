@@ -13,6 +13,9 @@ import StudentPractice from './pages/student/StudentPractice'
 import StudentProgress from './pages/student/StudentProgress'
 import StudentStudyTime from './pages/student/StudentStudyTime'
 import StudentAchievements from './pages/student/StudentAchievements'
+import StudentMistakes from './pages/student/StudentMistakes'
+import ExamMode from './pages/ExamMode'
+import FlashcardMode from './pages/FlashcardMode'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminStudents from './pages/admin/AdminStudents'
@@ -50,7 +53,20 @@ export default function App() {
               <Route path="progress"     element={<StudentProgress />} />
               <Route path="study-time"   element={<StudentStudyTime />} />
               <Route path="achievements" element={<StudentAchievements />} />
+              <Route path="mistakes"     element={<StudentMistakes />} />
             </Route>
+
+            {/* Exam and Flashcard — full-screen, no sidebar */}
+            <Route path="/exam" element={
+              <ProtectedRoute roles={['student']}>
+                <ExamMode />
+              </ProtectedRoute>
+            } />
+            <Route path="/flashcard" element={
+              <ProtectedRoute roles={['student']}>
+                <FlashcardMode />
+              </ProtectedRoute>
+            } />
 
             {/* Session / Summary pages (full-screen, no sidebar) */}
             <Route path="/session/:id" element={

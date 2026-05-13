@@ -4,6 +4,7 @@ import { useAuth } from '../../auth/AuthContext'
 import {
   getStudentDashboard, startSession,
   getWeeklyChallenge, submitWeeklyChallenge,
+  getReviewQueue,
 } from '../../api/client'
 import { SUBJECT_COLOR } from './StudentLayout'
 import BuddyCustomizer from '../../components/BuddyCustomizer'
@@ -169,16 +170,22 @@ function WeeklyChallengeCard({ userId }) {
 export default function StudentHome() {
   const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
-  const [data, setData]       = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData]         = useState(null)
+  const [loading, setLoading]   = useState(true)
   const [resuming, setResuming] = useState(false)
   const [showBuddy, setShowBuddy] = useState(false)
+  const [reviewQueue, setReviewQueue] = useState([])
 
   useEffect(() => {
-    getStudentDashboard()
-      .then(r => setData(r.data))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
+    Promise.all([
+      getStudentDashboard(),
+      getReviewQueue(),
+    ]).then(([dashRes, reviewRes]) => {
+      setData(dashRes.data)
+      setReviewQueue(reviewRes.data.due || [])
+    }).catch(() => {
+      getStudentDashboard().then(r => setData(r.data)).catch(() => setData(null))
+    }).finally(() => setLoading(false))
   }, [])
 
   async function handleContinue(topicId) {
@@ -285,6 +292,34 @@ export default function StudentHome() {
         <>
           {/* ── Weekly challenge ───────────────────────────────────────── */}
           <WeeklyChallengeCard userId={user?.id} />
+
+          {/* ── Spaced repetition review queue ────────────────────────── */}
+          {reviewQueue.length > 0 && (
+            <div className="blox-card p-4 border-[#FF6B9D]/30 animate-bounce-in">
+              <p className="text-xs text-[#FF6B9D] font-semibold uppercase tracking-widest mb-3">
+                🔁 Due for review ({reviewQueue.length})
+              </p>
+              <div className="space-y-2">
+                {reviewQueue.slice(0, 3).map(item => (
+                  <div key={item.topic_id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm text-white font-semibold truncate">{item.title}</p>
+                      <p className="text-xs text-[#8892B0]">
+                        {item.subject} · {item.overdue_days > 0 ? `${item.overdue_days}d overdue` : 'due today'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleContinue(item.topic_id)}
+                      disabled={resuming}
+                      className="btn-blox-primary flex-shrink-0 text-xs py-1.5 px-3 disabled:opacity-50"
+                    >
+                      {resuming ? '…' : '▶ Review'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Continue card ─────────────────────────────────────────── */}
           {data.last_practiced && (
