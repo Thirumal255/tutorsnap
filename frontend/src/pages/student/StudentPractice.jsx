@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getBooks, getTopics, startSession } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
+import { useToast } from '../../context/ToastContext'
 
 const SUBJECT_EMOJI = {
   Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
@@ -35,6 +36,7 @@ export default function StudentPractice() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
+  const { toast } = useToast()
 
   const [books, setBooks] = useState([])
   const [subjects, setSubjects] = useState([])
@@ -118,7 +120,7 @@ export default function StudentPractice() {
       )
       navigate(`/session/${d.session_id}`)
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to start session')
+      toast.error(e.response?.data?.detail || 'Failed to start session')
     } finally {
       setStarting(null)
     }

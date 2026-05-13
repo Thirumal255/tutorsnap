@@ -87,11 +87,15 @@ export const getFlashcardQuestion  = (topicId) => api.post('/flashcard/question'
 export const markFlashcard         = (topicId, known) => api.post('/flashcard/mark', { topic_id: topicId, known })
 export const getStudentSessions = (limit = 50) => api.get('/student/sessions', { params: { limit } })
 
+// Admin extended
+export const getAdminAnalytics = () => api.get('/admin/analytics')
+
 // Parent
 export const getMyChildren = () => api.get('/parent/children')
 export const getChildDetail = (id) => api.get(`/parent/children/${id}`)
 export const getChildSessions = (id, limit = 20, offset = 0) =>
   api.get(`/parent/children/${id}/sessions?limit=${limit}&offset=${offset}`)
+export const getChildWeeklyReport = (id) => api.get(`/parent/children/${id}/weekly-report`)
 export const getFamilyActivity = () => api.get('/parent/family-activity')
 export const getParentNotifications = () => api.get('/parent/notifications')
 export const markNotificationRead = (id) => api.post(`/parent/notifications/${id}/read`)

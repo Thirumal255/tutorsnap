@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getFlaggedStudents, resolveFlag } from '../../api/client'
+import { useToast } from '../../context/ToastContext'
 
 const LEVEL_COLOR = {
   L1: 'text-[#8892B0]', L2: 'text-blue-400', L3: 'text-green-400',
@@ -9,6 +10,7 @@ const LEVEL_COLOR = {
 
 export default function AdminFlagged() {
   const navigate = useNavigate()
+  const { toast } = useToast()
   const [flagged, setFlagged] = useState([])
   const [loading, setLoading] = useState(true)
   const [resolving, setResolving] = useState(null)
@@ -22,8 +24,9 @@ export default function AdminFlagged() {
     try {
       await resolveFlag(studentId, topicId)
       setFlagged(f => f.filter((_, i) => i !== idx))
+      toast.success('Flag resolved!')
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to resolve')
+      toast.error(e.response?.data?.detail || 'Failed to resolve')
     } finally {
       setResolving(null)
     }

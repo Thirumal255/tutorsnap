@@ -24,10 +24,12 @@ import AdminParents from './pages/admin/AdminParents'
 import AdminFlagged from './pages/admin/AdminFlagged'
 import AdminSettings from './pages/admin/AdminSettings'
 import AdminBooks from './pages/admin/AdminBooks'
+import AdminAnalytics from './pages/admin/AdminAnalytics'
 import ParentLayout from './pages/parent/ParentLayout'
 import ParentDashboard from './pages/parent/ParentDashboard'
 import ParentChildDetail from './pages/parent/ParentChildDetail'
 import ParentNotifications from './pages/parent/ParentNotifications'
+import { ToastProvider } from './context/ToastContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
@@ -35,6 +37,7 @@ export default function App() {
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID} onScriptLoadError={() => console.error('GSI script failed')}>
       <AuthProvider>
+        <ToastProvider>
         <BrowserRouter>
           <Routes>
             {/* Public */}
@@ -95,6 +98,7 @@ export default function App() {
               <Route path="flagged" element={<AdminFlagged />} />
               <Route path="settings" element={<AdminSettings />} />
               <Route path="books" element={<AdminBooks />} />
+              <Route path="analytics" element={<AdminAnalytics />} />
             </Route>
 
             {/* Parent */}
@@ -111,6 +115,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </BrowserRouter>
+        </ToastProvider>
       </AuthProvider>
     </GoogleOAuthProvider>
   )

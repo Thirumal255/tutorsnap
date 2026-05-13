@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getStudentProgress, startSession } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
+import { useToast } from '../../context/ToastContext'
 
 const SUBJECT_EMOJI = {
   Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
@@ -198,6 +199,7 @@ function ConceptMap({ books, onPlay, starting }) {
 export default function StudentProgress() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const { toast } = useToast()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeSubject, setActiveSubject] = useState(null)
@@ -223,7 +225,7 @@ export default function StudentProgress() {
         levelLabel: d.level_label, topicId, answerFormat: d.answer_format || null,
       }))
       navigate(`/session/${d.session_id}`)
-    } catch (e) { alert(e.response?.data?.detail || 'Failed to start session') }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to start session') }
     finally { setStarting(null) }
   }
 

@@ -1,11 +1,30 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAdminStudents, createStudent, deactivateStudent, activateStudent, updateStudentGrade } from '../../api/client'
+import { useToast } from '../../context/ToastContext'
+
+function exportCSV(students) {
+  const header = ['Name', 'Email', 'Grade', 'Sessions', 'Mastered', 'Flags', 'Status']
+  const rows = students.map(s => [
+    s.name, s.email, s.grade ?? '', s.total_sessions, s.topics_mastered,
+    s.flagged_topics, s.is_active ? 'Active' : 'Inactive',
+  ])
+  const csv = [header, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `students_${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export default function AdminStudents() {
   const navigate = useNavigate()
+  const { toast } = useToast()
   const [students, setStudents] = useState([])
   const [search, setSearch] = useState('')
+  const [gradeFilter, setGradeFilter] = useState(null) // null = all
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -27,6 +46,7 @@ export default function AdminStudents() {
       await createStudent(email.trim(), name.trim(), grade ? parseInt(grade) : null)
       setEmail(''); setName(''); setGrade('')
       reload()
+      toast.success('Student added!')
     } catch (e) {
       setAddError(e.response?.data?.detail || 'Failed to add student')
     } finally { setAdding(false) }
@@ -37,20 +57,30 @@ export default function AdminStudents() {
       if (s.is_active) await deactivateStudent(s.id)
       else await activateStudent(s.id)
       setStudents(prev => prev.map(x => x.id === s.id ? { ...x, is_active: !x.is_active } : x))
-    } catch {}
+      toast.success(s.is_active ? 'Student deactivated' : 'Student activated')
+    } catch {
+      toast.error('Failed to update student status')
+    }
   }
 
   async function handleGrade(id, g) {
     try {
       await updateStudentGrade(id, parseInt(g))
       setStudents(prev => prev.map(x => x.id === id ? { ...x, grade: parseInt(g) } : x))
-    } catch {}
+      toast.success('Grade updated')
+    } catch {
+      toast.error('Failed to update grade')
+    }
   }
 
-  const filtered = students.filter(s =>
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.email.toLowerCase().includes(search.toLowerCase())
-  )
+  const availableGrades = [...new Set(students.map(s => s.grade).filter(Boolean))].sort()
+
+  const filtered = students.filter(s => {
+    const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.email.toLowerCase().includes(search.toLowerCase())
+    const matchGrade = gradeFilter === null || s.grade === gradeFilter
+    return matchSearch && matchGrade
+  })
 
   return (
     <div className="p-8 space-y-6">
@@ -89,11 +119,39 @@ export default function AdminStudents() {
         {addError && <p className="text-[#FF3333] text-xs mt-3">{addError}</p>}
       </div>
 
-      {/* Search + count */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-[#8892B0]">{students.length} player{students.length !== 1 ? 's' : ''}</span>
+      {/* Search + grade filter + export */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-[#8892B0]">{filtered.length} / {students.length} player{students.length !== 1 ? 's' : ''}</span>
         <input placeholder="🔍 Search players…" value={search} onChange={e => setSearch(e.target.value)}
-          className="blox-input w-60" />
+          className="blox-input w-52" />
+        {/* Grade filter pills */}
+        <div className="flex gap-1.5 flex-wrap">
+          <button
+            onClick={() => setGradeFilter(null)}
+            className={`px-2.5 py-1 rounded-full text-xs font-nunito font-semibold transition-all ${
+              gradeFilter === null ? 'bg-[#00A2FF] text-white' : 'bg-[#2D2B5A] text-[#8892B0] hover:text-white'
+            }`}
+          >
+            All
+          </button>
+          {availableGrades.map(g => (
+            <button
+              key={g}
+              onClick={() => setGradeFilter(g === gradeFilter ? null : g)}
+              className={`px-2.5 py-1 rounded-full text-xs font-nunito font-semibold transition-all ${
+                gradeFilter === g ? 'bg-[#00A2FF] text-white' : 'bg-[#2D2B5A] text-[#8892B0] hover:text-white'
+              }`}
+            >
+              Gr {g}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => { exportCSV(filtered); toast.success('CSV exported!') }}
+          className="ml-auto text-xs text-[#8892B0] hover:text-white border border-[#2D2B5A] hover:border-[#00CC88] rounded-xl px-3 py-1.5 transition-all font-nunito font-semibold"
+        >
+          ↓ Export CSV
+        </button>
       </div>
 
       {loading ? (

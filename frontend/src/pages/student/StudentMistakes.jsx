@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getMistakes, startSession } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
+import { useToast } from '../../context/ToastContext'
 
 const SUBJECT_EMOJI = {
   Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
@@ -95,6 +96,7 @@ function MistakeCard({ mistake, onRepractice, starting }) {
 export default function StudentMistakes() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { toast } = useToast()
 
   const [mistakes, setMistakes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -126,7 +128,7 @@ export default function StudentMistakes() {
       )
       navigate(`/session/${d.session_id}`)
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to start session')
+      toast.error(e.response?.data?.detail || 'Failed to start session')
     } finally {
       setStarting(null)
     }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getSettings, updateSettings } from '../../api/client'
+import { useToast } from '../../context/ToastContext'
 
 const SETTINGS_META = [
   {
@@ -29,6 +30,7 @@ const SETTINGS_META = [
 ]
 
 export default function AdminSettings() {
+  const { toast } = useToast()
   const [form, setForm] = useState({})
   const [original, setOriginal] = useState({})
   const [saved, setSaved] = useState(false)
@@ -59,8 +61,9 @@ export default function AdminSettings() {
       setForm(r.data)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
+      toast.success('Settings saved!')
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to save settings')
+      toast.error(e.response?.data?.detail || 'Failed to save settings')
     } finally {
       setSaving(false)
     }

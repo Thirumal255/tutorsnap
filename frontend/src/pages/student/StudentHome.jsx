@@ -8,6 +8,7 @@ import {
 } from '../../api/client'
 import { SUBJECT_COLOR } from './StudentLayout'
 import BuddyCustomizer from '../../components/BuddyCustomizer'
+import { useToast } from '../../context/ToastContext'
 
 const BUDDY_EMOJI = {
   robot:'🤖', fox:'🦊', panda:'🐼', lion:'🦁',
@@ -170,6 +171,7 @@ function WeeklyChallengeCard({ userId }) {
 export default function StudentHome() {
   const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
+  const { toast } = useToast()
   const [data, setData]         = useState(null)
   const [loading, setLoading]   = useState(true)
   const [resuming, setResuming] = useState(false)
@@ -205,7 +207,7 @@ export default function StudentHome() {
       )
       navigate(`/session/${d.session_id}`)
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to start session')
+      toast.error(e.response?.data?.detail || 'Failed to start session')
     } finally {
       setResuming(false)
     }

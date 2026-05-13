@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { getAdminParents, getAdminStudents, createParent, linkStudentToParent, unlinkStudentFromParent } from '../../api/client'
+import { useToast } from '../../context/ToastContext'
 
 export default function AdminParents() {
+  const { toast } = useToast()
   const [parents, setParents] = useState([])
   const [students, setStudents] = useState([])
   const [email, setEmail] = useState('')
@@ -39,7 +41,7 @@ export default function AdminParents() {
       setLinkModal(null); setLinkStudentId('')
       reload()
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed')
+      toast.error(e.response?.data?.detail || 'Failed to link student')
     }
   }
 

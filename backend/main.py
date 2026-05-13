@@ -1407,6 +1407,103 @@ def admin_overview(
     }
 
 
+@app.get("/api/admin/analytics")
+def admin_analytics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Rich analytics for the Admin Analytics page."""
+    now = datetime.utcnow()
+
+    # ── 14-day session trend ────────────────────────────────────────────────
+    trend = []
+    for i in range(13, -1, -1):
+        day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        count = db.query(func.count(SessionModel.id)).filter(
+            SessionModel.started_at >= day_start,
+            SessionModel.started_at < day_end,
+        ).scalar() or 0
+        trend.append({"date": day_start.date().isoformat(), "sessions": count})
+
+    # ── Grade breakdown ─────────────────────────────────────────────────────
+    grade_rows = db.query(
+        User.grade,
+        func.count(User.id).label("students"),
+    ).filter(User.role == "student", User.grade.isnot(None)).group_by(User.grade).all()
+
+    grade_session_rows = db.query(
+        User.grade,
+        func.count(SessionModel.id).label("sessions"),
+    ).join(SessionModel, SessionModel.user_id == User.id).filter(
+        User.role == "student", User.grade.isnot(None)
+    ).group_by(User.grade).all()
+
+    grade_sess_map = {r.grade: r.sessions for r in grade_session_rows}
+    grade_breakdown = [
+        {"grade": r.grade, "students": r.students, "sessions": grade_sess_map.get(r.grade, 0)}
+        for r in sorted(grade_rows, key=lambda x: x.grade)
+    ]
+
+    # ── Subject breakdown (sessions + flags) ────────────────────────────────
+    subj_sess = db.query(
+        Book.subject,
+        func.count(SessionModel.id).label("sessions"),
+    ).join(Chapter, Chapter.book_id == Book.id)\
+     .join(Topic, Topic.chapter_id == Chapter.id)\
+     .join(SessionModel, SessionModel.topic_id == Topic.id)\
+     .group_by(Book.subject)\
+     .order_by(func.count(SessionModel.id).desc())\
+     .all()
+
+    subj_flags = db.query(
+        Book.subject,
+        func.count(TopicMastery.id).label("flags"),
+    ).join(Chapter, Chapter.book_id == Book.id)\
+     .join(Topic, Topic.chapter_id == Chapter.id)\
+     .join(TopicMastery, TopicMastery.topic_id == Topic.id)\
+     .filter(TopicMastery.flagged_for_review == True)\
+     .group_by(Book.subject)\
+     .all()
+
+    flags_map = {r.subject: r.flags for r in subj_flags}
+    subject_breakdown = [
+        {"subject": r.subject, "sessions": r.sessions, "flags": flags_map.get(r.subject, 0)}
+        for r in subj_sess
+    ]
+
+    # ── Mastery level distribution ──────────────────────────────────────────
+    mastery_rows = db.query(
+        TopicMastery.mastery_level,
+        func.count(TopicMastery.id).label("count"),
+    ).filter(TopicMastery.mastery_level.isnot(None)).group_by(TopicMastery.mastery_level).all()
+    mastery_dist = {r.mastery_level: r.count for r in mastery_rows}
+
+    # ── Top 5 students by total XP ──────────────────────────────────────────
+    top_users = db.query(User).filter(
+        User.role == "student", User.is_active == True,
+    ).order_by(User.total_xp.desc()).limit(5).all()
+
+    top_students = []
+    for u in top_users:
+        mastered = db.query(func.count(TopicMastery.id)).filter(
+            TopicMastery.student_name == u.name,
+            TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
+        ).scalar() or 0
+        top_students.append({
+            "id": u.id, "name": u.name, "grade": u.grade,
+            "total_xp": u.total_xp or 0, "topics_mastered": mastered,
+        })
+
+    return {
+        "sessions_trend": trend,
+        "grade_breakdown": grade_breakdown,
+        "subject_breakdown": subject_breakdown,
+        "mastery_distribution": mastery_dist,
+        "top_students": top_students,
+    }
+
+
 # ─── Phase C: Parent Routes ────────────────────────────────────────────────
 
 @app.get("/api/parent/children")
@@ -1598,6 +1695,72 @@ def parent_get_child_sessions(
             "questions_asked": s.questions_asked, "status": s.status,
         })
     return result
+
+
+@app.get("/api/parent/children/{student_id}/weekly-report")
+def child_weekly_report(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_parent),
+):
+    """Week-over-week snapshot for a parent's child."""
+    # Verify parent owns this child (admins pass through)
+    if current_user.role != "admin":
+        link = db.query(ParentStudentLink).filter(
+            ParentStudentLink.parent_id == current_user.id,
+            ParentStudentLink.student_id == student_id,
+        ).first()
+        if not link:
+            raise HTTPException(status_code=403, detail="Not your child")
+
+    student = db.query(User).filter(User.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    now = datetime.utcnow()
+    # This week: Monday 00:00 UTC
+    days_since_monday = now.weekday()
+    week_start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+    last_week_start = week_start - timedelta(days=7)
+
+    def _sessions_in_range(start, end):
+        return db.query(SessionModel).filter(
+            SessionModel.user_id == student_id,
+            SessionModel.started_at >= start,
+            SessionModel.started_at < end,
+        ).all()
+
+    this_week_sessions = _sessions_in_range(week_start, now)
+    last_week_sessions = _sessions_in_range(last_week_start, week_start)
+
+    # Topics practiced this week
+    topics_this_week = list({s.topic_id for s in this_week_sessions})
+
+    # New masteries achieved this week (L3+ reached/improved)
+    new_masteries = []
+    masteries_this_week = db.query(TopicMastery).join(Topic).filter(
+        TopicMastery.student_name == student.name,
+        TopicMastery.last_practiced_at >= week_start,
+        TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
+    ).order_by(TopicMastery.last_practiced_at.desc()).limit(5).all()
+    for m in masteries_this_week:
+        new_masteries.append({"topic_title": m.topic.title if m.topic else "Unknown", "level": m.mastery_level})
+
+    return {
+        "this_week": {
+            "sessions": len(this_week_sessions),
+            "topics_count": len(topics_this_week),
+            "xp_earned": student.weekly_xp or 0,
+            "total_xp": student.total_xp or 0,
+        },
+        "last_week": {
+            "sessions": len(last_week_sessions),
+            "topics_count": len({s.topic_id for s in last_week_sessions}),
+        },
+        "delta_sessions": len(this_week_sessions) - len(last_week_sessions),
+        "new_masteries": new_masteries,
+        "streak_days": student.total_xp,  # proxy — real streak stored elsewhere
+    }
 
 
 @app.get("/api/parent/family-activity")

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { getBooks, getTopics, startSession } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import ProgressBadge from '../components/ProgressBadge'
+import { useToast } from '../context/ToastContext'
 
 const SUBJECT_EMOJI = {
   Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
@@ -14,6 +15,7 @@ export default function TopicSelect() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, logout } = useAuth()
+  const { toast } = useToast()
 
   const [books, setBooks] = useState([])          // books for this grade
   const [selectedBook, setSelectedBook] = useState(null)
@@ -92,7 +94,7 @@ export default function TopicSelect() {
       )
       navigate(`/session/${d.session_id}`)
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to start session')
+      toast.error(e.response?.data?.detail || 'Failed to start session')
     } finally {
       setStarting(null)
     }

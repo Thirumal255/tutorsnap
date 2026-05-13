@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getChildDetail, getChildSessions } from '../../api/client'
+import { getChildDetail, getChildSessions, getChildWeeklyReport } from '../../api/client'
 
 const SUBJECT_EMOJI = {
   Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
@@ -78,11 +78,58 @@ function SubjectBar({ subj, mastered, attempted }) {
 
 const PAGE = 10
 
+function WeeklyReportCard({ report }) {
+  if (!report) return null
+  const { this_week, last_week, delta_sessions, new_masteries } = report
+  const deltaColor = delta_sessions > 0 ? 'text-[#00CC88]' : delta_sessions < 0 ? 'text-[#FF6B6B]' : 'text-[#8892B0]'
+  const deltaIcon = delta_sessions > 0 ? '↑' : delta_sessions < 0 ? '↓' : '→'
+
+  return (
+    <div className="blox-card p-5">
+      <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold mb-3">
+        📅 This week vs last week
+      </p>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="bg-[#0F0F23] rounded-xl p-3 text-center">
+          <p className="text-xl font-fredoka font-bold text-[#00A2FF]">{this_week.sessions}</p>
+          <p className="text-[10px] text-[#8892B0]">Sessions</p>
+          <p className={`text-xs font-bold ${deltaColor}`}>
+            {deltaIcon} {Math.abs(delta_sessions)} vs last
+          </p>
+        </div>
+        <div className="bg-[#0F0F23] rounded-xl p-3 text-center">
+          <p className="text-xl font-fredoka font-bold text-[#00CC88]">{this_week.topics_count}</p>
+          <p className="text-[10px] text-[#8892B0]">Topics</p>
+          <p className="text-xs text-[#4A5568]">{last_week.topics_count} last wk</p>
+        </div>
+        <div className="bg-[#0F0F23] rounded-xl p-3 text-center">
+          <p className="text-xl font-fredoka font-bold text-[#FFD700]">⭐{this_week.xp_earned}</p>
+          <p className="text-[10px] text-[#8892B0]">XP this week</p>
+          <p className="text-xs text-[#4A5568]">{this_week.total_xp} total</p>
+        </div>
+      </div>
+      {new_masteries?.length > 0 && (
+        <div>
+          <p className="text-xs text-[#00CC88] font-semibold mb-2">🏆 New levels this week</p>
+          <div className="flex flex-wrap gap-2">
+            {new_masteries.map((m, i) => (
+              <span key={i} className="text-xs bg-[#00CC88]/10 text-[#00CC88] border border-[#00CC88]/20 px-2 py-1 rounded-full">
+                {m.level} · {m.topic_title}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ParentChildDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [child, setChild] = useState(null)
   const [sessions, setSessions] = useState([])
+  const [weeklyReport, setWeeklyReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [offset, setOffset] = useState(0)
@@ -90,9 +137,13 @@ export default function ParentChildDetail() {
   const [activeTab, setActiveTab] = useState('overview') // overview | mastery | sessions
 
   useEffect(() => {
-    getChildDetail(id)
-      .then(r => setChild(r.data))
-      .finally(() => setLoading(false))
+    Promise.all([
+      getChildDetail(id),
+      getChildWeeklyReport(id).catch(() => null),
+    ]).then(([r, w]) => {
+      setChild(r.data)
+      if (w) setWeeklyReport(w.data)
+    }).finally(() => setLoading(false))
     loadSessions(0)
   }, [id])
 
@@ -208,6 +259,9 @@ export default function ParentChildDetail() {
           </div>
         </div>
       )}
+
+      {/* ── Weekly report ───────────────────────────────────── */}
+      <WeeklyReportCard report={weeklyReport} />
 
       {/* ── Tabs ────────────────────────────────────────────── */}
       <div className="flex gap-2">

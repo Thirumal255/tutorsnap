@@ -4,20 +4,22 @@ import { logout as apiLogout, getFlaggedStudents } from '../../api/client'
 import { useEffect, useState } from 'react'
 
 const NAV = [
-  { to: '/admin',          label: 'Dashboard', icon: '🏠', end: true },
-  { to: '/admin/students', label: 'Students',  icon: '🎮' },
-  { to: '/admin/parents',  label: 'Parents',   icon: '👨‍👩‍👧' },
-  { to: '/admin/books',    label: 'Books',     icon: '📚' },
-  { to: '/admin/flagged',  label: 'Flagged',   icon: '🚩' },
-  { to: '/admin/settings', label: 'Settings',  icon: '⚙️' },
+  { to: '/admin',            label: 'Dashboard', icon: '🏠', end: true },
+  { to: '/admin/students',   label: 'Students',  icon: '🎮' },
+  { to: '/admin/parents',    label: 'Parents',   icon: '👨‍👩‍👧' },
+  { to: '/admin/books',      label: 'Books',     icon: '📚' },
+  { to: '/admin/flagged',    label: 'Flagged',   icon: '🚩' },
+  { to: '/admin/analytics',  label: 'Analytics', icon: '📊' },
+  { to: '/admin/settings',   label: 'Settings',  icon: '⚙️' },
 ]
 
 // On mobile, show a condensed set in the bottom nav
 const MOBILE_NAV = [
-  { to: '/admin',          label: 'Home',     icon: '🏠', end: true },
-  { to: '/admin/students', label: 'Students', icon: '🎮' },
-  { to: '/admin/flagged',  label: 'Flagged',  icon: '🚩' },
-  { to: '/admin/settings', label: 'More',     icon: '⚙️' },
+  { to: '/admin',           label: 'Home',      icon: '🏠', end: true },
+  { to: '/admin/students',  label: 'Students',  icon: '🎮' },
+  { to: '/admin/flagged',   label: 'Flagged',   icon: '🚩' },
+  { to: '/admin/analytics', label: 'Analytics', icon: '📊' },
+  { to: '/admin/settings',  label: 'Settings',  icon: '⚙️' },
 ]
 
 export default function AdminLayout() {
