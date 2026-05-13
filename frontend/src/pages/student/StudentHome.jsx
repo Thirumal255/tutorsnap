@@ -1,13 +1,27 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { getStudentDashboard, startSession } from '../../api/client'
+import {
+  getStudentDashboard, startSession,
+  getWeeklyChallenge, submitWeeklyChallenge,
+} from '../../api/client'
 import { SUBJECT_COLOR } from './StudentLayout'
+import BuddyCustomizer from '../../components/BuddyCustomizer'
+
+const BUDDY_EMOJI = {
+  robot:'🤖', fox:'🦊', panda:'🐼', lion:'🦁',
+  dolphin:'🐬', owl:'🦉', dragon:'🐉', wizard:'🧙',
+}
 
 const SUBJECT_EMOJI = {
   Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
   History: '🏛️', Geography: '🗺️', Physics: '⚡', Chemistry: '🧪',
   Biology: '🌿', 'Computer Science': '💻', Tamil: '🔤', Hindi: '🔤', Other: '📚',
+}
+
+const ANSWER_FORMAT_LABEL = {
+  number: '🔢 a number', yes_no: '✅ yes or no',
+  rule: '📖 state the rule', explanation: '💬 explain in words', working: '📝 show your working',
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -21,30 +35,144 @@ function MasteryBar({ attempted, mastered, total }) {
         <span>{pctMastered}% mastered</span>
         <span>{attempted}/{total} tried</span>
       </div>
-      <div className="h-2 bg-[#2D2B5A] rounded-full overflow-hidden">
-        <div className="h-full bg-[#2D2B5A] rounded-full relative">
-          {/* attempted (lighter) */}
-          <div
-            className="absolute inset-y-0 left-0 bg-[#00A2FF]/40 rounded-full transition-all duration-700"
-            style={{ width: `${pctAttempted}%` }}
-          />
-          {/* mastered (solid) */}
-          <div
-            className="absolute inset-y-0 left-0 bg-[#00CC88] rounded-full transition-all duration-700"
-            style={{ width: `${pctMastered}%` }}
-          />
-        </div>
+      <div className="h-2 bg-[#2D2B5A] rounded-full overflow-hidden relative">
+        <div className="absolute inset-y-0 left-0 bg-[#00A2FF]/40 rounded-full transition-all duration-700"
+          style={{ width: `${pctAttempted}%` }} />
+        <div className="absolute inset-y-0 left-0 bg-[#00CC88] rounded-full transition-all duration-700"
+          style={{ width: `${pctMastered}%` }} />
       </div>
     </div>
   )
 }
 
+// ── Weekly Challenge sub-component ──────────────────────────────────────────
+function WeeklyChallengeCard({ userId }) {
+  const [wc, setWc]             = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [expanded, setExpanded] = useState(false)
+  const [answer, setAnswer]     = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult]     = useState(null)
+
+  useEffect(() => {
+    getWeeklyChallenge()
+      .then(r => setWc(r.data))
+      .catch(() => setWc({ available: false }))
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSubmit() {
+    if (!answer.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      const res = await submitWeeklyChallenge(wc.challenge.id, answer.trim())
+      setResult(res.data)
+      setWc(prev => ({ ...prev, completed: true, completion: res.data }))
+    } catch {
+      setResult({ error: true })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) return null
+  if (!wc?.available) return null
+
+  const { challenge, completed, completion } = wc
+  const buddyEmoji = BUDDY_EMOJI['robot']
+
+  return (
+    <div className="blox-card border border-[#FFD700]/30 bg-gradient-to-br from-[#1A1A3E] to-[#16213E] p-4 animate-bounce-in">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FFD700] to-[#FF6B9D] flex items-center justify-center text-xl flex-shrink-0">
+          🏆
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-[#FFD700] font-semibold uppercase tracking-widest">Weekly Challenge</p>
+            {completed && (
+              <span className="text-xs bg-[#00CC88]/20 text-[#00CC88] border border-[#00CC88]/30 px-2 py-0.5 rounded-full">✓ Done</span>
+            )}
+          </div>
+          <p className="font-fredoka font-bold text-white mt-0.5 text-sm">
+            {challenge.subject} · {challenge.topic_title}
+          </p>
+          <p className="text-xs text-[#8892B0] mt-0.5">Up to 200 XP ⭐ · Resets Monday</p>
+        </div>
+        {!completed && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-xs text-[#00A2FF] font-semibold hover:text-white transition-colors flex-shrink-0"
+          >
+            {expanded ? 'Hide ▲' : 'Attempt ▼'}
+          </button>
+        )}
+      </div>
+
+      {/* Completed result */}
+      {completed && completion && (
+        <div className="mt-3 bg-[#0F0F23] rounded-2xl p-3 space-y-1">
+          <p className="text-xs text-[#8892B0]">{completion.feedback}</p>
+          <div className="flex items-center gap-3 mt-2">
+            <span className="text-sm font-fredoka font-bold text-white">Score: {completion.score}/100</span>
+            <span className="text-sm font-fredoka font-bold text-[#FFD700]">+{completion.xp_earned} XP ⭐</span>
+          </div>
+        </div>
+      )}
+
+      {/* Challenge input area */}
+      {expanded && !completed && (
+        <div className="mt-4 space-y-3 animate-bounce-in">
+          <div className="bg-[#0F0F23] rounded-2xl p-3 border border-[#2D2B5A]">
+            <p className="text-xs text-[#8892B0] mb-1 uppercase tracking-widest">
+              {ANSWER_FORMAT_LABEL[challenge.answer_format] || '💬 explain in words'}
+            </p>
+            <p className="text-sm text-white leading-relaxed">{challenge.question}</p>
+          </div>
+
+          {result?.error && (
+            <p className="text-xs text-[#FF6B6B] text-center">Something went wrong. Please try again.</p>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Your answer…"
+              value={answer}
+              onChange={e => setAnswer(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              disabled={submitting}
+              className="blox-input flex-1 text-sm"
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !answer.trim()}
+              className="btn-blox-primary px-4 text-sm disabled:opacity-50 flex items-center gap-1"
+            >
+              {submitting ? (
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+              ) : '⚡ Submit'}
+            </button>
+          </div>
+          <p className="text-xs text-[#8892B0] text-center">⚠️ One attempt only — make it count!</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
 export default function StudentHome() {
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
-  const [data, setData] = useState(null)
+  const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
   const [resuming, setResuming] = useState(false)
+  const [showBuddy, setShowBuddy] = useState(false)
 
   useEffect(() => {
     getStudentDashboard()
@@ -83,6 +211,9 @@ export default function StudentHome() {
     return 'Good evening'
   }
 
+  const buddyEmoji = BUDDY_EMOJI[user?.buddy_avatar || 'robot'] || '🤖'
+  const buddyName  = user?.buddy_name || 'Buddy'
+
   if (!user?.grade) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -98,25 +229,46 @@ export default function StudentHome() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
 
-      {/* ── Greeting bar ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-fredoka font-bold text-white">
-            {greeting()}, <span className="text-[#FFD700]">{user?.name?.split(' ')[0]}</span>! 👋
-          </h1>
-          <p className="text-[#8892B0] text-sm mt-0.5">Grade {user.grade} · Let's level up today!</p>
+      {showBuddy && (
+        <BuddyCustomizer
+          currentAvatar={user?.buddy_avatar || 'robot'}
+          currentName={user?.buddy_name || 'Buddy'}
+          onClose={() => setShowBuddy(false)}
+          onSave={() => { refreshUser(); setShowBuddy(false) }}
+        />
+      )}
+
+      {/* ── Greeting + stats bar ──────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Buddy avatar — tap to customise */}
+          <button
+            onClick={() => setShowBuddy(true)}
+            title="Customise your buddy"
+            className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#00A2FF] to-[#0066CC] flex items-center justify-center text-2xl flex-shrink-0 hover:scale-105 transition-transform shadow-glow-blue"
+          >
+            {buddyEmoji}
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-xl font-fredoka font-bold text-white leading-tight truncate">
+              {greeting()}, <span className="text-[#FFD700]">{user?.name?.split(' ')[0]}</span>! 👋
+            </h1>
+            <p className="text-[#8892B0] text-xs">Grade {user.grade} · {buddyName} is ready!</p>
+          </div>
         </div>
+
+        {/* XP + streak stats */}
         {data && (
-          <div className="flex gap-4 text-center">
-            <div className="blox-card px-4 py-2">
-              <p className="text-2xl font-fredoka font-bold text-[#FFD700]">
-                {data.streak_days > 0 ? `🔥 ${data.streak_days}` : '—'}
-              </p>
-              <p className="text-xs text-[#8892B0]">day streak</p>
+          <div className="flex gap-2 flex-shrink-0">
+            <div className="blox-card px-3 py-2 text-center min-w-[56px]">
+              <p className="text-lg font-fredoka font-bold text-[#FFD700]">⭐{data.total_xp}</p>
+              <p className="text-[10px] text-[#8892B0]">total XP</p>
             </div>
-            <div className="blox-card px-4 py-2">
-              <p className="text-2xl font-fredoka font-bold text-[#00A2FF]">{data.total_sessions}</p>
-              <p className="text-xs text-[#8892B0]">sessions</p>
+            <div className="blox-card px-3 py-2 text-center min-w-[56px]">
+              <p className="text-lg font-fredoka font-bold text-[#FF6B6B]">
+                {data.streak_days > 0 ? `🔥${data.streak_days}` : '—'}
+              </p>
+              <p className="text-[10px] text-[#8892B0]">streak</p>
             </div>
           </div>
         )}
@@ -131,7 +283,10 @@ export default function StudentHome() {
 
       {!loading && data && (
         <>
-          {/* ── Continue card ─────────────────────────────────────── */}
+          {/* ── Weekly challenge ───────────────────────────────────────── */}
+          <WeeklyChallengeCard userId={user?.id} />
+
+          {/* ── Continue card ─────────────────────────────────────────── */}
           {data.last_practiced && (
             <div className="blox-card-glow p-4 flex items-center gap-4 animate-bounce-in">
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#FF6B9D] to-[#FF3333] flex items-center justify-center text-2xl flex-shrink-0">
@@ -154,11 +309,14 @@ export default function StudentHome() {
             </div>
           )}
 
-          {/* ── Weekly activity bar chart ──────────────────────────── */}
+          {/* ── Weekly activity bar chart ──────────────────────────────── */}
           <div className="blox-card p-4 animate-bounce-in">
-            <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold mb-3">
-              📅 This week's activity
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold">📅 This week's activity</p>
+              {data.weekly_xp > 0 && (
+                <span className="text-xs text-[#FFD700] font-semibold">+{data.weekly_xp} XP this week</span>
+              )}
+            </div>
             <div className="flex items-end gap-2 h-16">
               {data.weekly_activity.map(({ date, sessions }) => {
                 const maxSess = Math.max(...data.weekly_activity.map(d => d.sessions), 1)
@@ -187,7 +345,7 @@ export default function StudentHome() {
             </div>
           </div>
 
-          {/* ── Subject progress grid ──────────────────────────────── */}
+          {/* ── Subject progress grid ──────────────────────────────────── */}
           <div>
             <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold mb-3 px-1">
               📚 Subject progress
@@ -214,7 +372,11 @@ export default function StudentHome() {
                         <div className="flex-1 min-w-0">
                           <p className="font-fredoka font-bold text-white">{s.subject}</p>
                           <p className="text-xs text-[#8892B0]">
-                            {s.mastered} mastered · {s.flagged > 0 ? <span className="text-[#FF6B6B]">{s.flagged} flagged</span> : `${s.attempted} tried`}
+                            {s.mastered} mastered ·{' '}
+                            {s.flagged > 0
+                              ? <span className="text-[#FF6B6B]">{s.flagged} flagged</span>
+                              : `${s.attempted} tried`
+                            }
                           </p>
                         </div>
                         {s.flagged > 0 && (

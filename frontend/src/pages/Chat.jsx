@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { submitAnswer, requestHint, requestSubQuestion, endSession } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import ChatBubble from '../components/ChatBubble'
 import HintButton from '../components/HintButton'
 import ProgressBadge from '../components/ProgressBadge'
@@ -31,7 +32,10 @@ const CONFUSION_OPTIONS = [
 export default function Chat() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const sessionId = parseInt(id)
+  const buddyAvatar = user?.buddy_avatar || 'robot'
+  const buddyName   = user?.buddy_name  || 'Buddy'
 
   const [session, setSession] = useState(null)
   const [messages, setMessages] = useState([])
@@ -200,7 +204,7 @@ export default function Chat() {
       if (canvasMode && canvasRef.current) canvasRef.current.clear()
 
       if (d.session_complete) {
-        showXP('+100 XP')
+        showXP(`+${d.xp_earned ?? 100} XP`)
         sessionStorage.setItem(`summary_${sessionId}`, JSON.stringify({
           summary: d.summary,
           level: d.current_level,
@@ -216,7 +220,7 @@ export default function Chat() {
       }
 
       if (d.action === 'advance_level') {
-        showXP('+50 XP')
+        showXP(`+${d.xp_earned ?? 50} XP`)
         setLevelUpBanner({ level: d.current_level, label: d.level_label })
         setTimeout(() => setLevelUpBanner(null), 2500)
         addMessage('buddy', `🚀 You levelled up to **${d.level_label}**! Here's your next challenge:\n\n${d.next_question}`)
@@ -239,7 +243,7 @@ export default function Chat() {
         addMessage('buddy', d.next_question)
         setShowHintButton(false)
       } else if (d.next_question) {
-        showXP('+10 XP')
+        if (d.xp_earned > 0) showXP(`+${d.xp_earned} XP`)
         addMessage('buddy', d.next_question)
         setHintTier(0)
         setShowHintButton(false)
@@ -365,6 +369,7 @@ export default function Chat() {
       <div className="flex items-center justify-between px-4 py-3 bg-[#16213E] border-b border-[#2D2B5A] flex-shrink-0 shadow-card">
         <div className="flex items-center gap-2">
           <span className="font-fredoka font-bold text-white text-lg">Study<span className="text-[#00A2FF]">Blox</span></span>
+          <span className="text-xs text-[#8892B0] hidden sm:inline">· {buddyName}</span>
         </div>
         <div className="flex-1 px-4">
           <p className="text-xs text-[#8892B0] text-center truncate">{session.topicTitle}</p>
@@ -399,7 +404,7 @@ export default function Chat() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.map((m, i) => (
-          <ChatBubble key={i} sender={m.sender} message={m.text} isLoading={m.text === null} />
+          <ChatBubble key={i} sender={m.sender} message={m.text} isLoading={m.text === null} buddyAvatar={buddyAvatar} />
         ))}
 
         {/* Slow-loading nudge */}

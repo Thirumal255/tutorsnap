@@ -18,9 +18,11 @@ from progress import set_book_progress
 load_dotenv(override=True)
 
 from database import get_db, SessionLocal, engine
+import random
 from models import (
     Book, Chapter, Topic, Session as SessionModel, SessionTurn, TopicMastery,
     AppSettings, User, ParentStudentLink, Notification,
+    WeeklyChallenge, WeeklyChallengeCompletion,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -133,7 +135,36 @@ def _user_dict(u: User) -> dict:
         "grade": u.grade, "avatar_url": u.avatar_url, "is_active": u.is_active,
         "created_at": u.created_at.isoformat() if u.created_at else None,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+        # Gamification
+        "total_xp": u.total_xp or 0,
+        "weekly_xp": u.weekly_xp or 0,
+        "show_on_leaderboard": u.show_on_leaderboard if u.show_on_leaderboard is not None else True,
+        "buddy_name": u.buddy_name or "Buddy",
+        "buddy_avatar": u.buddy_avatar or "robot",
     }
+
+
+def _get_week_start() -> datetime:
+    """Return Monday 00:00 UTC of the current week."""
+    today = datetime.utcnow().date()
+    monday = today - timedelta(days=today.weekday())
+    return datetime(monday.year, monday.month, monday.day)
+
+
+def _update_user_xp(db: Session, user_id: int, xp_amount: int) -> None:
+    """Atomically add XP to a user's total and weekly totals (resetting weekly on new week)."""
+    if xp_amount <= 0:
+        return
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return
+    week_start = _get_week_start()
+    if not user.weekly_xp_reset_at or user.weekly_xp_reset_at < week_start:
+        user.weekly_xp = 0
+        user.weekly_xp_reset_at = week_start
+    user.total_xp = (user.total_xp or 0) + xp_amount
+    user.weekly_xp = (user.weekly_xp or 0) + xp_amount
+    # No commit here — caller commits
 
 
 def _student_stats(db: Session, student_name: str) -> dict:
@@ -792,6 +823,19 @@ def submit_answer(
     )
     db.commit()
 
+    # ── XP awards ─────────────────────────────────────────────────────────────
+    xp_earned = 0
+    if session.user_id:
+        action = next_action["action"]
+        if action == "session_complete":
+            xp_earned = 100
+        elif action == "advance_level":
+            xp_earned = 50
+        elif action == "next_question" and assessment.get("score", 0) >= 80:
+            xp_earned = 10
+        if xp_earned > 0:
+            _update_user_xp(db, session.user_id, xp_earned)
+
     if next_action["action"] == "session_complete":
         session.ended_at = datetime.utcnow()
         session.status = "completed"
@@ -805,7 +849,7 @@ def submit_answer(
                 "action": "session_complete", "current_level": session.current_level,
                 "level_label": level_label(session.current_level), "show_hint_button": False,
                 "session_complete": True, "summary": summary,
-                "turn_number": current_turn.turn_number}
+                "turn_number": current_turn.turn_number, "xp_earned": xp_earned}
 
     next_question = None
     next_answer_format = None
@@ -859,13 +903,14 @@ def submit_answer(
         session.questions_asked += 1
         db.commit()
 
+    db.commit()
     return {"session_id": session.id, "feedback": assessment["feedback"],
             "score": assessment["score"], "confidence_tag": assessment["confidence_tag"],
             "action": next_action["action"], "current_level": session.current_level,
             "level_label": level_label(session.current_level),
             "show_hint_button": next_action.get("show_hint_button", False),
             "session_complete": False, "next_question": next_question,
-            "concept_explanation": concept_explanation,
+            "concept_explanation": concept_explanation, "xp_earned": xp_earned,
             "answer_format": next_answer_format,
             "turn_number": new_turn_number}
 
@@ -1724,6 +1769,20 @@ def student_dashboard(
         else:
             break
 
+    # ── Weekly challenge status ──────────────────────────────────────────────
+    weekly_challenge_done = False
+    if grade:
+        wc = db.query(WeeklyChallenge).filter(
+            WeeklyChallenge.grade == grade,
+            WeeklyChallenge.week_start == _get_week_start(),
+        ).first()
+        if wc:
+            done = db.query(WeeklyChallengeCompletion).filter(
+                WeeklyChallengeCompletion.user_id == current_user.id,
+                WeeklyChallengeCompletion.challenge_id == wc.id,
+            ).first()
+            weekly_challenge_done = bool(done)
+
     return {
         "student_name": student_name,
         "grade": grade,
@@ -1734,6 +1793,259 @@ def student_dashboard(
         "total_sessions": db.query(SessionModel).filter(
             SessionModel.student_name == student_name
         ).count(),
+        "total_xp": current_user.total_xp or 0,
+        "weekly_xp": current_user.weekly_xp or 0,
+        "weekly_challenge_done": weekly_challenge_done,
+    }
+
+
+# ─── Gamification Endpoints ────────────────────────────────────────────────────
+
+class BuddyUpdateRequest(BaseModel):
+    buddy_name: Optional[str] = None
+    buddy_avatar: Optional[str] = None
+    show_on_leaderboard: Optional[bool] = None
+
+class WeeklyChallengeSubmitRequest(BaseModel):
+    challenge_id: int
+    answer: str
+
+
+@app.get("/api/student/buddy")
+def get_buddy(current_user: User = Depends(get_current_user)):
+    """Return the student's current buddy settings."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+    return {
+        "buddy_name": current_user.buddy_name or "Buddy",
+        "buddy_avatar": current_user.buddy_avatar or "robot",
+        "show_on_leaderboard": current_user.show_on_leaderboard if current_user.show_on_leaderboard is not None else True,
+    }
+
+
+@app.put("/api/student/buddy")
+def update_buddy(
+    req: BuddyUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update buddy name / avatar / leaderboard opt-in."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    VALID_AVATARS = {"robot", "fox", "panda", "lion", "dolphin", "owl", "dragon", "wizard"}
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    if req.buddy_name is not None:
+        name = req.buddy_name.strip()[:20]
+        user.buddy_name = name if name else "Buddy"
+    if req.buddy_avatar is not None:
+        if req.buddy_avatar not in VALID_AVATARS:
+            raise HTTPException(status_code=400, detail=f"Invalid avatar. Choose from: {', '.join(VALID_AVATARS)}")
+        user.buddy_avatar = req.buddy_avatar
+    if req.show_on_leaderboard is not None:
+        user.show_on_leaderboard = req.show_on_leaderboard
+
+    db.commit()
+    return {
+        "buddy_name": user.buddy_name or "Buddy",
+        "buddy_avatar": user.buddy_avatar or "robot",
+        "show_on_leaderboard": user.show_on_leaderboard if user.show_on_leaderboard is not None else True,
+    }
+
+
+@app.get("/api/student/leaderboard")
+def get_leaderboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """XP leaderboard for students in the same grade."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+    if not current_user.grade:
+        return {"leaderboard": [], "my_rank": None, "my_weekly_xp": 0, "my_total_xp": 0}
+
+    students = (
+        db.query(User)
+        .filter(User.grade == current_user.grade, User.role == "student", User.is_active == True)
+        .all()
+    )
+
+    # Sort by total XP descending
+    sorted_students = sorted(students, key=lambda s: (s.total_xp or 0), reverse=True)
+
+    # Build leaderboard — only show opted-in students, but always include self
+    result = []
+    my_rank = None
+    rank_counter = 0
+    for s in sorted_students:
+        rank_counter += 1
+        is_me = s.id == current_user.id
+        if not (s.show_on_leaderboard if s.show_on_leaderboard is not None else True) and not is_me:
+            continue
+        entry = {
+            "rank": rank_counter,
+            "name": s.name.split()[0],  # first name only for privacy
+            "avatar_url": s.avatar_url,
+            "buddy_avatar": s.buddy_avatar or "robot",
+            "total_xp": s.total_xp or 0,
+            "weekly_xp": s.weekly_xp or 0,
+            "is_me": is_me,
+        }
+        result.append(entry)
+        if is_me:
+            my_rank = rank_counter
+
+    return {
+        "leaderboard": result,
+        "my_rank": my_rank,
+        "my_total_xp": current_user.total_xp or 0,
+        "my_weekly_xp": current_user.weekly_xp or 0,
+    }
+
+
+@app.get("/api/student/weekly-challenge")
+def get_weekly_challenge(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get (or lazily create) this week's challenge for the student's grade."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+    if not current_user.grade:
+        return {"available": False, "reason": "no_grade"}
+
+    week_start = _get_week_start()
+    challenge = db.query(WeeklyChallenge).filter(
+        WeeklyChallenge.grade == current_user.grade,
+        WeeklyChallenge.week_start == week_start,
+    ).first()
+
+    if not challenge:
+        # Lazily generate: pick a random ingested topic for this grade
+        all_topics = (
+            db.query(Topic)
+            .join(Chapter, Chapter.id == Topic.chapter_id)
+            .join(Book, Book.id == Chapter.book_id)
+            .filter(Book.grade == current_user.grade, Book.ingestion_status == "done")
+            .all()
+        )
+        if not all_topics:
+            return {"available": False, "reason": "no_topics"}
+
+        chosen_topic = random.choice(all_topics)
+        chosen_topic.chapter = db.query(Chapter).filter(Chapter.id == chosen_topic.chapter_id).first()
+        nq = generate_question(chosen_topic, "L4", [])
+        challenge = WeeklyChallenge(
+            grade=current_user.grade,
+            week_start=week_start,
+            topic_id=chosen_topic.id,
+            question_text=nq["question"],
+            expected_key_points=json.dumps(nq["expected_key_points"]),
+            answer_format=nq["answer_format"],
+        )
+        db.add(challenge)
+        try:
+            db.commit()
+            db.refresh(challenge)
+        except Exception:
+            db.rollback()
+            # Another request may have created it concurrently — fetch again
+            challenge = db.query(WeeklyChallenge).filter(
+                WeeklyChallenge.grade == current_user.grade,
+                WeeklyChallenge.week_start == week_start,
+            ).first()
+            if not challenge:
+                return {"available": False, "reason": "generation_failed"}
+
+    # Check if this user already completed it
+    completion = db.query(WeeklyChallengeCompletion).filter(
+        WeeklyChallengeCompletion.user_id == current_user.id,
+        WeeklyChallengeCompletion.challenge_id == challenge.id,
+    ).first()
+
+    topic = db.query(Topic).filter(Topic.id == challenge.topic_id).first()
+    chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
+    book = db.query(Book).filter(Book.id == chapter.book_id).first() if chapter else None
+
+    return {
+        "available": True,
+        "challenge": {
+            "id": challenge.id,
+            "question": challenge.question_text,
+            "answer_format": challenge.answer_format,
+            "topic_title": topic.title if topic else "",
+            "subject": book.subject if book else "",
+            "week_start": challenge.week_start.isoformat(),
+            "max_xp": 200,
+        },
+        "completed": bool(completion),
+        "completion": {
+            "score": completion.score,
+            "xp_earned": completion.xp_earned,
+            "feedback": completion.feedback,
+        } if completion else None,
+    }
+
+
+@app.post("/api/student/weekly-challenge/submit")
+def submit_weekly_challenge(
+    req: WeeklyChallengeSubmitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Submit an answer to the weekly challenge. One attempt per student per week."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+    if not req.answer.strip():
+        raise HTTPException(status_code=400, detail="Answer cannot be empty")
+
+    challenge = db.query(WeeklyChallenge).filter(WeeklyChallenge.id == req.challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if challenge.grade != current_user.grade:
+        raise HTTPException(status_code=403, detail="Not your grade's challenge")
+
+    # Idempotency — already submitted
+    existing = db.query(WeeklyChallengeCompletion).filter(
+        WeeklyChallengeCompletion.user_id == current_user.id,
+        WeeklyChallengeCompletion.challenge_id == challenge.id,
+    ).first()
+    if existing:
+        return {"score": existing.score, "xp_earned": existing.xp_earned,
+                "feedback": existing.feedback, "already_submitted": True}
+
+    # Load topic context for assessment
+    topic = db.query(Topic).filter(Topic.id == challenge.topic_id).first()
+    topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
+
+    ekp = json.loads(challenge.expected_key_points) if challenge.expected_key_points else None
+    assessment = assess_answer(
+        topic, challenge.question_text, req.answer,
+        level="L4", hint_tier=0,
+        expected_key_points=ekp,
+        answer_format=challenge.answer_format,
+    )
+
+    # XP = score * 2, capped at 200 (max for a perfect answer = 200)
+    xp_earned = min(int(assessment["score"]) * 2, 200)
+
+    completion = WeeklyChallengeCompletion(
+        user_id=current_user.id,
+        challenge_id=challenge.id,
+        score=assessment["score"],
+        xp_earned=xp_earned,
+        feedback=assessment["feedback"],
+    )
+    db.add(completion)
+    _update_user_xp(db, current_user.id, xp_earned)
+    db.commit()
+
+    return {
+        "score": assessment["score"],
+        "xp_earned": xp_earned,
+        "feedback": assessment["feedback"],
+        "already_submitted": False,
     }
 
 

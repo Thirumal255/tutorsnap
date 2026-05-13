@@ -21,6 +21,14 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)
 
+    # ── Gamification ──────────────────────────────────────────────────────────
+    total_xp = Column(Integer, default=0)
+    weekly_xp = Column(Integer, default=0)
+    weekly_xp_reset_at = Column(DateTime, nullable=True)
+    show_on_leaderboard = Column(Boolean, default=True)
+    buddy_name = Column(String(50), nullable=True)    # e.g. "Bloxy"
+    buddy_avatar = Column(String(50), nullable=True)  # preset key: robot/fox/etc.
+
     parent_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.parent_id", back_populates="parent")
     student_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.student_id", back_populates="student")
     notifications = relationship("Notification", back_populates="user")
@@ -168,6 +176,38 @@ class SessionTurn(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("Session", back_populates="turns")
+
+
+class WeeklyChallenge(Base):
+    """One cross-topic challenge question per grade per week (Monday–Sunday UTC)."""
+    __tablename__ = "weekly_challenges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    grade = Column(Integer, nullable=False)
+    week_start = Column(DateTime, nullable=False)   # Monday 00:00 UTC
+    topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+    question_text = Column(Text, nullable=False)
+    expected_key_points = Column(Text, nullable=True)  # JSON list
+    answer_format = Column(String(30), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("grade", "week_start"),)
+    topic = relationship("Topic")
+
+
+class WeeklyChallengeCompletion(Base):
+    """Records each student's attempt at a weekly challenge (one per student per challenge)."""
+    __tablename__ = "weekly_challenge_completions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    challenge_id = Column(Integer, ForeignKey("weekly_challenges.id"), nullable=False)
+    score = Column(Integer, nullable=False)
+    xp_earned = Column(Integer, nullable=False)
+    feedback = Column(Text, nullable=True)
+    completed_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "challenge_id"),)
 
 
 class TopicMastery(Base):

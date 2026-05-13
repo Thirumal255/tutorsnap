@@ -71,7 +71,13 @@ export const updateSettings = (settings) => api.put('/admin/settings', settings)
 export const getAdminOverview = () => api.get('/admin/reports/overview')
 
 // Student
-export const getStudentDashboard = () => api.get('/student/dashboard')
+export const getStudentDashboard  = () => api.get('/student/dashboard')
+export const getBuddySettings     = () => api.get('/student/buddy')
+export const updateBuddySettings  = (data) => api.put('/student/buddy', data)
+export const getLeaderboard       = () => api.get('/student/leaderboard')
+export const getWeeklyChallenge   = () => api.get('/student/weekly-challenge')
+export const submitWeeklyChallenge = (challengeId, answer) =>
+  api.post('/student/weekly-challenge/submit', { challenge_id: challengeId, answer })
 export const getStudentProgress = () => api.get('/student/progress')
 export const getStudentSessions = (limit = 50) => api.get('/student/sessions', { params: { limit } })
 
