@@ -235,35 +235,112 @@ jobs:
           path: backend/report.json
           retention-days: 14
 
-      # ── 8. Telegram notification ───────────────────────────────────────────
+      # ── 8. Build coverage summary ──────────────────────────────────────────
+      - name: Build coverage summary
+        id: cov
+        if: always()
+        shell: python
+        run: |
+          import os, re
+
+          OUT = os.environ["GITHUB_OUTPUT"]
+
+          try:
+              raw = open("pytest_output.txt").read()
+          except Exception:
+              raw = ""
+
+          # Extract every coverage line: "filename   stmts   miss   cover%"
+          pattern = re.compile(r'^(\S+)\s+(\d+)\s+(\d+)\s+(\d+%)', re.MULTILINE)
+          rows = pattern.findall(raw)
+
+          total_pct = "n/a"
+          for name, stmts, miss, pct in rows:
+              if name == "TOTAL":
+                  total_pct = pct
+                  break
+
+          # Files with lowest coverage (exclude TOTAL, tests/, __init__)
+          modules = [
+              (name, int(stmts), int(miss), pct)
+              for name, stmts, miss, pct in rows
+              if name != "TOTAL"
+              and not name.startswith("tests")
+              and "__init__" not in name
+              and int(stmts) > 5
+          ]
+          modules.sort(key=lambda x: int(x[2]), reverse=True)   # most missed first
+          low5 = modules[:5]
+
+          lines = [f"Coverage: {total_pct}"]
+          if low5:
+              lines.append("Needs attention:")
+              for name, stmts, miss, pct in low5:
+                  short = name.replace(".py", "")
+                  lines.append(f"  {short}: {pct} ({miss} lines uncovered)")
+
+          summary = "\n".join(lines)
+          print(summary)
+
+          with open(OUT, "a") as f:
+              f.write(f"total_pct={total_pct}\n")
+              f.write(f"summary<<__COV__\n{summary}\n__COV__\n")
+
+      # ── 9. Telegram — text notification ───────────────────────────────────
       - name: Send Telegram notification
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATUS:      ${{ steps.report.outputs.status }}
+          PASSED:      ${{ steps.report.outputs.passed }}
+          FAILED:      ${{ steps.report.outputs.failed }}
+          ERRORS:      ${{ steps.report.outputs.errors }}
+          TOTAL:       ${{ steps.report.outputs.total }}
+          COV_SUMMARY: ${{ steps.cov.outputs.summary }}
+          RUN_URL:     ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH:      ${{ github.ref_name }}
+          SHA:         ${{ github.sha }}
+          ACTOR:       ${{ github.actor }}
+        run: |
+          ICON="❌ FAILED"
+          [ "$STATUS" = "passed" ] && ICON="✅ PASSED"
+
+          TEXT=$(printf '%s — TutorSnap Tests\nResults: %s/%s passed · %s failed · %s errors\nBranch : %s (%s)  |  Actor: %s\n\n%s\n\n%s' \
+            "$ICON" "$PASSED" "$TOTAL" "$FAILED" "$ERRORS" \
+            "$BRANCH" "${SHA:0:7}" "$ACTOR" \
+            "$COV_SUMMARY" "$RUN_URL")
+
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            > /dev/null
+
+      # ── 10. Telegram — send coverage HTML as downloadable zip ─────────────
+      - name: Send coverage report to Telegram
         if: always()
         continue-on-error: true
         shell: bash
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS:    ${{ steps.report.outputs.status }}
-          PASSED:    ${{ steps.report.outputs.passed }}
-          FAILED:    ${{ steps.report.outputs.failed }}
-          ERRORS:    ${{ steps.report.outputs.errors }}
-          TOTAL:     ${{ steps.report.outputs.total }}
-          RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          BRANCH:    ${{ github.ref_name }}
           SHA:       ${{ github.sha }}
-          ACTOR:     ${{ github.actor }}
+          TOTAL_PCT: ${{ steps.cov.outputs.total_pct }}
         run: |
-          ICON="❌ FAILED"
-          [ "$STATUS" = "passed" ] && ICON="✅ PASSED"
-
-          TEXT=$(printf '%s — TutorSnap Tests\nScope  : full-regression\nResults: %s/%s passed · %s failed · %s errors\nBranch : %s (%s)\nActor  : %s\n\n%s' \
-            "$ICON" "$PASSED" "$TOTAL" "$FAILED" "$ERRORS" \
-            "$BRANCH" "${SHA:0:7}" "$ACTOR" "$RUN_URL")
-
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${CHAT_ID}" \
-            --data-urlencode "text=${TEXT}" \
-            > /dev/null
+          if [ -d "htmlcov" ]; then
+            ZIP="coverage-${SHA:0:7}.zip"
+            zip -r "$ZIP" htmlcov/ -x "*.pyc" > /dev/null
+            CAPTION="📊 Coverage Report — ${TOTAL_PCT} overall (${SHA:0:7})"
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F "chat_id=${CHAT_ID}" \
+              -F "document=@${ZIP}" \
+              -F "caption=${CAPTION}" \
+              > /dev/null
+          else
+            echo "htmlcov/ not found — skipping coverage zip"
+          fi
 
       # ── 9. Fail job if tests failed ────────────────────────────────────────
       - name: Fail if tests failed
