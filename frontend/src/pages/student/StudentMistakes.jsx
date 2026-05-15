@@ -20,7 +20,7 @@ function ScoreBadge({ score }) {
   )
 }
 
-function MistakeCard({ mistake, onRepractice, starting }) {
+function MistakeCard({ mistake, onRepractice, onStudy, starting }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -79,13 +79,23 @@ function MistakeCard({ mistake, onRepractice, starting }) {
                 day: 'numeric', month: 'short', year: 'numeric'
               }) : ''}
             </p>
-            <button
-              onClick={() => onRepractice(mistake.topic_id)}
-              disabled={starting === mistake.topic_id}
-              className="btn-blox-primary text-xs py-2 px-4 disabled:opacity-50"
-            >
-              {starting === mistake.topic_id ? '⚡…' : '▶ Re-practice'}
-            </button>
+            <div className="flex items-center gap-2">
+              {mistake.studied === false && (
+                <button
+                  onClick={() => onStudy(mistake.topic_id)}
+                  className="text-xs py-2 px-3 rounded-xl font-nunito font-bold bg-[#C77DFF]/20 text-[#C77DFF] border border-[#C77DFF]/40 hover:bg-[#C77DFF]/30 transition-all"
+                >
+                  📖 Study
+                </button>
+              )}
+              <button
+                onClick={() => onRepractice(mistake.topic_id)}
+                disabled={starting === mistake.topic_id}
+                className="btn-blox-primary text-xs py-2 px-4 disabled:opacity-50"
+              >
+                {starting === mistake.topic_id ? '⚡…' : '▶ Re-practice'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -111,6 +121,10 @@ export default function StudentMistakes() {
       .finally(() => setLoading(false))
   }, [])
 
+  function handleStudy(topicId) {
+    navigate(`/study/${topicId}`)
+  }
+
   async function handleRepractice(topicId) {
     setStarting(topicId)
     try {
@@ -128,7 +142,11 @@ export default function StudentMistakes() {
       )
       navigate(`/session/${d.session_id}`)
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to start session')
+      if (e.response?.status === 403 && e.response?.data?.detail === 'study_required') {
+        navigate(`/study/${topicId}`)
+      } else {
+        toast.error(e.response?.data?.detail || 'Failed to start session')
+      }
     } finally {
       setStarting(null)
     }
@@ -236,6 +254,7 @@ export default function StudentMistakes() {
                 key={`${m.topic_id}-${i}`}
                 mistake={m}
                 onRepractice={handleRepractice}
+                onStudy={handleStudy}
                 starting={starting}
               />
             ))}

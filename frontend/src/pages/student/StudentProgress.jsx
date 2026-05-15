@@ -29,7 +29,7 @@ function MasteryBadge({ level, flagged }) {
   return <span className={`text-xs font-semibold ${cfg.color}`}>{cfg.icon} {cfg.label}</span>
 }
 
-function ChapterAccordion({ chapter, onPlay, starting }) {
+function ChapterAccordion({ chapter, onPlay, onStudy, starting }) {
   const [open, setOpen] = useState(false)
   const pctMastered = chapter.total_topics
     ? Math.round((chapter.mastered / chapter.total_topics) * 100) : 0
@@ -68,10 +68,19 @@ function ChapterAccordion({ chapter, onPlay, starting }) {
                   )}
                 </div>
               </div>
-              <button onClick={() => onPlay(t.id)} disabled={starting === t.id}
-                className="btn-blox-primary flex-shrink-0 text-xs py-1.5 px-3 disabled:opacity-50">
-                {starting === t.id ? '⚡…' : '▶ Practice'}
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {!t.studied && (
+                  <button onClick={() => onStudy(t.id)}
+                    className="flex-shrink-0 text-xs py-1.5 px-3 rounded-xl font-nunito font-bold bg-[#C77DFF]/20 text-[#C77DFF] border border-[#C77DFF]/40 hover:bg-[#C77DFF]/30 transition-all">
+                    📖 Study
+                  </button>
+                )}
+                <button onClick={() => onPlay(t.id)} disabled={starting === t.id || !t.studied}
+                  title={!t.studied ? 'Complete study first' : ''}
+                  className="btn-blox-primary flex-shrink-0 text-xs py-1.5 px-3 disabled:opacity-40 disabled:cursor-not-allowed">
+                  {starting === t.id ? '⚡…' : '▶ Practice'}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -81,7 +90,7 @@ function ChapterAccordion({ chapter, onPlay, starting }) {
 }
 
 // ── Concept Map view ─────────────────────────────────────────────────────────
-function ConceptMap({ books, onPlay, starting }) {
+function ConceptMap({ books, onPlay, onStudy, starting }) {
   const [popup, setPopup] = useState(null)  // {id, title, concepts, mastery_level, x, y}
   const containerRef = useRef(null)
 
@@ -102,6 +111,7 @@ function ConceptMap({ books, onPlay, starting }) {
       concepts: t.key_concepts || [],
       mastery_level: t.mastery_level,
       flagged: t.flagged_for_review,
+      studied: t.studied,
       next_review: t.next_review_at,
       subject: t.subject,
       chapter_title: t.chapter_title,
@@ -182,13 +192,24 @@ function ConceptMap({ books, onPlay, starting }) {
               </ul>
             </div>
           )}
-          <button
-            onClick={() => { setPopup(null); onPlay(popup.id) }}
-            disabled={starting === popup.id}
-            className="btn-blox-primary w-full text-xs py-2 disabled:opacity-50"
-          >
-            {starting === popup.id ? '⚡…' : '▶ Practice this topic'}
-          </button>
+          <div className="flex flex-col gap-2">
+            {!popup.studied && (
+              <button
+                onClick={() => { setPopup(null); onStudy(popup.id) }}
+                className="w-full text-xs py-2 rounded-xl font-nunito font-bold bg-[#C77DFF]/20 text-[#C77DFF] border border-[#C77DFF]/40 hover:bg-[#C77DFF]/30 transition-all"
+              >
+                📖 Study this topic first
+              </button>
+            )}
+            <button
+              onClick={() => { setPopup(null); onPlay(popup.id) }}
+              disabled={starting === popup.id || !popup.studied}
+              title={!popup.studied ? 'Complete study first' : ''}
+              className="btn-blox-primary w-full text-xs py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {starting === popup.id ? '⚡…' : '▶ Practice this topic'}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -213,6 +234,10 @@ export default function StudentProgress() {
       .finally(() => setLoading(false))
   }, [])
 
+  function handleStudy(topicId) {
+    navigate(`/study/${topicId}`)
+  }
+
   async function handlePlay(topicId) {
     setStarting(topicId)
     try {
@@ -225,8 +250,13 @@ export default function StudentProgress() {
         levelLabel: d.level_label, topicId, answerFormat: d.answer_format || null,
       }))
       navigate(`/session/${d.session_id}`)
-    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to start session') }
-    finally { setStarting(null) }
+    } catch (e) {
+      if (e.response?.status === 403 && e.response?.data?.detail === 'study_required') {
+        navigate(`/study/${topicId}`)
+      } else {
+        toast.error(e.response?.data?.detail || 'Failed to start session')
+      }
+    } finally { setStarting(null) }
   }
 
   const bySubject = {}
@@ -285,7 +315,7 @@ export default function StudentProgress() {
 
       {/* ── Map view ─────────────────────────────────────────────────────── */}
       {!loading && data.length > 0 && viewMode === 'map' && (
-        <ConceptMap books={data} onPlay={handlePlay} starting={starting} />
+        <ConceptMap books={data} onPlay={handlePlay} onStudy={handleStudy} starting={starting} />
       )}
 
       {/* ── List view ────────────────────────────────────────────────────── */}
@@ -327,10 +357,19 @@ export default function StudentProgress() {
                       <p className="text-sm text-white font-semibold truncate">{t.title}</p>
                       <p className="text-xs text-[#8892B0]">{t.chapter_title}</p>
                     </div>
-                    <button onClick={() => handlePlay(t.id)} disabled={starting === t.id}
-                      className="btn-blox-primary text-xs py-1.5 px-3 flex-shrink-0 disabled:opacity-50">
-                      {starting === t.id ? '⚡…' : '▶ Practice'}
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {!t.studied && (
+                        <button onClick={() => handleStudy(t.id)}
+                          className="text-xs py-1.5 px-3 rounded-xl font-nunito font-bold bg-[#C77DFF]/20 text-[#C77DFF] border border-[#C77DFF]/40 hover:bg-[#C77DFF]/30 transition-all">
+                          📖 Study
+                        </button>
+                      )}
+                      <button onClick={() => handlePlay(t.id)} disabled={starting === t.id || !t.studied}
+                        title={!t.studied ? 'Complete study first' : ''}
+                        className="btn-blox-primary text-xs py-1.5 px-3 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
+                        {starting === t.id ? '⚡…' : '▶ Practice'}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -343,7 +382,7 @@ export default function StudentProgress() {
                 <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold px-1">📖 {book.title}</p>
               )}
               {book.chapters.map(ch => (
-                <ChapterAccordion key={ch.id} chapter={ch} onPlay={handlePlay} starting={starting} />
+                <ChapterAccordion key={ch.id} chapter={ch} onPlay={handlePlay} onStudy={handleStudy} starting={starting} />
               ))}
             </div>
           ))}

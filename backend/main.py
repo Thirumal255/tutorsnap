@@ -2896,6 +2896,7 @@ def student_progress(
                     "mastery_level": m.mastery_level if m else None,
                     "mastery_sessions": m.total_sessions if m else 0,
                     "flagged_for_review": m.flagged_for_review if m else False,
+                    "studied": m.studied if m else False,
                     "last_practiced_at": m.last_practiced_at.isoformat() if m and m.last_practiced_at else None,
                     "next_review_at": m.next_review_at.isoformat() if m and m.next_review_at else None,
                 })

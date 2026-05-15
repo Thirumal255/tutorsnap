@@ -215,6 +215,7 @@ export default function AdminBooks() {
   const [error, setError] = useState(null)
   const [expanded, setExpanded] = useState({})
   const [viewTopics, setViewTopics] = useState(null)
+  const [confirmModal, setConfirmModal] = useState(null) // { type: 'delete'|'cancel', bookId, bookTitle }
 
   useEffect(() => { loadBooks() }, [])
 
@@ -298,7 +299,12 @@ export default function AdminBooks() {
   }
 
   async function handleDelete(bookId, bookTitle) {
-    if (!window.confirm(`Delete "${bookTitle}"? This cannot be undone.`)) return
+    setConfirmModal({ type: 'delete', bookId, bookTitle })
+  }
+
+  async function confirmDelete() {
+    const { bookId } = confirmModal
+    setConfirmModal(null)
     try {
       await deleteBook(bookId)
       setViewTopics(null)
@@ -342,9 +348,14 @@ export default function AdminBooks() {
 
   // Cancel a stuck-processing book that has no active job in context
   async function handleCancelBook(book) {
-    if (!window.confirm(`Cancel ingestion for "${book.title || book.filename}"?\n\nProgress already saved will be kept — you can resume from the last completed chapter.`)) return
+    setConfirmModal({ type: 'cancel', bookId: book.book_id, bookTitle: book.title || book.filename })
+  }
+
+  async function confirmCancelBook() {
+    const { bookId } = confirmModal
+    setConfirmModal(null)
     try {
-      await cancelIngestion(book.book_id)
+      await cancelIngestion(bookId)
       loadBooks()
     } catch (e) {
       setError(e.response?.data?.detail || 'Cancel failed.')
@@ -363,6 +374,58 @@ export default function AdminBooks() {
 
   return (
     <div className="p-8 max-w-4xl space-y-6">
+
+      {/* ── Confirmation Modal ───────────────────────────────────────────────── */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-6 w-full max-w-sm shadow-2xl mx-4">
+            {confirmModal.type === 'delete' ? (
+              <>
+                <div className="text-3xl mb-3 text-center">🗑️</div>
+                <h3 className="font-fredoka font-bold text-white text-lg text-center mb-1">Delete Book?</h3>
+                <p className="text-[#8892B0] text-sm text-center mb-1">
+                  <span className="text-white font-semibold">"{confirmModal.bookTitle}"</span>
+                </p>
+                <p className="text-[#FF6B6B] text-xs text-center mb-5">
+                  All chapters, topics and student progress for this book will be permanently removed.
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmModal(null)}
+                    className="flex-1 py-2.5 rounded-xl font-nunito font-bold text-sm bg-[#2D2B5A] text-[#8892B0] hover:text-white transition-all">
+                    Cancel
+                  </button>
+                  <button onClick={confirmDelete}
+                    className="flex-1 py-2.5 rounded-xl font-nunito font-bold text-sm bg-[#FF3333]/20 text-[#FF6B6B] border border-[#FF3333]/40 hover:bg-[#FF3333]/30 transition-all">
+                    Delete
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-3xl mb-3 text-center">⏹️</div>
+                <h3 className="font-fredoka font-bold text-white text-lg text-center mb-1">Cancel Ingestion?</h3>
+                <p className="text-[#8892B0] text-sm text-center mb-1">
+                  <span className="text-white font-semibold">"{confirmModal.bookTitle}"</span>
+                </p>
+                <p className="text-[#8892B0] text-xs text-center mb-5">
+                  Progress already saved will be kept — you can resume from the last completed chapter.
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmModal(null)}
+                    className="flex-1 py-2.5 rounded-xl font-nunito font-bold text-sm bg-[#2D2B5A] text-[#8892B0] hover:text-white transition-all">
+                    Keep going
+                  </button>
+                  <button onClick={confirmCancelBook}
+                    className="flex-1 py-2.5 rounded-xl font-nunito font-bold text-sm bg-[#FFB347]/20 text-[#FFB347] border border-[#FFB347]/40 hover:bg-[#FFB347]/30 transition-all">
+                    Cancel ingestion
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div>
         <h2 className="text-2xl font-fredoka font-bold text-white">📚 Books</h2>
         <p className="text-[#8892B0] text-sm mt-1">Upload textbooks and let AI extract chapters &amp; topics</p>
