@@ -96,9 +96,10 @@ class TestExamSubmit:
         if not exam_data:
             pytest.skip("Exam start failed — skipping submit test")
 
+        # answers is a plain list of strings, one per question (same order)
         answers = [
-            {"question_id": q["id"], "answer": "numerator is smaller than denominator"}
-            for q in exam_data.get("questions", [])[:3]
+            "numerator is smaller than denominator"
+            for _ in exam_data.get("questions", [])[:3]
         ]
 
         with patch("session_engine.call_claude", return_value='{"score":80,"feedback":"Good","confidence_tag":"confident","missed_key_points":[]}'):

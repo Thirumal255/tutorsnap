@@ -69,8 +69,8 @@ class TestStudentProgress:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert "topics" in data
-        assert isinstance(data["topics"], list)
+        # Progress returns a list of books; each book contains chapters with topics
+        assert isinstance(data, list)
 
     def test_progress_includes_mastery_fields(self, client, db):
         from models import TopicMastery
@@ -95,8 +95,14 @@ class TestStudentProgress:
         resp = client.get("/api/student/progress", headers=auth_headers(user))
         assert resp.status_code == 200
         data = resp.json()
-        topics = data["topics"]
-        matched = [t for t in topics if t.get("title") == "Integers"]
+        # Response: [{book_id, title, chapters: [{topics: [{id, title, mastery_level, ...}]}]}]
+        all_topics = [
+            t
+            for book in data
+            for ch in book.get("chapters", [])
+            for t in ch.get("topics", [])
+        ]
+        matched = [t for t in all_topics if t.get("title") == "Integers"]
         assert len(matched) > 0
         assert matched[0]["mastery_level"] == "L2"
 
@@ -210,7 +216,9 @@ class TestReviewQueue:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list) or "topics" in data
+        # Response: {"due": [...], "count": N}
+        assert "due" in data
+        assert isinstance(data["due"], list)
 
     def test_review_queue_includes_due_topics(self, client, db):
         from models import TopicMastery
@@ -236,7 +244,8 @@ class TestReviewQueue:
         resp = client.get("/api/student/review-queue", headers=auth_headers(user))
         assert resp.status_code == 200
         raw = resp.json()
-        items = raw if isinstance(raw, list) else raw.get("topics", [])
+        # Response: {"due": [{topic_id, title, ...}], "count": N}
+        items = raw.get("due", [])
         titles = [t.get("title", "") for t in items]
         assert "Due Topic" in titles
 
@@ -323,5 +332,7 @@ class TestWeeklyChallenge:
 
         assert resp.status_code == 200
         data = resp.json()
-        if data:  # might be null if grade logic doesn't match
-            assert "question_text" in data or "question" in data
+        # Response: {"available": True, "challenge": {"question": ..., ...}, "completed": ...}
+        assert data.get("available") is True
+        challenge = data.get("challenge", {})
+        assert "question" in challenge or "question_text" in challenge

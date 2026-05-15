@@ -227,6 +227,31 @@ def make_topic(db, chapter_id, number="1.1", title="Topic 1"):
     return t
 
 
+def make_studied(db, student_name: str, topic_id: int):
+    """Create a TopicMastery row with studied=True so /api/session/start is allowed."""
+    from models import TopicMastery
+
+    existing = db.query(TopicMastery).filter(
+        TopicMastery.student_name == student_name,
+        TopicMastery.topic_id == topic_id,
+    ).first()
+    if existing:
+        existing.studied = True
+        db.commit()
+        return existing
+
+    m = TopicMastery(
+        student_name=student_name,
+        topic_id=topic_id,
+        studied=True,
+        study_summary="Test study summary.",
+    )
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
 def make_session(db, student_name, topic_id, user_id=None, status="active", level="L1"):
     from models import Session as SessionModel
 

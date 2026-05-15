@@ -14,7 +14,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from tests.conftest import (
-    make_user, make_book, make_chapter, make_topic, make_session,
+    make_user, make_book, make_chapter, make_topic, make_session, make_studied,
     auth_headers,
 )
 
@@ -61,6 +61,7 @@ class TestStartSession:
         topic = make_topic(db, ch.id)
 
         user = make_user(db, email="ss@test.com", google_id="g-ss")
+        make_studied(db, user.name, topic.id)  # unlock: studied=True required
         resp = client.post(
             "/api/session/start",
             json={"student_name": user.name, "topic_id": topic.id},
@@ -95,6 +96,7 @@ class TestStartSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="rec@test.com", google_id="g-rec")
+        make_studied(db, user.name, topic.id)
 
         resp = client.post(
             "/api/session/start",
@@ -118,6 +120,7 @@ class TestStartSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="lvl@test.com", google_id="g-lvl")
+        make_studied(db, user.name, topic.id)
 
         resp = client.post(
             "/api/session/start",
@@ -147,6 +150,7 @@ class TestSubmitAnswer:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="ans@test.com", google_id="g-ans")
+        make_studied(db, user.name, topic.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -188,6 +192,7 @@ class TestSubmitAnswer:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="inc@test.com", google_id="g-inc")
+        make_studied(db, user.name, topic.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -225,6 +230,7 @@ class TestHintEndpoint:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="hint@test.com", google_id="g-hint")
+        make_studied(db, user.name, topic.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -241,7 +247,7 @@ class TestHintEndpoint:
 
         assert hint_resp.status_code == 200
         data = hint_resp.json()
-        assert "hint" in data
+        assert "hint_message" in data or "hint" in data  # API returns hint_message
         assert "hint_tier" in data
 
     @patch("session_engine._client")
@@ -256,6 +262,7 @@ class TestHintEndpoint:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="ht@test.com", google_id="g-ht")
+        make_studied(db, user.name, topic.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -298,6 +305,7 @@ class TestEndSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="end@test.com", google_id="g-end")
+        make_studied(db, user.name, topic.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -330,6 +338,7 @@ class TestEndSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="mark@test.com", google_id="g-mark")
+        make_studied(db, user.name, topic.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -346,4 +355,4 @@ class TestEndSession:
 
         from models import Session as SessionModel
         session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-        assert session.status in ("ended", "complete", "done")
+        assert session.status in ("ended", "complete", "done", "completed")
