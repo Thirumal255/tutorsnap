@@ -10,6 +10,7 @@ import Summary from './pages/Summary'
 import StudentLayout from './pages/student/StudentLayout'
 import StudentHome from './pages/student/StudentHome'
 import StudentPractice from './pages/student/StudentPractice'
+import StudyMode from './pages/student/StudyMode'
 import StudentProgress from './pages/student/StudentProgress'
 import StudentStudyTime from './pages/student/StudentStudyTime'
 import StudentAchievements from './pages/student/StudentAchievements'
@@ -58,6 +59,13 @@ export default function App() {
               <Route path="achievements" element={<StudentAchievements />} />
               <Route path="mistakes"     element={<StudentMistakes />} />
             </Route>
+
+            {/* Study Mode — full-screen, no sidebar */}
+            <Route path="/study/:topicId" element={
+              <ProtectedRoute roles={['student']}>
+                <StudyMode />
+              </ProtectedRoute>
+            } />
 
             {/* Exam and Flashcard — full-screen, no sidebar */}
             <Route path="/exam" element={

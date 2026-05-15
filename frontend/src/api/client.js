@@ -97,6 +97,15 @@ export const getChildSessions = (id, limit = 20, offset = 0) =>
   api.get(`/parent/children/${id}/sessions?limit=${limit}&offset=${offset}`)
 export const getChildWeeklyReport = (id) => api.get(`/parent/children/${id}/weekly-report`)
 export const getFamilyActivity = () => api.get('/parent/family-activity')
+
+// Study Mode
+export const explainTopic     = (topicId) => api.post(`/topics/${topicId}/explain`)
+export const studyChat        = (topicId, studentName, messages) =>
+  api.post(`/topics/${topicId}/study-chat`, { student_name: studentName, messages })
+export const completeStudy    = (topicId, studentName, studySummary) =>
+  api.post(`/topics/${topicId}/study-complete`, { student_name: studentName, study_summary: studySummary })
+export const unlockPractice   = (topicId, studentName, studySummary) =>
+  api.post(`/topics/${topicId}/study-unlock`, { student_name: studentName, study_summary: studySummary })
 export const getParentNotifications = () => api.get('/parent/notifications')
 export const markNotificationRead = (id) => api.post(`/parent/notifications/${id}/read`)
 export const markAllNotificationsRead = () => api.post('/parent/notifications/mark-all-read')

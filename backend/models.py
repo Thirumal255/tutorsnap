@@ -227,6 +227,10 @@ class TopicMastery(Base):
     next_review_at = Column(DateTime, nullable=True)       # when to resurface this topic
     review_interval_days = Column(Integer, default=1)      # current interval (grows after "know it")
 
+    # ── Study Mode ────────────────────────────────────────────────────────
+    studied = Column(Boolean, default=False)               # True after first Study session completed
+    study_summary = Column(Text, nullable=True)            # compact summary of what Buddy explained
+
     __table_args__ = (UniqueConstraint("student_name", "topic_id"),)
 
     topic = relationship("Topic", back_populates="masteries")

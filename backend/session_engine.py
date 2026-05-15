@@ -231,7 +231,8 @@ def generate_sub_question(topic, original_question: str, confusion_type: str = N
         return "Let's try a simpler step first — can you recall the key rule or formula for this topic?"
 
 
-def generate_question(topic, level: str, previous_questions: list[str], recent_formats: list[str] = None) -> dict:
+def generate_question(topic, level: str, previous_questions: list[str], recent_formats: list[str] = None,
+                      study_summary: str = "") -> dict:
     """Generate a question and return a dict with question, expected_key_points, answer_format."""
     subject_label = get_subject_label(topic)
     system = (
@@ -366,9 +367,16 @@ Example E — L4 analysis, explanation format:
  "answer_format": "explanation"}
 """
 
+    study_ctx = (
+        f"\nSTUDY CONTEXT — the student already studied this topic with Buddy. "
+        f"Here is a summary of what was explained:\n{study_summary}\n"
+        f"Your question MUST be drawn from concepts covered in this study session.\n"
+    ) if study_summary.strip() else ""
+
     user = (
         f"Generate exactly ONE practice question at difficulty level {level}.\n"
         f"Level {level} means: {LEVEL_GUIDE[level]}\n\n"
+        f"{study_ctx}"
         f"{exercise_instruction}\n"
         f"LEVEL GUIDANCE:\n{LEVEL_STARTERS.get(level, '')}\n\n"
         f"{variety_rule}"

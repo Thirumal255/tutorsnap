@@ -103,7 +103,17 @@ export default function StudentPractice() {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
   }
 
-  async function handleStart(topicId, topicTitle, chapterTitle) {
+  function handleStudy(topic, chapterTitle) {
+    navigate(`/study/${topic.id}`, {
+      state: { topicTitle: topic.title, chapterTitle, studiedBefore: topic.studied }
+    })
+  }
+
+  async function handleStart(topicId, topicTitle, chapterTitle, studied) {
+    if (!studied) {
+      toast.info('📖 Study this topic first to unlock Practice!')
+      return
+    }
     setStarting(topicId)
     try {
       const res = await startSession(user.name, topicId)
@@ -120,7 +130,13 @@ export default function StudentPractice() {
       )
       navigate(`/session/${d.session_id}`)
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to start session')
+      const detail = e.response?.data?.detail
+      if (detail === 'study_required') {
+        toast.info('📖 Study this topic first to unlock Practice!')
+        navigate(`/study/${topicId}`, { state: { topicTitle, chapterTitle } })
+      } else {
+        toast.error(detail || 'Failed to start session')
+      }
     } finally {
       setStarting(null)
     }
@@ -298,21 +314,42 @@ export default function StudentPractice() {
                                           <p className="font-nunito font-semibold text-white text-sm truncate">
                                             {t.topic_number} {t.title}
                                           </p>
-                                          {t.mastery_sessions > 0 && (
-                                            <p className="text-xs text-[#8892B0]">
-                                              {t.mastery_sessions} session{t.mastery_sessions !== 1 ? 's' : ''}
-                                              {t.last_practiced_at && ` · ${new Date(t.last_practiced_at).toLocaleDateString()}`}
-                                            </p>
-                                          )}
+                                          <div className="flex items-center gap-2 mt-0.5">
+                                            {t.studied && (
+                                              <span className="text-xs text-[#00CC88]">✓ Studied</span>
+                                            )}
+                                            {t.mastery_sessions > 0 && (
+                                              <span className="text-xs text-[#8892B0]">
+                                                {t.mastery_sessions} session{t.mastery_sessions !== 1 ? 's' : ''}
+                                                {t.last_practiced_at && ` · ${new Date(t.last_practiced_at).toLocaleDateString()}`}
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
-                                      <button
-                                        onClick={() => handleStart(t.id, t.title, ch.title)}
-                                        disabled={starting === t.id}
-                                        className="btn-blox-primary flex-shrink-0 text-sm py-2 px-4 disabled:opacity-50"
-                                      >
-                                        {starting === t.id ? '⚡…' : t.mastery_level ? '▶ Play' : '▶ Start'}
-                                      </button>
+                                      <div className="flex items-center gap-2 flex-shrink-0">
+                                        {/* Study button — always available */}
+                                        <button
+                                          onClick={() => handleStudy(t, ch.title)}
+                                          className="text-sm py-1.5 px-3 rounded-lg border border-[#00A2FF]/40 text-[#00A2FF] hover:bg-[#00A2FF]/10 transition-all font-nunito font-semibold"
+                                          title="Study this topic with Buddy"
+                                        >
+                                          📖 Study
+                                        </button>
+                                        {/* Practice button — locked until studied */}
+                                        <button
+                                          onClick={() => handleStart(t.id, t.title, ch.title, t.studied)}
+                                          disabled={starting === t.id}
+                                          className={`text-sm py-1.5 px-3 rounded-lg font-nunito font-semibold transition-all disabled:opacity-50 ${
+                                            t.studied
+                                              ? 'btn-blox-primary'
+                                              : 'border border-[#2D2B5A] text-[#4A5568] cursor-not-allowed'
+                                          }`}
+                                          title={t.studied ? 'Start practising' : 'Study first to unlock Practice'}
+                                        >
+                                          {starting === t.id ? '⚡…' : t.studied ? '▶ Play' : '🔒 Play'}
+                                        </button>
+                                      </div>
                                     </li>
                                   ))}
                                 </ul>
