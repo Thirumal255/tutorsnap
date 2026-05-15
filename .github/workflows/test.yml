@@ -1,0 +1,300 @@
+name: Test Suite
+
+# ── Triggers ───────────────────────────────────────────────────────────────────
+# 1. After backend deploy completes (success or failure — we always want test results)
+# 2. On any direct push to main that touches backend code (PR merge, hot-fix, etc.)
+# 3. Manually via workflow_dispatch (for on-demand regression runs)
+on:
+  workflow_run:
+    workflows: ["Deploy Backend"]
+    types: [completed]
+
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/test.yml'
+
+  workflow_dispatch:
+    inputs:
+      marker:
+        description: 'pytest marker to run (leave blank for full regression)'
+        required: false
+        default: ''
+
+# ── Concurrency ────────────────────────────────────────────────────────────────
+# Only one test run per branch at a time; cancel in-flight if a new push arrives.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Detect which markers to run based on changed files ──────────────────────
+  detect-scope:
+    name: Detect test scope
+    runs-on: ubuntu-latest
+    outputs:
+      markers: ${{ steps.scope.outputs.markers }}
+      label:   ${{ steps.scope.outputs.label }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine changed files
+        id: changed
+        run: |
+          # For workflow_run events we compare HEAD^ to HEAD.
+          # For push events github provides before/after SHAs.
+          BASE=${{ github.event.before || 'HEAD^' }}
+          git diff --name-only "$BASE" HEAD > changed_files.txt || git diff --name-only HEAD^ HEAD > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
+
+      - name: Map changed files to pytest markers
+        id: scope
+        run: |
+          MARKERS=""
+          LABEL="targeted"
+
+          # Manual override
+          if [ -n "${{ github.event.inputs.marker }}" ]; then
+            MARKERS="-m ${{ github.event.inputs.marker }}"
+            LABEL="manual:${{ github.event.inputs.marker }}"
+          else
+            # Full regression on workflow_run trigger or if no specific match
+            TRIGGER="${{ github.event_name }}"
+
+            if grep -q "test_auth"           changed_files.txt; then MARKERS="$MARKERS auth"; fi
+            if grep -q "test_admin"          changed_files.txt; then MARKERS="$MARKERS admin"; fi
+            if grep -q "test_student"        changed_files.txt; then MARKERS="$MARKERS student"; fi
+            if grep -q "test_sessions"       changed_files.txt; then MARKERS="$MARKERS session"; fi
+            if grep -q "test_session_engine" changed_files.txt; then MARKERS="$MARKERS session"; fi
+            if grep -q "test_study_mode"     changed_files.txt; then MARKERS="$MARKERS study"; fi
+            if grep -q "test_exam_flashcard" changed_files.txt; then MARKERS="$MARKERS exam"; fi
+            if grep -q "test_books"          changed_files.txt; then MARKERS="$MARKERS books"; fi
+            if grep -q "test_models"         changed_files.txt; then MARKERS="$MARKERS study session"; fi
+
+            # Backend source files → map to relevant feature markers
+            if grep -q "session_engine.py"   changed_files.txt; then MARKERS="$MARKERS session study exam"; fi
+            if grep -q "main.py"             changed_files.txt; then MARKERS="$MARKERS regression"; fi
+            if grep -q "models.py"           changed_files.txt; then MARKERS="$MARKERS regression"; fi
+            if grep -q "auth"                changed_files.txt; then MARKERS="$MARKERS auth"; fi
+
+            # Strip duplicates
+            MARKERS=$(echo "$MARKERS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+
+            if [ -z "$MARKERS" ] || [ "$TRIGGER" = "workflow_run" ]; then
+              MARKERS="-m regression"
+              LABEL="full-regression"
+            else
+              # Compose pytest -m "marker1 or marker2 or ..."
+              M_EXPR=$(echo "$MARKERS" | sed 's/ / or /g')
+              MARKERS="-m \"$M_EXPR\""
+              LABEL="targeted:$(echo "$MARKERS" | tr ' ' ',')"
+            fi
+          fi
+
+          echo "markers=$MARKERS" >> "$GITHUB_OUTPUT"
+          echo "label=$LABEL"     >> "$GITHUB_OUTPUT"
+          echo "Scope: $LABEL — pytest args: $MARKERS"
+
+  # ── Run the tests ────────────────────────────────────────────────────────────
+  test:
+    name: pytest (${{ needs.detect-scope.outputs.label }})
+    runs-on: ubuntu-latest
+    needs: detect-scope
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-test.txt
+
+      - name: Install production dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Install pytest-json-report
+        run: pip install pytest-json-report
+
+      - name: Run tests
+        id: pytest
+        env:
+          DATABASE_URL:      "sqlite:///:memory:"
+          JWT_SECRET:        "ci-test-secret-key-at-least-32-chars"
+          JWT_EXPIRY_HOURS:  "24"
+          GOOGLE_CLIENT_ID:  "ci-test-google-client-id"
+          ANTHROPIC_API_KEY: "ci-test-anthropic-key"
+          ADMIN_EMAILS:      "admin@test.com"
+          USE_GCS:           "false"
+          UPLOAD_DIR:        "uploads_test"
+        run: |
+          MARKERS="${{ needs.detect-scope.outputs.markers }}"
+
+          # Always add --no-header -rN for cleaner output; --tb=short for brevity
+          eval pytest $MARKERS \
+            --tb=short \
+            --no-header \
+            -rN \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-report=html:htmlcov \
+            --json-report \
+            --json-report-file=report.json \
+            -v \
+            2>&1 | tee pytest_output.txt
+
+          # Capture exit code
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Parse test report
+        id: report
+        if: always()
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          try:
+              with open("report.json") as f:
+                  r = json.load(f)
+          except Exception:
+              print("No report.json found")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as o:
+                  o.write("summary=No report generated\n")
+                  o.write("passed=0\nfailed=0\nerrors=0\ntotal=0\n")
+              raise SystemExit(0)
+
+          summary = r.get("summary", {})
+          passed   = summary.get("passed", 0)
+          failed   = summary.get("failed", 0)
+          errors   = summary.get("error",  0)
+          total    = summary.get("total",  0)
+          duration = round(r.get("duration", 0), 1)
+
+          status_emoji = "✅" if (failed + errors) == 0 else "❌"
+          scope   = "${{ needs.detect-scope.outputs.label }}"
+          sha     = "${{ github.sha }}"[:7]
+          branch  = "${{ github.ref_name }}"
+
+          lines = [
+              f"{status_emoji} TutorSnap Test Report",
+              f"Branch : {branch}  |  Commit: {sha}",
+              f"Scope  : {scope}",
+              f"Results: {passed}/{total} passed  •  {failed} failed  •  {errors} errors  •  {duration}s",
+              "",
+          ]
+
+          if failed + errors > 0:
+              lines.append("── Failed tests ──────────────────────────────────")
+              for t in r.get("tests", []):
+                  if t.get("outcome") not in ("passed", "skipped"):
+                      lines.append(f"  ✗ {t['nodeid']}")
+                      call = t.get("call", {})
+                      if call.get("longrepr"):
+                          # First 3 lines of the failure repr
+                          snippet = "\n".join(call["longrepr"].splitlines()[:3])
+                          lines.append(f"    {snippet}")
+              lines.append("")
+
+          # Coverage summary
+          cov_lines = []
+          with open("pytest_output.txt") as f:
+              in_cov = False
+              for line in f:
+                  if "Name" in line and "Stmts" in line:
+                      in_cov = True
+                  if in_cov:
+                      cov_lines.append(line.rstrip())
+                  if in_cov and "TOTAL" in line:
+                      break
+          if cov_lines:
+              lines.append("── Coverage ──────────────────────────────────────")
+              lines.extend(cov_lines[-3:])  # TOTAL line and 2 above it
+
+          report_text = "\n".join(lines)
+          print(report_text)
+
+          # Write outputs for email / Step Summary
+          with open(os.environ["GITHUB_OUTPUT"], "a") as o:
+              o.write(f"passed={passed}\n")
+              o.write(f"failed={failed}\n")
+              o.write(f"errors={errors}\n")
+              o.write(f"total={total}\n")
+              # Escape newlines for multiline output
+              escaped = report_text.replace("%", "%25").replace("\n", "%0A").replace("\r", "%0D")
+              o.write(f"summary={escaped}\n")
+          PYEOF
+
+      - name: Post GitHub Actions Step Summary
+        if: always()
+        run: |
+          echo "## 🧪 Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Passed | Failed | Errors | Total |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|--------|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ${{ steps.report.outputs.passed }} | ${{ steps.report.outputs.failed }} | ${{ steps.report.outputs.errors }} | ${{ steps.report.outputs.total }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Scope:** \`${{ needs.detect-scope.outputs.label }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          cat backend/pytest_output.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: backend/htmlcov/
+          retention-days: 14
+
+      - name: Upload raw test report JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-json
+          path: backend/report.json
+          retention-days: 14
+
+      - name: Send email report
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port:    465
+          secure:         true
+          username:       ${{ secrets.REPORT_EMAIL_USER }}
+          password:       ${{ secrets.REPORT_EMAIL_PASS }}
+          to:             ${{ secrets.REPORT_EMAIL_TO }}
+          from:           "TutorSnap CI <${{ secrets.REPORT_EMAIL_USER }}>"
+          subject:        >
+            ${{ steps.report.outputs.failed == '0' && steps.report.outputs.errors == '0' && '✅' || '❌' }}
+            TutorSnap Tests — ${{ needs.detect-scope.outputs.label }}
+            (${{ steps.report.outputs.passed }}/${{ steps.report.outputs.total }} passed)
+            [${{ github.ref_name }}]
+          body: |
+            ${{ steps.report.outputs.summary }}
+
+            ─────────────────────────────────────────────────
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit      : ${{ github.sha }}
+            Triggered by: ${{ github.actor }} via ${{ github.event_name }}
+
+      - name: Fail job if tests failed
+        if: steps.report.outputs.failed != '0' || steps.report.outputs.errors != '0'
+        run: |
+          echo "❌ ${{ steps.report.outputs.failed }} test(s) failed."
+          exit 1

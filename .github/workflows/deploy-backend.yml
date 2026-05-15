@@ -7,6 +7,10 @@ on:
       - 'backend/**'
       - '.github/workflows/deploy-backend.yml'
 
+# NOTE: The Test Suite workflow listens for this workflow's completion via
+# `workflow_run` trigger and runs automatically after every deploy.
+# See .github/workflows/test.yml
+
 env:
   PROJECT_ID: tutorsnap
   REGION: asia-south1
@@ -107,3 +111,7 @@ jobs:
             --region=$REGION \
             --format='value(status.url)')
           echo "Backend deployed: $URL"
+          echo "## 🚀 Backend Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The Test Suite workflow will run automatically and email results." >> "$GITHUB_STEP_SUMMARY"

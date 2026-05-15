@@ -1,0 +1,209 @@
+{
+  "_meta": {
+    "description": "TutorSnap master test registry. Each entry tracks a test case with its feature area, the commit/PR that introduced it, and its current status. Add a new entry whenever a test is added — CI uses this to tag reports and detect coverage gaps.",
+    "schema_version": "1.0",
+    "fields": {
+      "id":          "Unique stable ID (never reuse a retired ID)",
+      "name":        "Human-readable test name",
+      "file":        "Path relative to backend/tests/",
+      "class":       "pytest class (null for module-level tests)",
+      "function":    "pytest function name",
+      "marker":      "Primary pytest marker (matches pytest.ini markers)",
+      "feature":     "Short feature name / domain",
+      "added_in":    "Git commit SHA or PR number that introduced this test",
+      "status":      "active | skip | xfail"
+    }
+  },
+
+  "tests": [
+
+    { "id": "AUTH-001", "name": "Google OAuth callback stores user and returns JWT",
+      "file": "test_auth.py", "class": "TestGoogleAuth", "function": "test_google_login_creates_user",
+      "marker": "auth", "feature": "authentication", "added_in": "initial", "status": "active" },
+
+    { "id": "AUTH-002", "name": "Duplicate Google login reuses existing user",
+      "file": "test_auth.py", "class": "TestGoogleAuth", "function": "test_google_login_existing_user",
+      "marker": "auth", "feature": "authentication", "added_in": "initial", "status": "active" },
+
+    { "id": "AUTH-003", "name": "Protected route rejects missing token (401)",
+      "file": "test_auth.py", "class": "TestJWTProtection", "function": "test_missing_token_returns_401",
+      "marker": "auth", "feature": "authentication", "added_in": "initial", "status": "active" },
+
+    { "id": "AUTH-004", "name": "Protected route rejects invalid/expired JWT (401)",
+      "file": "test_auth.py", "class": "TestJWTProtection", "function": "test_invalid_token_returns_401",
+      "marker": "auth", "feature": "authentication", "added_in": "initial", "status": "active" },
+
+    { "id": "AUTH-005", "name": "Role-gated endpoint blocks wrong role (403)",
+      "file": "test_auth.py", "class": "TestRoleGating", "function": "test_student_endpoint_blocks_admin",
+      "marker": "auth", "feature": "authentication", "added_in": "initial", "status": "active" },
+
+    { "id": "ADMIN-001", "name": "Admin can list all students",
+      "file": "test_admin_api.py", "class": "TestAdminStudents", "function": "test_list_students",
+      "marker": "admin", "feature": "admin-management", "added_in": "initial", "status": "active" },
+
+    { "id": "ADMIN-002", "name": "Admin can deactivate a student account",
+      "file": "test_admin_api.py", "class": "TestAdminStudents", "function": "test_deactivate_student",
+      "marker": "admin", "feature": "admin-management", "added_in": "initial", "status": "active" },
+
+    { "id": "ADMIN-003", "name": "Non-admin cannot access admin endpoints (403)",
+      "file": "test_admin_api.py", "class": "TestAdminStudents", "function": "test_student_cannot_access_admin",
+      "marker": "admin", "feature": "admin-management", "added_in": "initial", "status": "active" },
+
+    { "id": "BOOKS-001", "name": "GET /api/topics/{book_id} returns chapters and topics",
+      "file": "test_books_api.py", "class": "TestTopicsEndpoint", "function": "test_topics_returns_structure",
+      "marker": "books", "feature": "book-ingestion", "added_in": "initial", "status": "active" },
+
+    { "id": "BOOKS-002", "name": "Topics endpoint returns 404 for unknown book",
+      "file": "test_books_api.py", "class": "TestTopicsEndpoint", "function": "test_topics_unknown_book_returns_404",
+      "marker": "books", "feature": "book-ingestion", "added_in": "initial", "status": "active" },
+
+    { "id": "BOOKS-003", "name": "Topics endpoint requires authentication",
+      "file": "test_books_api.py", "class": "TestTopicsEndpoint", "function": "test_topics_requires_auth",
+      "marker": "books", "feature": "book-ingestion", "added_in": "initial", "status": "active" },
+
+    { "id": "SESSION-001", "name": "Session start returns session_id and first question",
+      "file": "test_sessions_api.py", "class": "TestSessionStart", "function": "test_session_start_returns_question",
+      "marker": "session", "feature": "practice-session", "added_in": "initial", "status": "active" },
+
+    { "id": "SESSION-002", "name": "Session start requires authentication (401)",
+      "file": "test_sessions_api.py", "class": "TestSessionStart", "function": "test_session_start_requires_auth",
+      "marker": "session", "feature": "practice-session", "added_in": "initial", "status": "active" },
+
+    { "id": "SESSION-003", "name": "Submitting answer returns next question or session end",
+      "file": "test_sessions_api.py", "class": "TestAnswerSubmit", "function": "test_submit_answer_returns_feedback",
+      "marker": "session", "feature": "practice-session", "added_in": "initial", "status": "active" },
+
+    { "id": "SESSION-004", "name": "Hint endpoint returns progressive hints",
+      "file": "test_sessions_api.py", "class": "TestHints", "function": "test_hint_returns_content",
+      "marker": "session", "feature": "practice-session", "added_in": "initial", "status": "active" },
+
+    { "id": "SESSION-005", "name": "Session end returns summary with score",
+      "file": "test_sessions_api.py", "class": "TestSessionEnd", "function": "test_session_end_returns_summary",
+      "marker": "session", "feature": "practice-session", "added_in": "initial", "status": "active" },
+
+    { "id": "ENGINE-001", "name": "generate_question returns valid JSON structure",
+      "file": "test_session_engine.py", "class": "TestGenerateQuestion", "function": "test_generate_question_returns_dict",
+      "marker": "session", "feature": "session-engine", "added_in": "initial", "status": "active" },
+
+    { "id": "ENGINE-002", "name": "evaluate_answer returns score and feedback",
+      "file": "test_session_engine.py", "class": "TestEvaluateAnswer", "function": "test_evaluate_answer_returns_score",
+      "marker": "session", "feature": "session-engine", "added_in": "initial", "status": "active" },
+
+    { "id": "ENGINE-003", "name": "TOPIC_BOUNDARY_RULE is present in generate_question prompt",
+      "file": "test_session_engine.py", "class": "TestTopicBoundary", "function": "test_topic_boundary_rule_in_prompt",
+      "marker": "session", "feature": "session-engine", "added_in": "topic-boundary-fix", "status": "active" },
+
+    { "id": "STUDENT-001", "name": "GET /api/student/dashboard returns XP and streak",
+      "file": "test_student_api.py", "class": "TestStudentDashboard", "function": "test_dashboard_returns_xp",
+      "marker": "student", "feature": "student-dashboard", "added_in": "initial", "status": "active" },
+
+    { "id": "STUDENT-002", "name": "GET /api/student/progress returns topic mastery list",
+      "file": "test_student_api.py", "class": "TestStudentProgress", "function": "test_progress_returns_mastery",
+      "marker": "student", "feature": "student-dashboard", "added_in": "initial", "status": "active" },
+
+    { "id": "STUDENT-003", "name": "GET /api/student/mistakes returns flagged questions",
+      "file": "test_student_api.py", "class": "TestStudentMistakes", "function": "test_mistakes_returns_list",
+      "marker": "student", "feature": "student-dashboard", "added_in": "initial", "status": "active" },
+
+    { "id": "MODELS-001", "name": "TopicMastery studied flag defaults to False",
+      "file": "test_models.py", "class": "TestTopicMasteryModel", "function": "test_studied_defaults_to_false",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "MODELS-002", "name": "TopicMastery study_summary is nullable",
+      "file": "test_models.py", "class": "TestTopicMasteryModel", "function": "test_study_summary_nullable",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-001", "name": "Explain endpoint returns structured explanation",
+      "file": "test_study_mode.py", "class": "TestTopicExplain", "function": "test_explain_returns_explanation",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-002", "name": "Explain endpoint requires authentication (401)",
+      "file": "test_study_mode.py", "class": "TestTopicExplain", "function": "test_explain_requires_auth",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-003", "name": "Explain endpoint blocks admin role (403)",
+      "file": "test_study_mode.py", "class": "TestTopicExplain", "function": "test_explain_admin_blocked",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-004", "name": "Explain endpoint returns 404 for unknown topic",
+      "file": "test_study_mode.py", "class": "TestTopicExplain", "function": "test_explain_nonexistent_topic",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-005", "name": "Study-chat returns reply for valid message history",
+      "file": "test_study_mode.py", "class": "TestStudyChat", "function": "test_chat_returns_reply",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-006", "name": "Study-chat blocks parent role (403)",
+      "file": "test_study_mode.py", "class": "TestStudyChat", "function": "test_chat_requires_student_role",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-007", "name": "Study-complete returns exactly 2 check questions",
+      "file": "test_study_mode.py", "class": "TestStudyComplete", "function": "test_complete_returns_two_questions",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-008", "name": "Study-complete persists study_summary to TopicMastery",
+      "file": "test_study_mode.py", "class": "TestStudyComplete", "function": "test_complete_saves_study_summary",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-009", "name": "Study-unlock sets studied=True on TopicMastery",
+      "file": "test_study_mode.py", "class": "TestStudyUnlock", "function": "test_unlock_sets_studied_flag",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-010", "name": "Study-unlock awards +10 XP to student",
+      "file": "test_study_mode.py", "class": "TestStudyUnlock", "function": "test_unlock_awards_xp",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-011", "name": "Study-unlock returns 404 without prior mastery record",
+      "file": "test_study_mode.py", "class": "TestStudyUnlock", "function": "test_unlock_without_mastery_record_returns_404",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-012", "name": "Session start blocked (403 study_required) before study",
+      "file": "test_study_mode.py", "class": "TestStudyGate", "function": "test_session_start_blocked_before_study",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-013", "name": "Session start allowed after study unlock",
+      "file": "test_study_mode.py", "class": "TestStudyGate", "function": "test_session_start_allowed_after_study",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "STUDY-014", "name": "Topics endpoint includes studied flag",
+      "file": "test_study_mode.py", "class": "TestStudiedFlagInTopics", "function": "test_topics_endpoint_includes_studied_flag",
+      "marker": "study", "feature": "study-mode", "added_in": "study-mode", "status": "active" },
+
+    { "id": "EXAM-001", "name": "Exam start returns questions list with exam_id",
+      "file": "test_exam_flashcard.py", "class": "TestExamStart", "function": "test_exam_start_returns_questions",
+      "marker": "exam", "feature": "exam-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "EXAM-002", "name": "Exam start requires authentication (401)",
+      "file": "test_exam_flashcard.py", "class": "TestExamStart", "function": "test_exam_start_requires_auth",
+      "marker": "exam", "feature": "exam-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "EXAM-003", "name": "Exam start blocks admin role (403)",
+      "file": "test_exam_flashcard.py", "class": "TestExamStart", "function": "test_exam_start_requires_student_role",
+      "marker": "exam", "feature": "exam-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "EXAM-004", "name": "Exam submit returns score and results",
+      "file": "test_exam_flashcard.py", "class": "TestExamSubmit", "function": "test_exam_submit_returns_score",
+      "marker": "exam", "feature": "exam-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "EXAM-005", "name": "Exam submit requires authentication (401)",
+      "file": "test_exam_flashcard.py", "class": "TestExamSubmit", "function": "test_exam_submit_requires_auth",
+      "marker": "exam", "feature": "exam-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "FLASH-001", "name": "Flashcard question endpoint returns question and topic_id",
+      "file": "test_exam_flashcard.py", "class": "TestFlashcard", "function": "test_flashcard_question_returns_content",
+      "marker": "exam", "feature": "flashcard-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "FLASH-002", "name": "Flashcard question requires authentication (401)",
+      "file": "test_exam_flashcard.py", "class": "TestFlashcard", "function": "test_flashcard_question_requires_auth",
+      "marker": "exam", "feature": "flashcard-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "FLASH-003", "name": "Flashcard mark-known returns 200",
+      "file": "test_exam_flashcard.py", "class": "TestFlashcard", "function": "test_flashcard_mark_known",
+      "marker": "exam", "feature": "flashcard-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "FLASH-004", "name": "Flashcard mark-unknown returns 200",
+      "file": "test_exam_flashcard.py", "class": "TestFlashcard", "function": "test_flashcard_mark_unknown",
+      "marker": "exam", "feature": "flashcard-mode", "added_in": "exam-flashcard", "status": "active" }
+
+  ]
+}
