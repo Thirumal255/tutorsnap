@@ -43,42 +43,48 @@ jobs:
       - name: Determine changed files
         id: scope
         shell: bash
+        # Use set +e so grep non-matches (exit 1) never abort the step
         run: |
+          set +e
+
           # Manual override wins
           if [ -n "${{ github.event.inputs.marker }}" ]; then
             echo "markers=-m ${{ github.event.inputs.marker }}" >> "$GITHUB_OUTPUT"
-            echo "label=manual:${{ github.event.inputs.marker }}"   >> "$GITHUB_OUTPUT"
+            echo "label=manual:${{ github.event.inputs.marker }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # For workflow_run we always do full regression (no "before" SHA available)
+          # workflow_run always does full regression (no reliable "before" SHA)
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             echo "markers=-m regression" >> "$GITHUB_OUTPUT"
             echo "label=full-regression" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # For push events: compare previous commit to HEAD
-          git diff --name-only HEAD^ HEAD > changed_files.txt 2>/dev/null || \
-            git show --name-only --format="" HEAD > changed_files.txt
+          # push: try to list changed files; fall back to full regression on any error
+          git diff --name-only HEAD^ HEAD > changed_files.txt 2>/dev/null
+          if [ ! -s changed_files.txt ]; then
+            git show --name-only --format="" HEAD > changed_files.txt 2>/dev/null
+          fi
 
           echo "Changed files:"
-          cat changed_files.txt
+          cat changed_files.txt 2>/dev/null || true
 
           TAGS=""
+          CHANGED=$(cat changed_files.txt 2>/dev/null || true)
 
-          grep -q "test_auth"           changed_files.txt && TAGS="$TAGS auth"
-          grep -q "test_admin"          changed_files.txt && TAGS="$TAGS admin"
-          grep -q "test_student"        changed_files.txt && TAGS="$TAGS student"
-          grep -q "test_sessions"       changed_files.txt && TAGS="$TAGS session"
-          grep -q "test_session_engine" changed_files.txt && TAGS="$TAGS session"
-          grep -q "test_study_mode"     changed_files.txt && TAGS="$TAGS study"
-          grep -q "test_exam_flashcard" changed_files.txt && TAGS="$TAGS exam"
-          grep -q "test_books"          changed_files.txt && TAGS="$TAGS books"
-          grep -q "test_models"         changed_files.txt && TAGS="$TAGS study session"
-          grep -q "session_engine.py"   changed_files.txt && TAGS="$TAGS session study exam"
-          grep -q "main.py"             changed_files.txt && TAGS="$TAGS regression"
-          grep -q "models.py"           changed_files.txt && TAGS="$TAGS regression"
+          echo "$CHANGED" | grep -q "test_auth"           && TAGS="$TAGS auth"          || true
+          echo "$CHANGED" | grep -q "test_admin"          && TAGS="$TAGS admin"         || true
+          echo "$CHANGED" | grep -q "test_student"        && TAGS="$TAGS student"       || true
+          echo "$CHANGED" | grep -q "test_sessions"       && TAGS="$TAGS session"       || true
+          echo "$CHANGED" | grep -q "test_session_engine" && TAGS="$TAGS session"       || true
+          echo "$CHANGED" | grep -q "test_study_mode"     && TAGS="$TAGS study"         || true
+          echo "$CHANGED" | grep -q "test_exam_flashcard" && TAGS="$TAGS exam"          || true
+          echo "$CHANGED" | grep -q "test_books"          && TAGS="$TAGS books"         || true
+          echo "$CHANGED" | grep -q "test_models"         && TAGS="$TAGS study session" || true
+          echo "$CHANGED" | grep -q "session_engine.py"   && TAGS="$TAGS session study exam" || true
+          echo "$CHANGED" | grep -q "main.py"             && TAGS="$TAGS regression"    || true
+          echo "$CHANGED" | grep -q "models.py"           && TAGS="$TAGS regression"    || true
 
           # Deduplicate
           TAGS=$(echo "$TAGS" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ' | sed 's/ *$//')
@@ -87,11 +93,11 @@ jobs:
             echo "markers=-m regression" >> "$GITHUB_OUTPUT"
             echo "label=full-regression" >> "$GITHUB_OUTPUT"
           else
-            # Build: -m "auth or study or session"
             EXPR=$(echo "$TAGS" | sed 's/  */ or /g' | sed 's/^ or //' | sed 's/ or $//')
-            echo "markers=-m ${EXPR}"   >> "$GITHUB_OUTPUT"
+            echo "markers=-m ${EXPR}" >> "$GITHUB_OUTPUT"
             echo "label=targeted:${EXPR}" >> "$GITHUB_OUTPUT"
           fi
+          exit 0
 
   # ── Run the tests ────────────────────────────────────────────────────────────
   test:
