@@ -143,19 +143,80 @@ jobs:
       # ── 6. GitHub Step Summary ─────────────────────────────────────────────
       - name: Post Step Summary
         if: always()
-        shell: bash
+        shell: python
         run: |
-          {
-            echo "## 🧪 TutorSnap Test Results"
-            echo ""
-            echo "| Passed | Failed | Errors | Total |"
-            echo "|--------|--------|--------|-------|"
-            echo "| ${{ steps.report.outputs.passed }} | ${{ steps.report.outputs.failed }} | ${{ steps.report.outputs.errors }} | ${{ steps.report.outputs.total }} |"
-            echo ""
-            echo '```'
-            cat pytest_output.txt 2>/dev/null || echo "(no output)"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          import json, os, collections
+
+          SUMMARY = os.environ["GITHUB_STEP_SUMMARY"]
+
+          try:
+              data   = json.load(open("report.json"))
+              tests  = data.get("tests", [])
+              reg    = json.load(open("tests/registry.json"))
+              # Build lookup: nodeid fragment -> registry entry
+              reg_map = {}
+              for entry in reg.get("tests", []):
+                  key = f"{entry['file']}::{entry.get('class','')}::{entry['function']}"
+                  reg_map[key] = entry
+          except Exception:
+              tests = []
+              reg_map = {}
+
+          s        = data.get("summary", {}) if tests else {}
+          passed   = s.get("passed", 0)
+          failed   = s.get("failed", 0)
+          errors   = s.get("error",  0)
+          total    = s.get("total",  0)
+          duration = round(data.get("duration", 0), 1) if tests else 0
+
+          # Group tests by marker (feature area) using registry
+          by_marker = collections.defaultdict(list)
+          for t in tests:
+              nid     = t.get("nodeid", "")
+              outcome = t.get("outcome", "unknown")
+              # Try to find registry entry by matching file + class + function
+              parts   = nid.replace("::", "/", 1).split("::")
+              fname   = parts[0].split("/")[-1] if parts else ""
+              cls     = parts[1] if len(parts) > 2 else ""
+              fn      = parts[-1] if parts else ""
+              reg_key = f"{fname}::{cls}::{fn}"
+              entry   = reg_map.get(reg_key, {})
+              marker  = entry.get("marker", "other")
+              name    = entry.get("name", fn)
+              by_marker[marker].append((name, outcome, nid))
+
+          MARKER_LABEL = {
+              "auth": "🔐 Auth", "admin": "🛠 Admin", "student": "🎓 Student",
+              "session": "💬 Session", "study": "📖 Study Mode",
+              "exam": "📝 Exam / Flashcard", "books": "📚 Books",
+              "gamification": "🏆 Gamification", "parent": "👨‍👩‍👧 Parent",
+              "other": "🔧 Other",
+          }
+
+          icon  = "✅" if (failed + errors) == 0 else "❌"
+          lines = []
+          lines.append(f"## {icon} TutorSnap Test Results\n")
+          lines.append(f"| Passed | Failed | Errors | Total | Duration |")
+          lines.append(f"|--------|--------|--------|-------|----------|")
+          lines.append(f"| {passed} | {failed} | {errors} | {total} | {duration}s |\n")
+
+          if by_marker:
+              lines.append("### Test Cases by Feature\n")
+              for marker in sorted(by_marker.keys()):
+                  group    = by_marker[marker]
+                  label    = MARKER_LABEL.get(marker, marker)
+                  gpass    = sum(1 for _, o, _ in group if o == "passed")
+                  gfail    = sum(1 for _, o, _ in group if o not in ("passed","skipped"))
+                  hdr_icon = "✅" if gfail == 0 else "❌"
+                  lines.append(f"<details><summary>{hdr_icon} {label} &nbsp;—&nbsp; {gpass}/{len(group)} passed</summary>\n")
+                  lines.append("| Result | Test |")
+                  lines.append("|--------|------|")
+                  for name, outcome, nid in sorted(group, key=lambda x: x[0]):
+                      row_icon = "✅" if outcome == "passed" else ("⏭" if outcome == "skipped" else "❌")
+                      lines.append(f"| {row_icon} | {name} |")
+                  lines.append("\n</details>\n")
+
+          open(SUMMARY, "a").write("\n".join(lines) + "\n")
 
       # ── 7. Upload artifacts ────────────────────────────────────────────────
       - name: Upload coverage report
