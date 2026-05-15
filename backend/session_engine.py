@@ -16,6 +16,26 @@ understand it so much better when we get there together. Let's try again."
 This rule has absolutely zero exceptions.
 """
 
+TOPIC_BOUNDARY_RULE = """
+STRICT TOPIC BOUNDARY — This overrides every other instruction about content:
+You MUST generate questions ONLY about concepts, facts, terms, and examples
+that are explicitly present in the Topic context provided below (the Subject,
+Chapter, Topic, Key Concepts, Vocabulary, and Textbook Content sections).
+
+You MUST NOT:
+  • Use any knowledge from your training data that is not reflected in the
+    textbook content provided above.
+  • Introduce concepts, terms, organisms, examples, or scenarios that do NOT
+    appear in the provided topic context — even if they are related to the
+    subject in general.
+  • Ask about topics from other chapters, other subjects, or real-world facts
+    that the student's textbook does not cover in this topic.
+
+If the provided textbook content is too brief to generate a question, use ONLY
+the key concepts and vocabulary listed — do not go beyond them.
+Violating this boundary rule is the most serious error you can make.
+"""
+
 # Used ONLY in assess_answer — replaces ABSOLUTE_RULE so grading is not
 # contaminated by the "never confirm" instruction.
 ASSESS_RULE = """
@@ -105,7 +125,7 @@ def build_topic_context(topic) -> str:
     chapter_title = topic.chapter.title if topic.chapter else ""
     key_concepts = ", ".join(topic.key_concepts or [])
     vocabulary = ", ".join(topic.vocabulary or [])
-    raw = strip_latex((topic.raw_content or "")[:1500])
+    raw = strip_latex((topic.raw_content or "")[:4000])
 
     # Pull grade/subject from the book via chapter → book relationship
     book = getattr(topic.chapter, "book", None) if topic.chapter else None
@@ -217,6 +237,7 @@ def generate_question(topic, level: str, previous_questions: list[str], recent_f
     system = (
         f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
         f"{ABSOLUTE_RULE}\n"
+        f"{TOPIC_BOUNDARY_RULE}\n"
         f"{build_topic_context(topic)}"
     )
     prev = previous_questions[-5:] if previous_questions else []
@@ -259,8 +280,13 @@ def generate_question(topic, level: str, previous_questions: list[str], recent_f
         )
     else:
         exercise_instruction = (
-            "No textbook exercises are stored for this topic. "
-            "Generate a question based strictly on the textbook content above.\n"
+            "No textbook exercises are stored for this topic.\n"
+            "Generate a question using ONLY the key concepts, vocabulary, and textbook "
+            "content provided in the topic context above.\n"
+            "Do NOT introduce any concept, example, term, or fact that does not appear "
+            "in the topic context — not even related real-world examples from your "
+            "general knowledge. If the content is sparse, ask a simple L1 recall "
+            "question about one of the listed key concepts or vocabulary terms.\n"
         )
 
     # Answer-format variety enforcement
