@@ -56,7 +56,7 @@ jobs:
 
           # workflow_run always does full regression (no reliable "before" SHA)
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "markers=-m regression" >> "$GITHUB_OUTPUT"
+            echo "markers=" >> "$GITHUB_OUTPUT"   # empty = run ALL tests (no -m filter)
             echo "label=full-regression" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -90,7 +90,7 @@ jobs:
           TAGS=$(echo "$TAGS" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ' | sed 's/ *$//')
 
           if [ -z "$TAGS" ] || echo "$TAGS" | grep -q "regression"; then
-            echo "markers=-m regression" >> "$GITHUB_OUTPUT"
+            echo "markers=" >> "$GITHUB_OUTPUT"   # empty = run ALL tests (no -m filter)
             echo "label=full-regression" >> "$GITHUB_OUTPUT"
           else
             EXPR=$(echo "$TAGS" | sed 's/  */ or /g' | sed 's/^ or //' | sed 's/ or $//')
@@ -282,6 +282,41 @@ jobs:
           path: backend/report.json
           retention-days: 14
 
+      - name: Build Telegram message
+        id: tg
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          STATUS="${{ steps.report.outputs.status }}"
+          PASSED="${{ steps.report.outputs.passed }}"
+          FAILED="${{ steps.report.outputs.failed }}"
+          ERRORS="${{ steps.report.outputs.errors }}"
+          TOTAL="${{ steps.report.outputs.total }}"
+          SCOPE="${{ needs.detect-scope.outputs.label }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ "$STATUS" = "passed" ]; then
+            ICON="✅ PASSED"
+          else
+            ICON="❌ FAILED"
+          fi
+
+          MSG="${ICON} — TutorSnap Tests
+Scope : ${SCOPE}
+Result: ${PASSED}/${TOTAL} passed · ${FAILED} failed · ${ERRORS} errors
+Branch: ${{ github.ref_name }} (${SHORT_SHA})
+Actor : ${{ github.actor }}
+
+${RUN_URL}"
+
+          # Write as multiline output
+          echo "msg<<TG_EOF" >> "$GITHUB_OUTPUT"
+          echo "$MSG"        >> "$GITHUB_OUTPUT"
+          echo "TG_EOF"      >> "$GITHUB_OUTPUT"
+
       - name: Send Telegram notification
         if: always()
         continue-on-error: true   # notification failure must never fail the CI job
@@ -289,18 +324,7 @@ jobs:
         with:
           to:      ${{ secrets.TELEGRAM_CHAT_ID }}
           token:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          format:  markdown
-          message: |
-            *[${{ steps.report.outputs.status == 'passed' && '✅ PASSED' || '❌ FAILED' }}] TutorSnap Tests*
-
-            *Scope:* `${{ needs.detect-scope.outputs.label }}`
-            *Results:* ${{ steps.report.outputs.passed }}/${{ steps.report.outputs.total }} passed · ${{ steps.report.outputs.failed }} failed · ${{ steps.report.outputs.errors }} errors
-            *Branch:* `${{ github.ref_name }}` · `${{ github.sha }}`
-            *Actor:* ${{ github.actor }}
-
-            ${{ steps.report.outputs.summary }}
-
-            [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          message: ${{ steps.tg.outputs.msg }}
 
       # Fail the job AFTER report + email are sent
       - name: Fail if tests failed
