@@ -1,11 +1,8 @@
 name: Test Suite
 
-# ── Triggers ───────────────────────────────────────────────────────────────────
-# 1. After backend deploy completes (workflow_run — always get test results)
-# 2. Direct push to main touching backend code (PR merge, hot-fix, etc.)
-# 3. Manual trigger for on-demand regression runs
+# ─── Triggers ──────────────────────────────────────────────────────────────────
 on:
-  workflow_run:
+  workflow_run:                        # fires after every backend deploy
     workflows: ["Deploy Backend"]
     types: [completed]
 
@@ -15,103 +12,26 @@ on:
       - 'backend/**'
       - '.github/workflows/test.yml'
 
-  workflow_dispatch:
-    inputs:
-      marker:
-        description: 'pytest marker to run (leave blank for full regression)'
-        required: false
-        default: ''
+  workflow_dispatch:                   # manual on-demand run
 
-# Only one test run per ref at a time; cancel in-flight on new push.
 concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ── Detect which markers to run based on changed files ──────────────────────
-  detect-scope:
-    name: Detect test scope
-    runs-on: ubuntu-latest
-    outputs:
-      markers: ${{ steps.scope.outputs.markers }}
-      label:   ${{ steps.scope.outputs.label }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Determine changed files
-        id: scope
-        shell: bash
-        # Use set +e so grep non-matches (exit 1) never abort the step
-        run: |
-          set +e
-
-          # Manual override wins
-          if [ -n "${{ github.event.inputs.marker }}" ]; then
-            echo "markers=-m ${{ github.event.inputs.marker }}" >> "$GITHUB_OUTPUT"
-            echo "label=manual:${{ github.event.inputs.marker }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # workflow_run always does full regression (no reliable "before" SHA)
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "markers=" >> "$GITHUB_OUTPUT"   # empty = run ALL tests (no -m filter)
-            echo "label=full-regression" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # push: try to list changed files; fall back to full regression on any error
-          git diff --name-only HEAD^ HEAD > changed_files.txt 2>/dev/null
-          if [ ! -s changed_files.txt ]; then
-            git show --name-only --format="" HEAD > changed_files.txt 2>/dev/null
-          fi
-
-          echo "Changed files:"
-          cat changed_files.txt 2>/dev/null || true
-
-          TAGS=""
-          CHANGED=$(cat changed_files.txt 2>/dev/null || true)
-
-          echo "$CHANGED" | grep -q "test_auth"           && TAGS="$TAGS auth"          || true
-          echo "$CHANGED" | grep -q "test_admin"          && TAGS="$TAGS admin"         || true
-          echo "$CHANGED" | grep -q "test_student"        && TAGS="$TAGS student"       || true
-          echo "$CHANGED" | grep -q "test_sessions"       && TAGS="$TAGS session"       || true
-          echo "$CHANGED" | grep -q "test_session_engine" && TAGS="$TAGS session"       || true
-          echo "$CHANGED" | grep -q "test_study_mode"     && TAGS="$TAGS study"         || true
-          echo "$CHANGED" | grep -q "test_exam_flashcard" && TAGS="$TAGS exam"          || true
-          echo "$CHANGED" | grep -q "test_books"          && TAGS="$TAGS books"         || true
-          echo "$CHANGED" | grep -q "test_models"         && TAGS="$TAGS study session" || true
-          echo "$CHANGED" | grep -q "session_engine.py"   && TAGS="$TAGS session study exam" || true
-          echo "$CHANGED" | grep -q "main.py"             && TAGS="$TAGS regression"    || true
-          echo "$CHANGED" | grep -q "models.py"           && TAGS="$TAGS regression"    || true
-
-          # Deduplicate
-          TAGS=$(echo "$TAGS" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ' | sed 's/ *$//')
-
-          if [ -z "$TAGS" ] || echo "$TAGS" | grep -q "regression"; then
-            echo "markers=" >> "$GITHUB_OUTPUT"   # empty = run ALL tests (no -m filter)
-            echo "label=full-regression" >> "$GITHUB_OUTPUT"
-          else
-            EXPR=$(echo "$TAGS" | sed 's/  */ or /g' | sed 's/^ or //' | sed 's/ or $//')
-            echo "markers=-m ${EXPR}" >> "$GITHUB_OUTPUT"
-            echo "label=targeted:${EXPR}" >> "$GITHUB_OUTPUT"
-          fi
-          exit 0
-
-  # ── Run the tests ────────────────────────────────────────────────────────────
   test:
-    name: pytest (${{ needs.detect-scope.outputs.label }})
+    name: pytest – TutorSnap
     runs-on: ubuntu-latest
-    needs: detect-scope
 
     defaults:
       run:
         working-directory: backend
 
     steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
       - uses: actions/checkout@v4
 
+      # ── 2. Python ─────────────────────────────────────────────────────────
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -121,32 +41,27 @@ jobs:
             backend/requirements.txt
             backend/requirements-test.txt
 
+      # ── 3. Install deps ────────────────────────────────────────────────────
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install -r requirements-test.txt
 
+      # ── 4. Run tests ───────────────────────────────────────────────────────
       - name: Run tests
         id: pytest
+        continue-on-error: true        # let report + notify steps always run
         env:
           DATABASE_URL:      "sqlite:///:memory:"
-          JWT_SECRET:        "ci-test-secret-key-at-least-32-chars"
+          JWT_SECRET:        "ci-test-secret-key-at-least-32-chars-long"
           JWT_EXPIRY_HOURS:  "24"
           GOOGLE_CLIENT_ID:  "ci-test-google-client-id"
           ANTHROPIC_API_KEY: "ci-test-anthropic-key"
           ADMIN_EMAILS:      "admin@test.com"
           USE_GCS:           "false"
           UPLOAD_DIR:        "uploads_test"
-        # Use 'continue-on-error: true' so subsequent steps always run,
-        # then we fail explicitly after the report is generated.
-        continue-on-error: true
         run: |
-          MARKERS="${{ needs.detect-scope.outputs.markers }}"
-          echo "Running: pytest $MARKERS"
-
-          # Write output to file AND terminal; capture exit code cleanly
-          set -o pipefail
-          pytest $MARKERS \
+          pytest \
             --tb=short \
             --no-header \
             -rN \
@@ -158,20 +73,9 @@ jobs:
             --json-report-file=report.json \
             -v \
             2>&1 | tee pytest_output.txt
-          echo "pytest_exit=$?" >> "$GITHUB_OUTPUT"
+          exit ${PIPESTATUS[0]}
 
-      - name: Write .coveragerc (exclude test files and venv from coverage)
-        if: always()
-        run: |
-          # This runs before pytest in practice — create it if missing
-          [ -f .coveragerc ] || cat > .coveragerc <<'EOF'
-          [run]
-          omit =
-              tests/*
-              */site-packages/*
-              conftest.py
-          EOF
-
+      # ── 5. Parse report ────────────────────────────────────────────────────
       - name: Parse test report
         id: report
         if: always()
@@ -179,60 +83,48 @@ jobs:
         run: |
           import json, os, sys
 
-          GITHUB_OUTPUT = os.environ.get("GITHUB_OUTPUT", "/dev/stdout")
+          OUT = os.environ["GITHUB_OUTPUT"]
 
           try:
-              with open("report.json") as f:
-                  r = json.load(f)
+              data = json.load(open("report.json"))
           except Exception as e:
               print(f"Could not read report.json: {e}", file=sys.stderr)
-              with open(GITHUB_OUTPUT, "a") as o:
-                  o.write("passed=0\nfailed=0\nerrors=0\ntotal=0\n")
-                  o.write("status=error\n")
-                  o.write("summary=Test report not generated — see logs for details.\n")
+              open(OUT, "a").write(
+                  "passed=0\nfailed=0\nerrors=0\ntotal=0\nstatus=error\n"
+                  "summary=Report not generated — check logs.\n"
+              )
               sys.exit(0)
 
-          s        = r.get("summary", {})
-          passed   = s.get("passed",  0)
-          failed   = s.get("failed",  0)
-          errors   = s.get("error",   0)
-          total    = s.get("total",   0)
-          duration = round(r.get("duration", 0), 1)
-          ok       = (failed + errors) == 0
-          status   = "passed" if ok else "failed"
-
-          scope  = "${{ needs.detect-scope.outputs.label }}"
-          sha    = "${{ github.sha }}"[:7]
-          branch = "${{ github.ref_name }}"
+          s       = data.get("summary", {})
+          passed  = s.get("passed", 0)
+          failed  = s.get("failed", 0)
+          errors  = s.get("error",  0)
+          total   = s.get("total",  0)
+          dur     = round(data.get("duration", 0), 1)
+          ok      = (failed + errors) == 0
+          status  = "passed" if ok else "failed"
 
           lines = [
-              ("PASSED" if ok else "FAILED") + f" — TutorSnap Test Report",
-              f"Branch : {branch}  |  Commit: {sha}",
-              f"Scope  : {scope}",
-              f"Results: {passed}/{total} passed  |  {failed} failed  |  {errors} errors  |  {duration}s",
-              "",
+              ("PASSED" if ok else "FAILED") + " — TutorSnap Test Report",
+              f"Branch : ${{ github.ref_name }}  |  Commit: ${{ github.sha }}"[:60],
+              f"Results: {passed}/{total} passed  |  {failed} failed  |  {errors} errors  |  {dur}s",
           ]
 
           if not ok:
+              lines.append("")
               lines.append("Failed tests:")
-              lines.append("-" * 50)
-              for t in r.get("tests", []):
+              for t in data.get("tests", []):
                   if t.get("outcome") not in ("passed", "skipped"):
                       lines.append(f"  FAIL  {t['nodeid']}")
-                      call = t.get("call", {})
-                      repr_ = (call.get("longrepr") or "")
-                      if repr_:
-                          for ln in repr_.splitlines()[:4]:
-                              lines.append(f"        {ln}")
-              lines.append("")
+                      longrepr = (t.get("call") or {}).get("longrepr", "")
+                      for ln in longrepr.splitlines()[:3]:
+                          lines.append(f"        {ln}")
 
-          # Append coverage TOTAL line from output
+          # Append coverage total
           try:
-              with open("pytest_output.txt") as f:
-                  out = f.read()
-              for ln in out.splitlines():
+              for ln in open("pytest_output.txt").readlines():
                   if ln.strip().startswith("TOTAL"):
-                      lines.append("Coverage: " + ln.strip())
+                      lines.append(f"Coverage: {ln.strip()}")
                       break
           except Exception:
               pass
@@ -240,33 +132,33 @@ jobs:
           summary = "\n".join(lines)
           print(summary)
 
-          with open(GITHUB_OUTPUT, "a") as o:
-              o.write(f"passed={passed}\n")
-              o.write(f"failed={failed}\n")
-              o.write(f"errors={errors}\n")
-              o.write(f"total={total}\n")
-              o.write(f"status={status}\n")
-              # Multiline output needs special encoding
-              delim = "REPORT_EOF"
-              o.write(f"summary<<{delim}\n{summary}\n{delim}\n")
+          with open(OUT, "a") as f:
+              f.write(f"passed={passed}\n")
+              f.write(f"failed={failed}\n")
+              f.write(f"errors={errors}\n")
+              f.write(f"total={total}\n")
+              f.write(f"status={status}\n")
+              f.write(f"summary<<__SUMMARY__\n{summary}\n__SUMMARY__\n")
 
-      - name: Post GitHub Actions Step Summary
+      # ── 6. GitHub Step Summary ─────────────────────────────────────────────
+      - name: Post Step Summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## 🧪 Test Results — ${{ needs.detect-scope.outputs.label }}"
+            echo "## 🧪 TutorSnap Test Results"
             echo ""
-            echo "| Passed | Failed | Errors | Total | Duration |"
-            echo "|--------|--------|--------|-------|----------|"
-            echo "| ${{ steps.report.outputs.passed }} | ${{ steps.report.outputs.failed }} | ${{ steps.report.outputs.errors }} | ${{ steps.report.outputs.total }} | — |"
+            echo "| Passed | Failed | Errors | Total |"
+            echo "|--------|--------|--------|-------|"
+            echo "| ${{ steps.report.outputs.passed }} | ${{ steps.report.outputs.failed }} | ${{ steps.report.outputs.errors }} | ${{ steps.report.outputs.total }} |"
             echo ""
-            echo "\`\`\`"
+            echo '```'
             cat pytest_output.txt 2>/dev/null || echo "(no output)"
-            echo "\`\`\`"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload HTML coverage report
+      # ── 7. Upload artifacts ────────────────────────────────────────────────
+      - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -274,7 +166,7 @@ jobs:
           path: backend/htmlcov/
           retention-days: 14
 
-      - name: Upload raw JSON report
+      - name: Upload test JSON report
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -282,53 +174,39 @@ jobs:
           path: backend/report.json
           retention-days: 14
 
-      - name: Build Telegram message
-        id: tg
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          STATUS="${{ steps.report.outputs.status }}"
-          PASSED="${{ steps.report.outputs.passed }}"
-          FAILED="${{ steps.report.outputs.failed }}"
-          ERRORS="${{ steps.report.outputs.errors }}"
-          TOTAL="${{ steps.report.outputs.total }}"
-          SCOPE="${{ needs.detect-scope.outputs.label }}"
-          SHA="${{ github.sha }}"
-          SHORT_SHA="${SHA:0:7}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-          if [ "$STATUS" = "passed" ]; then
-            ICON="✅ PASSED"
-          else
-            ICON="❌ FAILED"
-          fi
-
-          MSG="${ICON} — TutorSnap Tests
-Scope : ${SCOPE}
-Result: ${PASSED}/${TOTAL} passed · ${FAILED} failed · ${ERRORS} errors
-Branch: ${{ github.ref_name }} (${SHORT_SHA})
-Actor : ${{ github.actor }}
-
-${RUN_URL}"
-
-          # Write as multiline output
-          echo "msg<<TG_EOF" >> "$GITHUB_OUTPUT"
-          echo "$MSG"        >> "$GITHUB_OUTPUT"
-          echo "TG_EOF"      >> "$GITHUB_OUTPUT"
-
+      # ── 8. Telegram notification ───────────────────────────────────────────
       - name: Send Telegram notification
         if: always()
-        continue-on-error: true   # notification failure must never fail the CI job
-        uses: appleboy/telegram-action@v1.0.1
-        with:
-          to:      ${{ secrets.TELEGRAM_CHAT_ID }}
-          token:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: ${{ steps.tg.outputs.msg }}
+        continue-on-error: true
+        shell: bash
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATUS:    ${{ steps.report.outputs.status }}
+          PASSED:    ${{ steps.report.outputs.passed }}
+          FAILED:    ${{ steps.report.outputs.failed }}
+          ERRORS:    ${{ steps.report.outputs.errors }}
+          TOTAL:     ${{ steps.report.outputs.total }}
+          RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH:    ${{ github.ref_name }}
+          SHA:       ${{ github.sha }}
+          ACTOR:     ${{ github.actor }}
+        run: |
+          ICON="❌ FAILED"
+          [ "$STATUS" = "passed" ] && ICON="✅ PASSED"
 
-      # Fail the job AFTER report + email are sent
+          TEXT=$(printf '%s — TutorSnap Tests\nScope  : full-regression\nResults: %s/%s passed · %s failed · %s errors\nBranch : %s (%s)\nActor  : %s\n\n%s' \
+            "$ICON" "$PASSED" "$TOTAL" "$FAILED" "$ERRORS" \
+            "$BRANCH" "${SHA:0:7}" "$ACTOR" "$RUN_URL")
+
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            > /dev/null
+
+      # ── 9. Fail job if tests failed ────────────────────────────────────────
       - name: Fail if tests failed
         if: steps.report.outputs.status == 'failed' || steps.report.outputs.status == 'error'
         run: |
-          echo "Tests failed: ${{ steps.report.outputs.failed }} failures, ${{ steps.report.outputs.errors }} errors"
+          echo "❌ ${{ steps.report.outputs.failed }} test(s) failed."
           exit 1
