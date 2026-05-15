@@ -278,15 +278,16 @@ jobs:
 
       - name: Send email report
         if: always()
+        continue-on-error: true   # email failure must NOT fail the CI job
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
-          server_port:    465
-          secure:         true
+          server_port:    587          # TLS/STARTTLS — more reliable than port 465
+          secure:         false        # STARTTLS (not SSL-on-connect)
           username:       ${{ secrets.REPORT_EMAIL_USER }}
           password:       ${{ secrets.REPORT_EMAIL_PASS }}
           to:             ${{ secrets.REPORT_EMAIL_TO }}
-          from:           "TutorSnap CI <${{ secrets.REPORT_EMAIL_USER }}>"
+          from:           ${{ secrets.REPORT_EMAIL_USER }}
           subject:        "[${{ steps.report.outputs.status }}] TutorSnap Tests — ${{ needs.detect-scope.outputs.label }} (${{ steps.report.outputs.passed }}/${{ steps.report.outputs.total }} passed) [${{ github.ref_name }}]"
           body: |
             ${{ steps.report.outputs.summary }}
