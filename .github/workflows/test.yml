@@ -276,26 +276,25 @@ jobs:
           path: backend/report.json
           retention-days: 14
 
-      - name: Send email report
+      - name: Send Telegram notification
         if: always()
-        continue-on-error: true   # email failure must NOT fail the CI job
-        uses: dawidd6/action-send-mail@v3
+        continue-on-error: true   # notification failure must never fail the CI job
+        uses: appleboy/telegram-action@v1.0.1
         with:
-          server_address: smtp.gmail.com
-          server_port:    587          # TLS/STARTTLS — more reliable than port 465
-          secure:         false        # STARTTLS (not SSL-on-connect)
-          username:       ${{ secrets.REPORT_EMAIL_USER }}
-          password:       ${{ secrets.REPORT_EMAIL_PASS }}
-          to:             ${{ secrets.REPORT_EMAIL_TO }}
-          from:           ${{ secrets.REPORT_EMAIL_USER }}
-          subject:        "[${{ steps.report.outputs.status }}] TutorSnap Tests — ${{ needs.detect-scope.outputs.label }} (${{ steps.report.outputs.passed }}/${{ steps.report.outputs.total }} passed) [${{ github.ref_name }}]"
-          body: |
+          to:      ${{ secrets.TELEGRAM_CHAT_ID }}
+          token:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format:  markdown
+          message: |
+            *[${{ steps.report.outputs.status == 'passed' && '✅ PASSED' || '❌ FAILED' }}] TutorSnap Tests*
+
+            *Scope:* `${{ needs.detect-scope.outputs.label }}`
+            *Results:* ${{ steps.report.outputs.passed }}/${{ steps.report.outputs.total }} passed · ${{ steps.report.outputs.failed }} failed · ${{ steps.report.outputs.errors }} errors
+            *Branch:* `${{ github.ref_name }}` · `${{ github.sha }}`
+            *Actor:* ${{ github.actor }}
+
             ${{ steps.report.outputs.summary }}
 
-            --
-            Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Commit  : ${{ github.sha }}
-            Actor   : ${{ github.actor }}
+            [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
       # Fail the job AFTER report + email are sent
       - name: Fail if tests failed
