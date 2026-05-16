@@ -252,6 +252,33 @@ def make_studied(db, student_name: str, topic_id: int):
     return m
 
 
+def make_mastery(db, student_name: str, topic_id: int, mastery_level: str = "L2", studied: bool = True):
+    """Create a TopicMastery row with mastery_level and studied set (chapter-completion gate)."""
+    from models import TopicMastery
+
+    existing = db.query(TopicMastery).filter(
+        TopicMastery.student_name == student_name,
+        TopicMastery.topic_id == topic_id,
+    ).first()
+    if existing:
+        existing.mastery_level = mastery_level
+        existing.studied = studied
+        db.commit()
+        return existing
+
+    m = TopicMastery(
+        student_name=student_name,
+        topic_id=topic_id,
+        mastery_level=mastery_level,
+        studied=studied,
+        total_sessions=2,  # > 1 so backfill gate treats this as a real prior session
+    )
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
 def make_session(db, student_name, topic_id, user_id=None, status="active", level="L1"):
     from models import Session as SessionModel
 

@@ -936,17 +936,22 @@ def start_session(
         TopicMastery.student_name == req.student_name,
         TopicMastery.topic_id == req.topic_id,
     ).first()
+    just_created = False
     if not mastery:
         mastery = TopicMastery(student_name=req.student_name, topic_id=req.topic_id, mastery_level="L1")
         db.add(mastery)
         db.commit()
         db.refresh(mastery)
+        just_created = True
 
     # Study Mode gate — student must study at least once before practising.
     # Exception: if they already have prior sessions (practiced before the study
     # gate was introduced), backfill studied=True and let them through.
+    # total_sessions defaults to 1 when the record is first created at session
+    # start; a completed session increments it to ≥2, so > 1 reliably identifies
+    # students who genuinely practiced before the gate existed.
     if not mastery.studied:
-        if mastery.total_sessions and mastery.total_sessions > 0:
+        if not just_created and mastery.total_sessions > 1:
             mastery.studied = True
             db.commit()
         else:

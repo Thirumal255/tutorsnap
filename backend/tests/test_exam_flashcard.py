@@ -11,7 +11,7 @@ Covers:
 import json
 import pytest
 from unittest.mock import patch
-from tests.conftest import make_user, make_book, make_chapter, make_topic, auth_headers
+from tests.conftest import make_user, make_book, make_chapter, make_topic, make_mastery, auth_headers
 
 
 def _mock_question():
@@ -30,6 +30,8 @@ class TestExamStart:
         book    = make_book(db)
         chapter = make_chapter(db, book.id)
         topic   = make_topic(db, chapter.id)
+        # Mark the chapter as fully completed so the chapter-completion gate passes
+        make_mastery(db, student.name, topic.id, mastery_level="L2")
 
         with patch("session_engine.call_claude", return_value=_mock_question()):
             resp = client.post(
