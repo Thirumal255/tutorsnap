@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import {
@@ -8,6 +8,7 @@ import {
 } from '../../api/client'
 import { SUBJECT_COLOR } from './StudentLayout'
 import BuddyCustomizer from '../../components/BuddyCustomizer'
+import WritingCanvas from '../../components/WritingCanvas'
 import { useToast } from '../../context/ToastContext'
 
 const BUDDY_EMOJI = {
@@ -53,8 +54,10 @@ function WeeklyChallengeCard({ userId }) {
   const [loading, setLoading]   = useState(true)
   const [expanded, setExpanded] = useState(false)
   const [answer, setAnswer]     = useState('')
+  const [canvasMode, setCanvasMode] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult]     = useState(null)
+  const canvasRef = useRef(null)
 
   useEffect(() => {
     getWeeklyChallenge()
@@ -64,10 +67,22 @@ function WeeklyChallengeCard({ userId }) {
   }, [])
 
   async function handleSubmit() {
-    if (!answer.trim() || submitting) return
+    if (submitting) return
+    let finalAnswer = ''
+    let imageData = null
+
+    if (canvasMode) {
+      if (!canvasRef.current || canvasRef.current.isEmpty()) return
+      imageData = canvasRef.current.getImageData()
+      finalAnswer = '[handwritten answer]'
+    } else {
+      if (!answer.trim()) return
+      finalAnswer = answer.trim()
+    }
+
     setSubmitting(true)
     try {
-      const res = await submitWeeklyChallenge(wc.challenge.id, answer.trim())
+      const res = await submitWeeklyChallenge(wc.challenge.id, finalAnswer, imageData)
       setResult(res.data)
       setWc(prev => ({ ...prev, completed: true, completion: res.data }))
     } catch {
@@ -81,7 +96,6 @@ function WeeklyChallengeCard({ userId }) {
   if (!wc?.available) return null
 
   const { challenge, completed, completion } = wc
-  const buddyEmoji = BUDDY_EMOJI['robot']
 
   return (
     <div className="blox-card border border-[#FFD700]/30 bg-gradient-to-br from-[#1A1A3E] to-[#16213E] p-4 animate-bounce-in">
@@ -126,6 +140,7 @@ function WeeklyChallengeCard({ userId }) {
       {/* Challenge input area */}
       {expanded && !completed && (
         <div className="mt-4 space-y-3 animate-bounce-in">
+          {/* Question */}
           <div className="bg-[#0F0F23] rounded-2xl p-3 border border-[#2D2B5A]">
             <p className="text-xs text-[#8892B0] mb-1 uppercase tracking-widest">
               {ANSWER_FORMAT_LABEL[challenge.answer_format] || '💬 explain in words'}
@@ -137,29 +152,83 @@ function WeeklyChallengeCard({ userId }) {
             <p className="text-xs text-[#FF6B6B] text-center">Something went wrong. Please try again.</p>
           )}
 
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Your answer…"
-              value={answer}
-              onChange={e => setAnswer(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-              disabled={submitting}
-              className="blox-input flex-1 text-sm"
-            />
+          {/* Input mode toggle */}
+          <div className="flex gap-1.5 bg-[#0F0F23] rounded-xl p-1">
             <button
-              onClick={handleSubmit}
-              disabled={submitting || !answer.trim()}
-              className="btn-blox-primary px-4 text-sm disabled:opacity-50 flex items-center gap-1"
+              onClick={() => setCanvasMode(false)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-nunito font-semibold transition-all ${
+                !canvasMode ? 'bg-[#2D2B5A] text-white' : 'text-[#8892B0] hover:text-white'
+              }`}
             >
-              {submitting ? (
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-              ) : '⚡ Submit'}
+              ⌨️ Type
+            </button>
+            <button
+              onClick={() => setCanvasMode(true)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-nunito font-semibold transition-all ${
+                canvasMode ? 'bg-[#2D2B5A] text-white' : 'text-[#8892B0] hover:text-white'
+              }`}
+            >
+              ✏️ Handwrite
             </button>
           </div>
+
+          {/* Canvas mode */}
+          {canvasMode ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[#8892B0]">Draw your answer below</span>
+                <div className="flex gap-2">
+                  <button onClick={() => canvasRef.current?.undo()}
+                    className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#8892B0] transition-all">
+                    ↩ Undo
+                  </button>
+                  <button onClick={() => canvasRef.current?.clear()}
+                    className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#FF3333] transition-all">
+                    🗑 Clear
+                  </button>
+                </div>
+              </div>
+              <WritingCanvas ref={canvasRef} />
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="w-full btn-blox-primary text-sm py-2.5 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                ) : '⚡ Submit Answer'}
+              </button>
+            </div>
+          ) : (
+            /* Text mode */
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Your answer…"
+                value={answer}
+                onChange={e => setAnswer(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                disabled={submitting}
+                className="blox-input flex-1 text-sm"
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || !answer.trim()}
+                className="btn-blox-primary px-4 text-sm disabled:opacity-50 flex items-center gap-1"
+              >
+                {submitting ? (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                ) : '⚡ Submit'}
+              </button>
+            </div>
+          )}
+
           <p className="text-xs text-[#8892B0] text-center">⚠️ One attempt only — make it count!</p>
         </div>
       )}
@@ -174,7 +243,7 @@ export default function StudentHome() {
   const { toast } = useToast()
   const [data, setData]         = useState(null)
   const [loading, setLoading]   = useState(true)
-  const [resuming, setResuming] = useState(false)
+  const [resuming, setResuming] = useState(null) // topicId currently resuming, or null
   const [showBuddy, setShowBuddy] = useState(false)
   const [reviewQueue, setReviewQueue] = useState([])
 
@@ -191,7 +260,7 @@ export default function StudentHome() {
   }, [])
 
   async function handleContinue(topicId) {
-    setResuming(true)
+    setResuming(topicId)
     try {
       const res = await startSession(user.name, topicId)
       const d = res.data
@@ -207,9 +276,13 @@ export default function StudentHome() {
       )
       navigate(`/session/${d.session_id}`)
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to start session')
+      if (e.response?.status === 403 && e.response?.data?.detail === 'study_required') {
+        navigate(`/study/${topicId}`)
+      } else {
+        toast.error(e.response?.data?.detail || 'Failed to start session')
+      }
     } finally {
-      setResuming(false)
+      setResuming(null)
     }
   }
 
@@ -312,10 +385,10 @@ export default function StudentHome() {
                     </div>
                     <button
                       onClick={() => handleContinue(item.topic_id)}
-                      disabled={resuming}
+                      disabled={resuming === item.topic_id}
                       className="btn-blox-primary flex-shrink-0 text-xs py-1.5 px-3 disabled:opacity-50"
                     >
-                      {resuming ? '…' : '▶ Review'}
+                      {resuming === item.topic_id ? '⚡…' : '▶ Review'}
                     </button>
                   </div>
                 ))}
@@ -338,10 +411,10 @@ export default function StudentHome() {
               </div>
               <button
                 onClick={() => handleContinue(data.last_practiced.topic_id)}
-                disabled={resuming}
+                disabled={resuming === data.last_practiced.topic_id}
                 className="btn-blox-primary flex-shrink-0 text-sm py-2 px-5 disabled:opacity-50"
               >
-                {resuming ? '⚡…' : 'Resume ⚔️'}
+                {resuming === data.last_practiced.topic_id ? '⚡…' : 'Resume ⚔️'}
               </button>
             </div>
           )}

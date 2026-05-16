@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { getStudentProgress, getFlashcardQuestion, markFlashcard } from '../api/client'
 
 const SUBJECT_EMOJI = {
@@ -8,38 +8,41 @@ const SUBJECT_EMOJI = {
   Biology: '🌿', 'Computer Science': '💻', Tamil: '🔤', Hindi: '🔤', Other: '📚',
 }
 
-const MASTERY_LABEL = {
-  L1: 'Learning', L2: 'Developing', L3: 'Practising', L4: 'Going Deeper', L5: 'Challenge',
-}
-const MASTERY_COLOR = {
-  L1: 'text-[#FFB347]', L2: 'text-[#00A2FF]', L3: 'text-[#00CC88]',
-  L4: 'text-[#C084FC]', L5: 'text-[#FBBF24]',
+// Shuffle an array (Fisher-Yates)
+function shuffle(arr) {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
 }
 
-// ── TOPIC SELECT ──────────────────────────────────────────────────────────────
-function TopicSelect({ onSelect }) {
-  const [topics, setTopics] = useState([])
+// ── CHAPTER SELECT ────────────────────────────────────────────────────────────
+function ChapterSelect({ onSelect }) {
+  const navigate = useNavigate()
+  const [books, setBooks] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all') // 'all' | 'due' | subject
 
   useEffect(() => {
     getStudentProgress()
       .then(res => {
-        const ts = (res.data.topics || []).filter(t => t.mastery_level)
-        setTopics(ts)
+        // Only keep books that have at least one completed chapter
+        const filtered = res.data
+          .map(book => ({
+            ...book,
+            chapters: book.chapters.filter(ch =>
+              ch.total_topics > 0 && ch.attempted === ch.total_topics
+            ),
+          }))
+          .filter(book => book.chapters.length > 0)
+        setBooks(filtered)
       })
-      .catch(() => setTopics([]))
+      .catch(() => setBooks([]))
       .finally(() => setLoading(false))
   }, [])
 
-  const now = new Date()
-  const subjects = [...new Set(topics.map(t => t.subject).filter(Boolean))]
-
-  const visible = topics.filter(t => {
-    if (filter === 'due') return t.next_review_at && new Date(t.next_review_at) <= now
-    if (filter !== 'all') return t.subject === filter
-    return true
-  })
+  const totalChapters = books.reduce((n, b) => n + b.chapters.length, 0)
 
   return (
     <div className="min-h-screen bg-[#0F0F23] flex flex-col">
@@ -47,107 +50,73 @@ function TopicSelect({ onSelect }) {
       <div className="bg-[#16213E] border-b border-[#2D2B5A] px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="font-fredoka font-bold text-white text-xl">⚡ Flashcards</h1>
-          <p className="text-xs text-[#8892B0]">Pick a topic to review</p>
+          <p className="text-xs text-[#8892B0]">Pick a completed chapter to review</p>
         </div>
-        <a href="/practice" className="text-[#8892B0] hover:text-white text-sm font-nunito">✕ Close</a>
+        <button onClick={() => navigate('/practice')} className="text-[#8892B0] hover:text-white text-sm font-nunito">✕ Close</button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto w-full space-y-5">
+
         {loading && (
           <div className="text-center py-20">
             <div className="text-4xl animate-bounce mb-3">⚡</div>
-            <p className="text-[#8892B0]">Loading topics…</p>
+            <p className="text-[#8892B0]">Loading chapters…</p>
           </div>
         )}
 
-        {!loading && topics.length === 0 && (
-          <div className="blox-card p-10 text-center">
+        {!loading && totalChapters === 0 && (
+          <div className="blox-card p-10 text-center space-y-4">
             <div className="text-5xl mb-3">📭</div>
-            <p className="text-white font-fredoka text-xl">No topics practised yet</p>
-            <p className="text-[#8892B0] text-sm mt-1">Complete some sessions first, then use flashcards to review!</p>
+            <p className="text-white font-fredoka text-xl">No chapters completed yet</p>
+            <p className="text-[#8892B0] text-sm">
+              Finish <strong className="text-white">all topics</strong> in a chapter to unlock flashcard review for it.
+            </p>
+            <button onClick={() => navigate('/practice')} className="btn-blox-primary px-6 py-2.5 text-sm">
+              ▶ Go Practice
+            </button>
           </div>
         )}
 
-        {!loading && topics.length > 0 && (
-          <>
-            {/* Filter tabs */}
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setFilter('all')}
-                className={`px-3 py-1.5 rounded-full text-xs font-nunito font-semibold transition-all ${
-                  filter === 'all' ? 'bg-[#00A2FF] text-white' : 'bg-[#2D2B5A] text-[#8892B0] hover:text-white'
-                }`}
-              >
-                All ({topics.length})
-              </button>
-              <button
-                onClick={() => setFilter('due')}
-                className={`px-3 py-1.5 rounded-full text-xs font-nunito font-semibold transition-all ${
-                  filter === 'due' ? 'bg-[#FF6B9D] text-white' : 'bg-[#2D2B5A] text-[#8892B0] hover:text-white'
-                }`}
-              >
-                🔁 Due ({topics.filter(t => t.next_review_at && new Date(t.next_review_at) <= now).length})
-              </button>
-              {subjects.map(s => (
-                <button
-                  key={s}
-                  onClick={() => setFilter(s)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-nunito font-semibold transition-all ${
-                    filter === s ? 'bg-[#00A2FF] text-white' : 'bg-[#2D2B5A] text-[#8892B0] hover:text-white'
-                  }`}
-                >
-                  {SUBJECT_EMOJI[s] || '📚'} {s}
-                </button>
-              ))}
-            </div>
+        {!loading && books.map(book => (
+          <div key={book.book_id} className="space-y-2">
+            {/* Book header */}
+            <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold px-1">
+              {SUBJECT_EMOJI[book.subject] || '📚'} {book.subject}
+            </p>
 
-            {/* Topic list */}
-            <div className="space-y-2">
-              {visible.length === 0 && (
-                <div className="blox-card p-6 text-center">
-                  <p className="text-[#8892B0] text-sm">No topics match this filter.</p>
-                </div>
-              )}
-              {visible.map(t => {
-                const due = t.next_review_at && new Date(t.next_review_at) <= now
-                return (
-                  <button
-                    key={t.topic_id}
-                    onClick={() => onSelect(t)}
-                    className="w-full blox-card p-4 text-left hover:border-[#00A2FF]/50 transition-all blox-hover"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-2xl">{SUBJECT_EMOJI[t.subject] || '📚'}</span>
-                        <div className="min-w-0">
-                          <p className="font-fredoka font-bold text-white text-sm truncate">{t.title}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-xs font-nunito font-semibold ${MASTERY_COLOR[t.mastery_level] || 'text-[#8892B0]'}`}>
-                              {MASTERY_LABEL[t.mastery_level] || t.mastery_level}
-                            </span>
-                            {due && (
-                              <span className="text-xs bg-[#FF6B9D]/20 text-[#FF6B9D] px-1.5 py-0.5 rounded-full">
-                                🔁 Due
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <span className="text-[#00A2FF] text-sm flex-shrink-0">▶</span>
+            {book.chapters.map(ch => (
+              <button
+                key={ch.id}
+                onClick={() => onSelect({ ...ch, subject: book.subject, topics: ch.topics })}
+                className="w-full blox-card p-4 text-left hover:border-[#00A2FF]/50 transition-all group"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#00A2FF] to-[#0066CC] flex items-center justify-center text-white font-fredoka font-bold text-sm flex-shrink-0">
+                      {ch.chapter_number}
                     </div>
-                  </button>
-                )
-              })}
-            </div>
-          </>
-        )}
+                    <div className="min-w-0">
+                      <p className="font-fredoka font-bold text-white text-sm truncate">{ch.title}</p>
+                      <p className="text-xs text-[#00CC88] mt-0.5">✅ {ch.total_topics} topics completed</p>
+                    </div>
+                  </div>
+                  <span className="text-[#00A2FF] text-sm flex-shrink-0 group-hover:translate-x-1 transition-transform">▶</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
 // ── FLASHCARD ─────────────────────────────────────────────────────────────────
-function FlashCard({ topic, onDone }) {
+function FlashCard({ chapter, onDone }) {
+  // Build a shuffled queue cycling through all topics
+  const [queue, setQueue] = useState(() => shuffle(chapter.topics.map(t => t.id)))
+  const [queueIdx, setQueueIdx] = useState(0)
+
   const [card, setCard] = useState(null)
   const [revealed, setRevealed] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -155,14 +124,15 @@ function FlashCard({ topic, onDone }) {
   const [stats, setStats] = useState({ known: 0, unknown: 0 })
   const [done, setDone] = useState(false)
 
-  const MAX_CARDS = 10
+  // One round = one pass through all topics (min 5 cards)
+  const ROUND_SIZE = Math.max(chapter.topics.length, 5)
 
-  async function fetchCard() {
+  async function fetchCard(topicId) {
     setLoading(true)
     setRevealed(false)
     try {
-      const res = await getFlashcardQuestion(topic.topic_id)
-      setCard(res.data)
+      const res = await getFlashcardQuestion(topicId)
+      setCard({ ...res.data, currentTopicId: topicId })
     } catch {
       setCard(null)
     } finally {
@@ -170,38 +140,63 @@ function FlashCard({ topic, onDone }) {
     }
   }
 
-  useEffect(() => { fetchCard() }, [topic])
+  useEffect(() => {
+    if (queue.length > 0) fetchCard(queue[0])
+  }, [])
 
   async function handleMark(known) {
-    if (marking) return
+    if (marking || !card) return
     setMarking(true)
     try {
-      await markFlashcard(topic.topic_id, known)
-      const next = { ...stats }
-      if (known) next.known++ ; else next.unknown++
+      await markFlashcard(card.currentTopicId, known)
+      const next = { ...stats, [known ? 'known' : 'unknown']: stats[known ? 'known' : 'unknown'] + 1 }
       setStats(next)
       const total = next.known + next.unknown
-      if (total >= MAX_CARDS) {
+      if (total >= ROUND_SIZE) {
         setDone(true)
       } else {
-        fetchCard()
+        // Advance in the queue; reshuffle and loop if needed
+        const nextIdx = queueIdx + 1
+        let nextTopicId
+        if (nextIdx < queue.length) {
+          nextTopicId = queue[nextIdx]
+          setQueueIdx(nextIdx)
+        } else {
+          // Reshuffle for next loop
+          const newQueue = shuffle(chapter.topics.map(t => t.id))
+          setQueue(newQueue)
+          setQueueIdx(0)
+          nextTopicId = newQueue[0]
+        }
+        fetchCard(nextTopicId)
       }
     } finally {
       setMarking(false)
     }
   }
 
+  function handlePlayAgain() {
+    const newQueue = shuffle(chapter.topics.map(t => t.id))
+    setQueue(newQueue)
+    setQueueIdx(0)
+    setStats({ known: 0, unknown: 0 })
+    setDone(false)
+    fetchCard(newQueue[0])
+  }
+
   const total = stats.known + stats.unknown
+  const topicTitle = chapter.topics.find(t => t.id === card?.currentTopicId)?.title || ''
 
   if (done) {
+    const pct = Math.round((stats.known / ROUND_SIZE) * 100)
     return (
       <div className="min-h-screen bg-[#0F0F23] flex items-center justify-center p-6">
         <div className="w-full max-w-md blox-card p-8 text-center space-y-5">
           <div className="text-6xl">
-            {stats.known >= Math.round(MAX_CARDS * 0.8) ? '🌟' : stats.known >= MAX_CARDS / 2 ? '👍' : '💪'}
+            {pct >= 80 ? '🌟' : pct >= 50 ? '👍' : '💪'}
           </div>
           <h2 className="text-2xl font-fredoka font-bold text-white">Round Complete!</h2>
-          <p className="text-[#8892B0]">{topic.title}</p>
+          <p className="text-[#8892B0] text-sm">{chapter.title}</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-[#00CC88]/10 rounded-xl p-4">
               <p className="text-2xl font-fredoka font-bold text-[#00CC88]">{stats.known}</p>
@@ -213,16 +208,11 @@ function FlashCard({ topic, onDone }) {
             </div>
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={() => { setStats({ known: 0, unknown: 0 }); setDone(false); fetchCard() }}
-              className="flex-1 py-3 rounded-xl bg-[#1A1A3E] border border-[#2D2B5A] text-[#8892B0] hover:text-white font-nunito font-semibold text-sm transition-all"
-            >
+            <button onClick={handlePlayAgain}
+              className="flex-1 py-3 rounded-xl bg-[#1A1A3E] border border-[#2D2B5A] text-[#8892B0] hover:text-white font-nunito font-semibold text-sm transition-all">
               🔄 Again
             </button>
-            <button
-              onClick={onDone}
-              className="flex-1 btn-blox-primary py-3"
-            >
+            <button onClick={onDone} className="flex-1 btn-blox-primary py-3">
               Done
             </button>
           </div>
@@ -236,15 +226,15 @@ function FlashCard({ topic, onDone }) {
       {/* Header */}
       <div className="bg-[#16213E] border-b border-[#2D2B5A] px-6 py-3 flex items-center justify-between">
         <div>
-          <span className="font-fredoka font-bold text-white">⚡ {topic.title}</span>
-          <p className="text-xs text-[#8892B0]">Card {total + 1} of {MAX_CARDS}</p>
+          <span className="font-fredoka font-bold text-white">⚡ {chapter.title}</span>
+          <p className="text-xs text-[#8892B0]">Card {total + 1} of {ROUND_SIZE}</p>
         </div>
         <button onClick={onDone} className="text-[#8892B0] hover:text-white text-sm">✕</button>
       </div>
 
-      {/* Progress */}
+      {/* Progress bar */}
       <div className="h-1 bg-[#2D2B5A]">
-        <div className="h-full bg-[#00A2FF] transition-all" style={{ width: `${(total / MAX_CARDS) * 100}%` }} />
+        <div className="h-full bg-[#00A2FF] transition-all" style={{ width: `${(total / ROUND_SIZE) * 100}%` }} />
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center p-6">
@@ -259,12 +249,16 @@ function FlashCard({ topic, onDone }) {
 
           {!loading && card && (
             <>
+              {/* Topic label */}
+              {topicTitle && (
+                <p className="text-xs text-[#8892B0] text-center uppercase tracking-widest">{topicTitle}</p>
+              )}
+
               {/* Card */}
               <div
                 className="blox-card p-8 min-h-[200px] flex flex-col gap-6 cursor-pointer select-none"
                 onClick={() => !revealed && setRevealed(true)}
               >
-                {/* Question */}
                 <div>
                   <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-wide mb-2">Question</p>
                   <p className="text-white font-nunito text-lg leading-relaxed">{card.question}</p>
@@ -276,7 +270,6 @@ function FlashCard({ topic, onDone }) {
                   </div>
                 )}
 
-                {/* Key concepts */}
                 {revealed && card.key_concepts && (
                   <div className="border-t border-[#2D2B5A] pt-4">
                     <p className="text-xs font-semibold text-[#00CC88] uppercase tracking-wide mb-2">Key Points</p>
@@ -293,30 +286,19 @@ function FlashCard({ topic, onDone }) {
               </div>
 
               {/* Mark buttons */}
-              {revealed && (
+              {revealed ? (
                 <div className="grid grid-cols-2 gap-4">
-                  <button
-                    onClick={() => handleMark(false)}
-                    disabled={marking}
-                    className="py-4 rounded-xl bg-[#FF6B6B]/20 border border-[#FF6B6B]/30 text-[#FF6B6B] font-fredoka font-bold text-base hover:bg-[#FF6B6B]/30 transition-all disabled:opacity-50"
-                  >
+                  <button onClick={() => handleMark(false)} disabled={marking}
+                    className="py-4 rounded-xl bg-[#FF6B6B]/20 border border-[#FF6B6B]/30 text-[#FF6B6B] font-fredoka font-bold text-base hover:bg-[#FF6B6B]/30 transition-all disabled:opacity-50">
                     😅 Need practice
                   </button>
-                  <button
-                    onClick={() => handleMark(true)}
-                    disabled={marking}
-                    className="py-4 rounded-xl bg-[#00CC88]/20 border border-[#00CC88]/30 text-[#00CC88] font-fredoka font-bold text-base hover:bg-[#00CC88]/30 transition-all disabled:opacity-50"
-                  >
+                  <button onClick={() => handleMark(true)} disabled={marking}
+                    className="py-4 rounded-xl bg-[#00CC88]/20 border border-[#00CC88]/30 text-[#00CC88] font-fredoka font-bold text-base hover:bg-[#00CC88]/30 transition-all disabled:opacity-50">
                     ✅ Know it!
                   </button>
                 </div>
-              )}
-
-              {!revealed && (
-                <button
-                  onClick={() => setRevealed(true)}
-                  className="w-full btn-blox-primary py-4"
-                >
+              ) : (
+                <button onClick={() => setRevealed(true)} className="w-full btn-blox-primary py-4">
                   Reveal Key Points
                 </button>
               )}
@@ -337,18 +319,16 @@ function FlashCard({ topic, onDone }) {
 
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export default function FlashcardMode() {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [selectedTopic, setSelectedTopic] = useState(location.state?.topic || null)
+  const [selectedChapter, setSelectedChapter] = useState(null)
 
-  if (!selectedTopic) {
-    return <TopicSelect onSelect={setSelectedTopic} />
+  if (!selectedChapter) {
+    return <ChapterSelect onSelect={setSelectedChapter} />
   }
 
   return (
     <FlashCard
-      topic={selectedTopic}
-      onDone={() => setSelectedTopic(null)}
+      chapter={selectedChapter}
+      onDone={() => setSelectedChapter(null)}
     />
   )
 }

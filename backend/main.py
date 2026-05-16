@@ -942,12 +942,15 @@ def start_session(
         db.commit()
         db.refresh(mastery)
 
-    # Study Mode gate — student must study at least once before practising
+    # Study Mode gate — student must study at least once before practising.
+    # Exception: if they already have prior sessions (practiced before the study
+    # gate was introduced), backfill studied=True and let them through.
     if not mastery.studied:
-        raise HTTPException(
-            status_code=403,
-            detail="study_required",
-        )
+        if mastery.total_sessions and mastery.total_sessions > 0:
+            mastery.studied = True
+            db.commit()
+        else:
+            raise HTTPException(status_code=403, detail="study_required")
 
     start_level = get_start_level(mastery.mastery_level)
 
@@ -2205,6 +2208,7 @@ class BuddyUpdateRequest(BaseModel):
 class WeeklyChallengeSubmitRequest(BaseModel):
     challenge_id: int
     answer: str
+    image_data: Optional[str] = None   # base64 JPEG for handwritten answers
 
 
 @app.get("/api/student/buddy")
@@ -2421,6 +2425,7 @@ def submit_weekly_challenge(
         level="L4", hint_tier=0,
         expected_key_points=ekp,
         answer_format=challenge.answer_format,
+        image_data=req.image_data or None,
     )
 
     # XP = score * 2, capped at 200 (max for a perfect answer = 200)
@@ -2592,17 +2597,48 @@ def start_exam(
     count = max(3, min(req.question_count, 15))
     time_limit = max(5, min(req.time_limit_minutes, 30)) * 60  # convert to seconds
 
-    # Build topic pool
-    topic_query = (
-        db.query(Topic)
-        .join(Chapter, Chapter.id == Topic.chapter_id)
+    # ── Find chapters where ALL topics have been practiced by this student ──────
+    chapter_query = (
+        db.query(Chapter)
         .join(Book, Book.id == Chapter.book_id)
         .filter(Book.grade == current_user.grade, Book.ingestion_status == "done")
     )
     if req.subjects:
-        topic_query = topic_query.filter(Book.subject.in_(req.subjects))
+        chapter_query = chapter_query.filter(Book.subject.in_(req.subjects))
 
-    all_topics = topic_query.all()
+    all_chapters = chapter_query.all()
+
+    # Pre-fetch this student's mastery records (topic_id set)
+    practiced_topic_ids = set(
+        row[0] for row in
+        db.query(TopicMastery.topic_id)
+        .filter(
+            TopicMastery.student_name == current_user.name,
+            TopicMastery.mastery_level.isnot(None),
+        ).all()
+    )
+
+    completed_chapter_ids = []
+    for ch in all_chapters:
+        ch_topic_ids = [
+            row[0] for row in
+            db.query(Topic.id).filter(Topic.chapter_id == ch.id).all()
+        ]
+        if ch_topic_ids and all(tid in practiced_topic_ids for tid in ch_topic_ids):
+            completed_chapter_ids.append(ch.id)
+
+    if not completed_chapter_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="chapter_not_complete"
+        )
+
+    # Build topic pool — only from completed chapters
+    all_topics = (
+        db.query(Topic)
+        .filter(Topic.chapter_id.in_(completed_chapter_ids))
+        .all()
+    )
     if not all_topics:
         raise HTTPException(status_code=400, detail="No topics available for selected subjects")
 

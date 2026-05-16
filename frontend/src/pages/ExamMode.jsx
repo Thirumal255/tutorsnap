@@ -13,7 +13,8 @@ function pad(n) { return String(n).padStart(2, '0') }
 function fmtTime(secs) { return `${pad(Math.floor(secs / 60))}:${pad(secs % 60)}` }
 
 // ── SETUP ─────────────────────────────────────────────────────────────────────
-function SetupScreen({ onStart, subjects }) {
+function SetupScreen({ onStart, subjects, completedChaptersBySubject, loading }) {
+  const navigate = useNavigate()
   const [selected, setSelected] = useState([])
   const [count, setCount] = useState(10)
   const [timeLimit, setTimeLimit] = useState(15)
@@ -31,7 +32,12 @@ function SetupScreen({ onStart, subjects }) {
     try {
       await onStart({ subjects: selected, question_count: count, time_limit_minutes: timeLimit })
     } catch (e) {
-      setErr(e.response?.data?.detail || 'Failed to start exam.')
+      const detail = e.response?.data?.detail || ''
+      if (detail === 'chapter_not_complete') {
+        setErr('No completed chapters in the selected subject(s). Finish all topics in a chapter first.')
+      } else {
+        setErr(detail || 'Failed to start exam.')
+      }
       setStarting(false)
     }
   }
@@ -49,25 +55,45 @@ function SetupScreen({ onStart, subjects }) {
         {/* Subjects */}
         <div className="blox-card p-5">
           <p className="text-sm font-nunito font-semibold text-[#8892B0] uppercase tracking-wide mb-3">
-            Subjects
+            Subjects with completed chapters
           </p>
-          {subjects.length === 0 && (
-            <p className="text-sm text-[#8892B0]">No subjects available. Practice some topics first.</p>
+
+          {loading && (
+            <p className="text-sm text-[#8892B0]">Loading…</p>
           )}
-          <div className="flex flex-wrap gap-2">
-            {subjects.map(s => (
+
+          {!loading && subjects.length === 0 && (
+            <div className="text-center py-4 space-y-3">
+              <p className="text-sm text-[#8892B0]">
+                No chapters completed yet. Finish <strong className="text-white">all topics</strong> in a chapter to unlock exam mode for it.
+              </p>
               <button
-                key={s}
-                onClick={() => toggleSubject(s)}
-                className={`px-3 py-2 rounded-xl text-sm font-nunito font-semibold transition-all border ${
-                  selected.includes(s)
-                    ? 'bg-[#00A2FF]/20 border-[#00A2FF] text-[#00A2FF]'
-                    : 'bg-[#1A1A3E] border-[#2D2B5A] text-[#8892B0] hover:border-[#00A2FF]/50'
-                }`}
+                onClick={() => navigate('/practice')}
+                className="btn-blox-primary text-sm px-5 py-2"
               >
-                {SUBJECT_EMOJI[s] || '📚'} {s}
+                ▶ Go Practice
               </button>
-            ))}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {subjects.map(s => {
+              const chapters = completedChaptersBySubject[s] || []
+              return (
+                <button
+                  key={s}
+                  onClick={() => toggleSubject(s)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-nunito font-semibold transition-all border ${
+                    selected.includes(s)
+                      ? 'bg-[#00A2FF]/20 border-[#00A2FF] text-[#00A2FF]'
+                      : 'bg-[#1A1A3E] border-[#2D2B5A] text-[#8892B0] hover:border-[#00A2FF]/50 hover:text-white'
+                  }`}
+                >
+                  <span>{SUBJECT_EMOJI[s] || '📚'} {s}</span>
+                  <span className="text-xs opacity-70">{chapters.length} chapter{chapters.length !== 1 ? 's' : ''} unlocked</span>
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -387,17 +413,29 @@ export default function ExamMode() {
   const [exam, setExam] = useState(null)
   const [results, setResults] = useState(null)
   const [subjects, setSubjects] = useState([])
+  const [completedChaptersBySubject, setCompletedChaptersBySubject] = useState({})
+  const [loadingSubjects, setLoadingSubjects] = useState(true)
 
-  // Load available subjects from progress
+  // Load subjects that have at least one fully-completed chapter
   useEffect(() => {
     getStudentProgress()
       .then(res => {
-        const subjs = [...new Set(
-          (res.data.topics || []).map(t => t.subject).filter(Boolean)
-        )]
-        setSubjects(subjs)
+        const bySubject = {}
+        for (const book of res.data) {
+          for (const ch of book.chapters) {
+            // Chapter is complete when every topic has been practiced (mastery_level set)
+            const isComplete = ch.total_topics > 0 && ch.attempted === ch.total_topics
+            if (isComplete) {
+              if (!bySubject[book.subject]) bySubject[book.subject] = []
+              bySubject[book.subject].push({ id: ch.id, title: ch.title })
+            }
+          }
+        }
+        setCompletedChaptersBySubject(bySubject)
+        setSubjects(Object.keys(bySubject))
       })
-      .catch(() => setSubjects([]))
+      .catch(() => { setSubjects([]); setCompletedChaptersBySubject({}) })
+      .finally(() => setLoadingSubjects(false))
   }, [])
 
   async function handleStart(config) {
@@ -408,14 +446,14 @@ export default function ExamMode() {
 
   async function handleSubmit(answers) {
     const res = await submitExam({
-      exam_session_id: exam.exam_session_id,
+      exam_id: exam.exam_id,
       answers,
     })
     setResults(res.data)
     setPhase('results')
   }
 
-  if (phase === 'setup') return <SetupScreen onStart={handleStart} subjects={subjects} />
+  if (phase === 'setup') return <SetupScreen onStart={handleStart} subjects={subjects} completedChaptersBySubject={completedChaptersBySubject} loading={loadingSubjects} />
   if (phase === 'exam') return <ExamScreen exam={exam} onSubmit={handleSubmit} />
   if (phase === 'results') return <ResultsScreen results={results} onDone={() => navigate('/practice')} />
   return null
