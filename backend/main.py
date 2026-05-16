@@ -658,6 +658,15 @@ def delete_book(
         # 4. Delete topic mastery records
         db.query(TopicMastery).filter(TopicMastery.topic_id.in_(topic_ids)).delete(synchronize_session=False)
 
+        # 4b. Delete weekly challenge completions + challenges referencing these topics
+        challenge_ids = [wc.id for wc in
+                         db.query(WeeklyChallenge).filter(WeeklyChallenge.topic_id.in_(topic_ids)).all()]
+        if challenge_ids:
+            db.query(WeeklyChallengeCompletion).filter(
+                WeeklyChallengeCompletion.challenge_id.in_(challenge_ids)
+            ).delete(synchronize_session=False)
+            db.query(WeeklyChallenge).filter(WeeklyChallenge.id.in_(challenge_ids)).delete(synchronize_session=False)
+
         # 5. Delete topics
         db.query(Topic).filter(Topic.id.in_(topic_ids)).delete(synchronize_session=False)
 
