@@ -2,10 +2,6 @@ name: Test Suite
 
 # ─── Triggers ──────────────────────────────────────────────────────────────────
 on:
-  workflow_run:                        # fires after every backend deploy
-    workflows: ["Deploy Backend"]
-    types: [completed]
-
   push:
     branches: [main]
     paths:
