@@ -692,20 +692,49 @@ def get_concept_explanation(topic, question: str) -> str:
 
 
 def get_session_summary(session, topic, turns: list) -> str:
-    system = "You are Buddy, a friendly AI tutor."
+    system = "You are Buddy, a friendly AI tutor. Keep all responses concise and encouraging."
+
+    answered = [t for t in turns if t.student_answer and t.assessment_score is not None]
+    n_answered = len(answered)
+
+    # ── Case 1: student left without answering anything ────────────────────────
+    if n_answered == 0:
+        user = (
+            f"Write a SHORT (2-3 sentences) friendly message for {session.student_name}, "
+            f"who opened a practice session on '{topic.title}' but left before answering any questions. "
+            f"Acknowledge they showed up (that matters!), gently encourage them to try again and give it a go next time. "
+            f"Do NOT pretend they answered questions or celebrate performance they didn't have. "
+            f"Age-appropriate for an 11-13 year old."
+        )
+        return call_claude(system, user, max_tokens=150, model=_HAIKU)
+
+    # ── Case 2: real session with answers ─────────────────────────────────────
+    scores = [t.assessment_score for t in answered]
+    avg_score = round(sum(scores) / len(scores))
+    performance = "excellent" if avg_score >= 80 else "developing" if avg_score >= 55 else "needs more practice"
+
+    # Summarise what the student actually answered
+    turn_lines = []
+    for t in answered[-4:]:   # last 4 turns max
+        score_label = "✅" if (t.assessment_score or 0) >= 70 else "❌"
+        q_short = (t.question_text or "")[:80].replace('\n', ' ')
+        turn_lines.append(f"  {score_label} Q: {q_short} → score {t.assessment_score}")
+    turns_text = "\n".join(turn_lines) if turn_lines else "  (no detail available)"
+
     user = (
-        f"Generate a short, encouraging session summary for a student named {session.student_name}.\n\n"
-        f"Session details:\n"
+        f"Generate a short (3-4 sentences) encouraging session summary for {session.student_name}.\n\n"
+        f"Session facts:\n"
         f"- Topic: {topic.title}\n"
-        f"- Questions asked: {session.questions_asked}\n"
-        f"- Started at level: L1 (Getting started)\n"
-        f"- Finished at level: {session.current_level}\n"
-        f"- Key concepts covered: {', '.join(topic.key_concepts or [])}\n\n"
-        f"Write 3-4 sentences:\n"
-        f"1. Celebrate their effort and what they achieved\n"
-        f"2. Mention specifically what level they reached\n"
-        f"3. Note one or two concepts they practised\n"
-        f"4. Encourage them to keep going\n\n"
+        f"- Questions answered: {n_answered}\n"
+        f"- Average score: {avg_score}% ({performance})\n"
+        f"- Level reached: {session.current_level}\n"
+        f"- Key concepts covered: {', '.join(topic.key_concepts or [])}\n"
+        f"- Recent answers:\n{turns_text}\n\n"
+        f"Instructions:\n"
+        f"1. Celebrate their effort and reference their actual score ({avg_score}%).\n"
+        f"2. Mention the level they reached ({session.current_level}).\n"
+        f"3. Pick one concept they practised from the list above.\n"
+        f"4. One specific tip or encouragement based on their performance.\n\n"
         f"Keep it warm, specific, and age-appropriate for an 11-13 year old."
     )
     return call_claude(system, user, max_tokens=300, model=_HAIKU)

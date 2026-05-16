@@ -9,26 +9,35 @@ import { useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 
  *   - undo()          → step back one stroke
  *   - isEmpty()       → true if no strokes drawn yet
  */
-const WritingCanvas = forwardRef(function WritingCanvas({ className = '' }, ref) {
+const WritingCanvas = forwardRef(function WritingCanvas({ className = '', style }, ref) {
   const canvasRef = useRef(null)
   const isDrawing = useRef(false)
   const lastPoint = useRef(null)
   const undoStack = useRef([])   // snapshots (dataURL) before each stroke
   const hasStrokes = useRef(false)
 
-  // Scale canvas for HiDPI screens
-  useEffect(() => {
+  // Scale canvas for HiDPI screens; re-run if the container resizes
+  const initCanvas = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     const dpr = window.devicePixelRatio || 1
     const rect = canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
     canvas.width  = rect.width  * dpr
     canvas.height = rect.height * dpr
     ctx.scale(dpr, dpr)
     ctx.fillStyle = '#1A1A3E'
     ctx.fillRect(0, 0, rect.width, rect.height)
+    undoStack.current = []
+    hasStrokes.current = false
   }, [])
+
+  useEffect(() => {
+    // Small delay so the element has finished laying out (esp. in the expanded overlay)
+    const t = setTimeout(initCanvas, 30)
+    return () => clearTimeout(t)
+  }, [initCanvas, style])
 
   const getPos = useCallback((e, canvas) => {
     const rect = canvas.getBoundingClientRect()
@@ -130,7 +139,7 @@ const WritingCanvas = forwardRef(function WritingCanvas({ className = '' }, ref)
     <canvas
       ref={canvasRef}
       className={`touch-none rounded-2xl border border-[#2D2B5A] cursor-crosshair ${className}`}
-      style={{ display: 'block', width: '100%', height: '180px', background: '#1A1A3E' }}
+      style={{ display: 'block', width: '100%', height: '200px', background: '#1A1A3E', ...style }}
       onPointerDown={startDraw}
       onPointerMove={draw}
       onPointerUp={stopDraw}

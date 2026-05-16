@@ -1275,11 +1275,18 @@ def end_session(
 
     turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
     summary = get_session_summary(session, topic, turns)
+
+    # Compute display-only XP based on actual answers (NOT added to user total —
+    # XP is only awarded inside submit_answer for in-session achievements)
+    answered_turns = [t for t in turns if t.student_answer and t.assessment_score is not None]
+    xp_display = sum(max(0, (t.assessment_score or 0) - 40) // 10 * 5 for t in answered_turns)
+
     return {"session_id": session.id, "student_name": session.student_name,
             "topic_title": topic.title, "level_reached": session.current_level,
             "level_label": level_label(session.current_level),
             "questions_asked": session.questions_asked, "summary": summary,
-            "flagged_for_review": session.flagged_for_review}
+            "flagged_for_review": session.flagged_for_review,
+            "xp_earned": xp_display}
 
 
 # ─── Phase C: Admin Routes ─────────────────────────────────────────────────

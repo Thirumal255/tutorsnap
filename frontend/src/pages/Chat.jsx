@@ -58,6 +58,7 @@ export default function Chat() {
 
   // Canvas (handwriting) mode
   const [canvasMode, setCanvasMode] = useState(false)
+  const [canvasExpanded, setCanvasExpanded] = useState(false)
   const canvasRef = useRef(null)
 
   const bottomRef = useRef(null)
@@ -213,6 +214,7 @@ export default function Chat() {
           topicTitle: session?.topicTitle,
           topicId: session?.topicId,
           questionsAsked: d.turn_number,
+          xpEarned: d.xp_earned ?? 100,
           keyConcepts: [],
         }))
         setTimeout(() => navigate(`/summary/${sessionId}`), 2000)
@@ -457,46 +459,89 @@ export default function Chat() {
 
         {/* Canvas mode: drawing surface + controls */}
         {canvasMode ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-[#8892B0] font-nunito">✏️ Draw your answer</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => canvasRef.current?.undo()}
-                  className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#8892B0] transition-all"
-                >
-                  ↩ Undo
+          <>
+            {/* ── Expanded canvas overlay ────────────────────────────────── */}
+            {canvasExpanded && (
+              <div className="fixed inset-0 z-50 bg-[#0F0F23] flex flex-col">
+                {/* Overlay toolbar */}
+                <div className="flex items-center justify-between px-4 py-3 bg-[#16213E] border-b border-[#2D2B5A] flex-shrink-0">
+                  <span className="text-sm font-fredoka font-bold text-white">✏️ Handwriting</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => canvasRef.current?.undo()}
+                      className="text-xs text-[#8892B0] hover:text-white px-3 py-1.5 rounded-lg border border-[#2D2B5A] hover:border-[#8892B0] transition-all">
+                      ↩ Undo
+                    </button>
+                    <button onClick={() => canvasRef.current?.clear()}
+                      className="text-xs text-[#8892B0] hover:text-white px-3 py-1.5 rounded-lg border border-[#2D2B5A] hover:border-[#FF3333] transition-all">
+                      🗑 Clear
+                    </button>
+                    <button onClick={() => setCanvasExpanded(false)}
+                      className="text-xs text-[#8892B0] hover:text-white px-3 py-1.5 rounded-lg border border-[#2D2B5A] hover:border-[#00A2FF] transition-all">
+                      ⤓ Collapse
+                    </button>
+                  </div>
+                </div>
+                {/* Full-height canvas */}
+                <div className="flex-1 p-3">
+                  <WritingCanvas ref={canvasRef} className="h-full" style={{ height: '100%' }} />
+                </div>
+                {/* Submit row */}
+                <div className="flex gap-3 px-4 py-3 bg-[#16213E] border-t border-[#2D2B5A] flex-shrink-0">
+                  <button onClick={() => { setCanvasMode(false); setCanvasExpanded(false) }}
+                    className="flex-1 text-sm text-[#8892B0] border border-[#2D2B5A] rounded-xl py-2.5 hover:border-[#8892B0] hover:text-white transition-all font-nunito">
+                    ⌨️ Type instead
+                  </button>
+                  <button onClick={() => { setCanvasExpanded(false); handleSend() }} disabled={isBlocked}
+                    className="flex-1 btn-blox-primary text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50">
+                    {isBlocked ? (
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                    ) : '⚡ Submit'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Inline (compact) canvas ────────────────────────────────── */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-[#8892B0] font-nunito">✏️ Draw your answer</span>
+                <div className="flex gap-2">
+                  <button onClick={() => canvasRef.current?.undo()}
+                    className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#8892B0] transition-all">
+                    ↩ Undo
+                  </button>
+                  <button onClick={() => canvasRef.current?.clear()}
+                    className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#FF3333] transition-all">
+                    🗑 Clear
+                  </button>
+                  <button onClick={() => setCanvasExpanded(true)}
+                    title="Expand to full screen"
+                    className="text-xs text-[#8892B0] hover:text-[#00A2FF] px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#00A2FF] transition-all">
+                    ⤢ Expand
+                  </button>
+                </div>
+              </div>
+              <WritingCanvas ref={canvasRef} />
+              <div className="flex gap-2 mt-1">
+                <button onClick={() => setCanvasMode(false)}
+                  className="flex-1 text-sm text-[#8892B0] border border-[#2D2B5A] rounded-xl py-2.5 hover:border-[#8892B0] hover:text-white transition-all font-nunito">
+                  ⌨️ Type instead
                 </button>
-                <button
-                  onClick={() => canvasRef.current?.clear()}
-                  className="text-xs text-[#8892B0] hover:text-white px-2 py-1 rounded-lg border border-[#2D2B5A] hover:border-[#FF3333] transition-all"
-                >
-                  🗑 Clear
+                <button onClick={handleSend} disabled={isBlocked}
+                  className="flex-1 btn-blox-primary text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50">
+                  {isBlocked ? (
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                  ) : '⚡ Submit'}
                 </button>
               </div>
             </div>
-            <WritingCanvas ref={canvasRef} />
-            <div className="flex gap-2 mt-1">
-              <button
-                onClick={() => setCanvasMode(false)}
-                className="flex-1 text-sm text-[#8892B0] border border-[#2D2B5A] rounded-xl py-2.5 hover:border-[#8892B0] hover:text-white transition-all font-nunito"
-              >
-                ⌨️ Type instead
-              </button>
-              <button
-                onClick={handleSend}
-                disabled={isBlocked}
-                className="flex-1 btn-blox-primary text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isBlocked ? (
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                  </svg>
-                ) : '⚡ Submit'}
-              </button>
-            </div>
-          </div>
+          </>
         ) : (
           /* Text mode */
           <div className="flex gap-2">

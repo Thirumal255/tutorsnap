@@ -81,11 +81,16 @@ export default function Summary() {
   const flagged = data?.flagged_for_review || false
   const keyConcepts = data?.keyConcepts || []
 
-  const xp = questionsAsked * 10 + (flagged ? 0 : 50)
+  // Use actual XP from backend/session; never show XP if nothing was answered
+  const xp = questionsAsked > 0
+    ? (data?.xpEarned ?? data?.xp_earned ?? questionsAsked * 10)
+    : 0
+
+  const earlyExit = questionsAsked === 0
 
   return (
     <div className="min-h-screen bg-[#0F0F23] flex items-center justify-center px-4 py-10 relative overflow-hidden">
-      <Confetti />
+      {!earlyExit && <Confetti />}
 
       {/* BG glow */}
       <div className="absolute inset-0 pointer-events-none">
@@ -94,27 +99,34 @@ export default function Summary() {
 
       <div className="max-w-lg w-full blox-card p-8 text-center relative z-10 animate-bounce-in">
 
-        {/* Trophy */}
+        {/* Trophy / icon */}
         <div className="text-7xl mb-4 animate-float">
-          {flagged ? '💪' : '🏆'}
+          {earlyExit ? '🌱' : flagged ? '💪' : '🏆'}
         </div>
 
         <h1 className="text-3xl font-fredoka font-bold text-white mb-1">
-          {flagged ? 'Keep Pushing!' : 'Quest Complete!'}
+          {earlyExit ? 'See You Next Time!' : flagged ? 'Keep Pushing!' : 'Quest Complete!'}
         </h1>
 
         {studentName && (
           <p className="text-lg font-nunito font-semibold text-[#FFD700] mb-1">
-            Amazing work, {studentName}! ⭐
+            {earlyExit ? `Good start, ${studentName}!` : `Amazing work, ${studentName}! ⭐`}
           </p>
         )}
         {topicTitle && <p className="text-sm text-[#8892B0] mb-5">{topicTitle}</p>}
 
         {/* XP earned */}
-        <div className="bg-gradient-to-r from-[#FFD700]/20 to-[#FFA500]/20 border border-[#FFD700]/40 rounded-2xl p-4 mb-5 shadow-glow-gold">
-          <p className="text-4xl font-fredoka font-bold text-[#FFD700]">+{xp} XP ⭐</p>
-          <p className="text-[#8892B0] text-sm mt-1">{questionsAsked} questions answered</p>
-        </div>
+        {xp > 0 ? (
+          <div className="bg-gradient-to-r from-[#FFD700]/20 to-[#FFA500]/20 border border-[#FFD700]/40 rounded-2xl p-4 mb-5 shadow-glow-gold">
+            <p className="text-4xl font-fredoka font-bold text-[#FFD700]">+{xp} XP ⭐</p>
+            <p className="text-[#8892B0] text-sm mt-1">{questionsAsked} question{questionsAsked !== 1 ? 's' : ''} answered</p>
+          </div>
+        ) : (
+          <div className="bg-[#2D2B5A]/40 border border-[#2D2B5A] rounded-2xl p-4 mb-5">
+            <p className="text-2xl font-fredoka font-bold text-[#8892B0]">0 XP this time</p>
+            <p className="text-[#8892B0] text-sm mt-1">Answer questions to earn XP ⭐</p>
+          </div>
+        )}
 
         {/* Rank */}
         <div className="flex justify-center mb-5">
