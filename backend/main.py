@@ -150,6 +150,7 @@ def _user_dict(u: User) -> dict:
         "show_on_leaderboard": u.show_on_leaderboard if u.show_on_leaderboard is not None else True,
         "buddy_name": u.buddy_name or "Buddy",
         "buddy_avatar": u.buddy_avatar or "robot",
+        "avatar_preset": u.avatar_preset or None,
     }
 
 
@@ -361,7 +362,13 @@ def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db)):
             )
     else:
         user.name = info["name"]
-        user.avatar_url = info.get("avatar_url")
+        # Only overwrite avatar_url with Google's photo if the user hasn't
+        # set a custom profile picture (custom uploads are non-Google URLs).
+        google_url = info.get("avatar_url") or ""
+        existing_url = user.avatar_url or ""
+        is_google_url = "googleusercontent.com" in existing_url or not existing_url
+        if is_google_url:
+            user.avatar_url = google_url or None
 
     user.last_login_at = datetime.utcnow()
     db.commit()
@@ -2258,6 +2265,111 @@ def update_buddy(
         "buddy_avatar": user.buddy_avatar or "robot",
         "show_on_leaderboard": user.show_on_leaderboard if user.show_on_leaderboard is not None else True,
     }
+
+
+# ── Profile endpoints (student + parent) ─────────────────────────────────────
+
+VALID_AVATAR_PRESETS = {
+    "cat", "dog", "fox", "panda", "lion", "dolphin", "owl", "frog",
+    "tiger", "butterfly", "penguin", "unicorn",
+    "dragon", "wizard", "eagle", "robot",
+    "star", "rocket", "palette", "theatre",
+}
+
+
+class ProfileUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    avatar_preset: Optional[str] = None  # empty string = clear preset
+
+
+@app.get("/api/profile")
+def get_profile(current_user: User = Depends(get_current_user)):
+    """Return the current user's editable profile fields."""
+    return {
+        "name": current_user.name,
+        "email": current_user.email,
+        "role": current_user.role,
+        "grade": current_user.grade,
+        "avatar_url": current_user.avatar_url,
+        "avatar_preset": current_user.avatar_preset,
+    }
+
+
+@app.put("/api/profile")
+def update_profile(
+    req: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update display name and/or avatar preset. Available to student and parent."""
+    if current_user.role not in ("student", "parent"):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    if req.display_name is not None:
+        name = req.display_name.strip()[:200]
+        if not name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        current_user.name = name
+
+    if req.avatar_preset is not None:
+        if req.avatar_preset and req.avatar_preset not in VALID_AVATAR_PRESETS:
+            raise HTTPException(status_code=400, detail="Invalid avatar preset")
+        current_user.avatar_preset = req.avatar_preset or None
+
+    db.commit()
+    return {
+        "name": current_user.name,
+        "avatar_url": current_user.avatar_url,
+        "avatar_preset": current_user.avatar_preset,
+    }
+
+
+@app.post("/api/profile/avatar")
+async def upload_profile_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload a custom profile photo. Stores in GCS (prod) or local uploads/profiles/ (dev)."""
+    if current_user.role not in ("student", "parent"):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:  # 5 MB limit
+        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ("jpg", "jpeg", "png", "webp", "gif"):
+        ext = "jpg"
+    if ext == "jpeg":
+        ext = "jpg"
+
+    from storage import save_profile_image
+    import asyncio as _asyncio
+    url = await _asyncio.get_event_loop().run_in_executor(
+        None, save_profile_image, content, current_user.id, ext
+    )
+
+    current_user.avatar_url = url
+    current_user.avatar_preset = None  # custom photo takes precedence over preset
+    db.commit()
+
+    return {"avatar_url": url}
+
+
+@app.get("/api/profile/avatar/file/{filename}")
+def serve_local_profile_avatar(filename: str):
+    """Serve locally-stored profile images in dev (not used in GCS/prod)."""
+    import os as _os
+    from fastapi.responses import FileResponse
+    upload_dir = _os.getenv("UPLOAD_DIR", "uploads")
+    filepath = _os.path.join(upload_dir, "profiles", filename)
+    if not _os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    return FileResponse(filepath)
 
 
 @app.get("/api/student/leaderboard")

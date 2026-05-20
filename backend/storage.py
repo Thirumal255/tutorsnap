@@ -139,3 +139,30 @@ def cleanup_temp(filepath: str):
             os.unlink(filepath)
         except Exception:
             pass
+
+
+def save_profile_image(content: bytes, user_id: int, ext: str = "jpg") -> str:
+    """
+    Save a profile image for a user.
+    GCS: uploads to profile_images/ folder, makes blob public, returns HTTPS URL.
+    Local: saves to uploads/profiles/, returns /api/profile/avatar/file/{filename}.
+    """
+    filename = f"profile_{user_id}.{ext}"
+
+    if USE_GCS:
+        from google.cloud import storage
+
+        client = storage.Client()
+        bucket = client.bucket(BUCKET_NAME)
+        blob = bucket.blob(f"profile_images/{filename}")
+        blob.upload_from_string(content, content_type=f"image/{ext}")
+        blob.make_public()
+        return blob.public_url
+    else:
+        upload_dir = os.getenv("UPLOAD_DIR", "uploads")
+        profile_dir = os.path.join(upload_dir, "profiles")
+        os.makedirs(profile_dir, exist_ok=True)
+        filepath = os.path.join(profile_dir, filename)
+        with open(filepath, "wb") as f:
+            f.write(content)
+        return f"/api/profile/avatar/file/{filename}"

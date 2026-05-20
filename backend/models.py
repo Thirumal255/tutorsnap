@@ -28,6 +28,7 @@ class User(Base):
     show_on_leaderboard = Column(Boolean, default=True)
     buddy_name = Column(String(50), nullable=True)    # e.g. "Bloxy"
     buddy_avatar = Column(String(50), nullable=True)  # preset key: robot/fox/etc.
+    avatar_preset = Column(String(50), nullable=True) # profile avatar preset key e.g. "fox"
 
     parent_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.parent_id", back_populates="parent")
     student_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.student_id", back_populates="student")

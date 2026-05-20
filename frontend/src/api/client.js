@@ -110,6 +110,11 @@ export const completeStudy    = (topicId, studentName, studySummary) =>
   api.post(`/topics/${topicId}/study-complete`, { student_name: studentName, study_summary: studySummary })
 export const unlockPractice   = (topicId, studentName, studySummary) =>
   api.post(`/topics/${topicId}/study-unlock`, { student_name: studentName, study_summary: studySummary })
+// Profile (student + parent)
+export const getProfile          = () => api.get('/profile')
+export const updateProfile       = (data) => api.put('/profile', data)
+export const uploadProfileAvatar = (formData) => api.post('/profile/avatar', formData)
+
 export const getParentNotifications = () => api.get('/parent/notifications')
 export const markNotificationRead = (id) => api.post(`/parent/notifications/${id}/read`)
 export const markAllNotificationsRead = () => api.post('/parent/notifications/mark-all-read')

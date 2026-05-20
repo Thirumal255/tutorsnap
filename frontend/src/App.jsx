@@ -30,6 +30,7 @@ import ParentLayout from './pages/parent/ParentLayout'
 import ParentDashboard from './pages/parent/ParentDashboard'
 import ParentChildDetail from './pages/parent/ParentChildDetail'
 import ParentNotifications from './pages/parent/ParentNotifications'
+import ProfilePage from './pages/ProfilePage'
 import { ToastProvider } from './context/ToastContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
@@ -119,6 +120,13 @@ export default function App() {
               <Route path="children/:id" element={<ParentChildDetail />} />
               <Route path="notifications" element={<ParentNotifications />} />
             </Route>
+
+            {/* Profile — shared by student and parent */}
+            <Route path="/profile" element={
+              <ProtectedRoute roles={['student', 'parent']}>
+                <ProfilePage />
+              </ProtectedRoute>
+            } />
 
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>

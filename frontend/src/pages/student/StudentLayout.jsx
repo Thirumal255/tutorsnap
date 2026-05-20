@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { logout as apiLogout } from '../../api/client'
+import UserAvatar from '../../components/UserAvatar'
 
 const NAV = [
   { to: '/home',         label: 'Home',        icon: '🏠', end: true },
@@ -81,20 +82,16 @@ export default function StudentLayout() {
 
         {/* User card */}
         <div className="px-4 py-4 border-t border-[#2D2B5A]">
-          <div className="flex items-center gap-2 mb-3">
-            {user?.avatar_url
-              ? <img src={user.avatar_url} className="w-8 h-8 rounded-xl border border-[#2D2B5A]" alt="" />
-              : (
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF6B9D] to-[#FF3333] flex items-center justify-center text-white font-fredoka font-bold text-sm">
-                  {user?.name?.[0]}
-                </div>
-              )
-            }
-            <div className="min-w-0">
-              <p className="text-xs text-white font-semibold truncate">{user?.name}</p>
-              <p className="text-xs text-[#8892B0]">Student</p>
+          <button
+            onClick={() => navigate('/profile')}
+            className="flex items-center gap-2 mb-3 w-full hover:bg-[#1A1A3E] rounded-xl p-1.5 -mx-1.5 transition-all group"
+          >
+            <UserAvatar user={user} className="w-8 h-8 rounded-xl flex-shrink-0" />
+            <div className="min-w-0 text-left">
+              <p className="text-xs text-white font-semibold truncate group-hover:text-[#00A2FF] transition-colors">{user?.name}</p>
+              <p className="text-[10px] text-[#8892B0]">Student · Edit profile</p>
             </div>
-          </div>
+          </button>
           <button onClick={handleLogout}
             className="w-full text-xs text-[#8892B0] hover:text-white border border-[#2D2B5A] hover:border-[#FF3333] rounded-xl py-2 transition-all font-nunito">
             Sign out
@@ -123,20 +120,13 @@ export default function StudentLayout() {
             </NavLink>
           ))}
 
-          {/* Sign out */}
+          {/* Profile */}
           <button
-            onClick={handleLogout}
-            className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-nunito font-semibold text-[#8892B0]"
+            onClick={() => navigate('/profile')}
+            className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-nunito font-semibold text-[#8892B0] hover:text-[#00A2FF] transition-colors"
           >
-            {user?.avatar_url
-              ? <img src={user.avatar_url} className="w-6 h-6 rounded-full border border-[#2D2B5A]" alt="" />
-              : (
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#FF6B9D] to-[#FF3333] flex items-center justify-center text-white font-bold text-xs">
-                  {user?.name?.[0]}
-                </div>
-              )
-            }
-            <span>Sign out</span>
+            <UserAvatar user={user} className="w-6 h-6 rounded-full" textSize="text-xs" />
+            <span>Profile</span>
           </button>
         </div>
       </nav>
