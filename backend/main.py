@@ -816,6 +816,13 @@ def explain_topic(
     return {"topic_id": topic_id, "topic_title": topic.title, "explanation": explanation}
 
 
+_PRACTICE_NUDGE = (
+    "\n\n---\n"
+    "🎯 **Feeling confident?** You've been studying for a while — that's great! "
+    "When you're ready, tap **Complete Study** to take a quick 2-question check "
+    "and unlock **Practice Mode** for this topic. 💪"
+)
+
 @app.post("/api/topics/{topic_id}/study-chat")
 def study_chat(
     topic_id: int,
@@ -826,6 +833,9 @@ def study_chat(
     """
     Handle follow-up Q&A during Study Mode. Maintains conversation history.
     Uses Haiku for fast, conversational responses.
+
+    Topic-lock: strictly scoped to the current topic's content.
+    12-message nudge: after ≥12 messages, appends a prompt to move to Practice.
     """
     if current_user.role != "student":
         raise HTTPException(status_code=403, detail="Students only")
@@ -843,9 +853,15 @@ def study_chat(
         f"You are Buddy, a friendly AI tutor for a {subject_label} student in Study Mode.\n"
         f"{TOPIC_BOUNDARY_RULE}\n"
         f"{build_topic_context(topic)}\n\n"
-        "The student is studying — not being tested. Answer their questions clearly and warmly. "
-        "If they ask something outside this topic's scope, gently redirect: "
-        "'That's a great question! That's covered in a different topic — let's focus on this one for now.' "
+        "STRICT TOPIC LOCK: You may ONLY discuss the content defined above for this specific topic. "
+        f"The topic is: '{topic.title}'. "
+        "If the student asks ANYTHING not directly covered in this topic (other subjects, unrelated topics, "
+        "general knowledge, personal questions, homework help on other topics, etc.), you MUST respond "
+        f"ONLY with: 'That's a great question! That's covered in a different topic — let's stay focused "
+        f"on {topic.title} for now. 🎯 Do you have any questions about this topic?' "
+        "Do not elaborate, do not answer the off-topic question, do not apologise excessively. "
+        "Just redirect clearly and invite them back on-topic.\n\n"
+        "The student is studying — not being tested. For on-topic questions: answer clearly and warmly. "
         "Keep responses concise (2-4 sentences) unless a longer explanation is clearly needed."
     )
 
@@ -857,7 +873,13 @@ def study_chat(
         messages=req.messages[-10:],   # keep last 10 turns for context
     )
     reply = resp.content[0].text.strip()
-    return {"reply": reply}
+
+    # After ≥12 messages (≈6 Q&A turns), nudge the student to move to Practice
+    nudge = len(req.messages) >= 12
+    if nudge:
+        reply += _PRACTICE_NUDGE
+
+    return {"reply": reply, "show_nudge": nudge}
 
 
 @app.post("/api/topics/{topic_id}/study-complete")

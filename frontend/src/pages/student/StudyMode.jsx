@@ -41,6 +41,7 @@ export default function StudyMode() {
   const [messages, setMessages]   = useState([])   // [{role, content}]
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [showPracticeNudge, setShowPracticeNudge] = useState(false)
   const chatBottomRef = useRef(null)
 
   // Quick-check state
@@ -92,6 +93,7 @@ export default function StudyMode() {
     try {
       const res = await studyChat(topicId, user.name, newMessages)
       setMessages(prev => [...prev, { role: 'assistant', content: res.data.reply }])
+      if (res.data.show_nudge) setShowPracticeNudge(true)
     } catch (e) {
       toast.error('Could not get a response — try again')
     } finally {
@@ -308,6 +310,24 @@ export default function StudyMode() {
                       Send
                     </button>
                   </div>
+
+                  {/* Practice nudge banner — shown after 12 messages */}
+                  {showPracticeNudge && (
+                    <div className="bg-[#00CC88]/10 border border-[#00CC88]/30 rounded-2xl p-4 flex items-center gap-3">
+                      <span className="text-2xl">🎯</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[#00CC88] font-nunito font-bold text-sm">Ready to practise?</p>
+                        <p className="text-[#8892B0] text-xs">You've been studying for a while — great effort!</p>
+                      </div>
+                      <button
+                        onClick={startCheck}
+                        disabled={checkLoading}
+                        className="shrink-0 bg-[#00CC88] hover:bg-[#00AA70] text-white text-xs font-bold px-3 py-2 rounded-xl transition-all disabled:opacity-60"
+                      >
+                        {checkLoading ? '…' : 'Quick Check →'}
+                      </button>
+                    </div>
+                  )}
 
                   {/* Action buttons */}
                   <div className="flex gap-3 pt-1">
