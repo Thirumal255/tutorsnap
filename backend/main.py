@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor as _TPool, as_completed as _as
 from models import (
     Book, Chapter, Topic, Session as SessionModel, SessionTurn, TopicMastery,
     AppSettings, User, ParentStudentLink, Notification,
-    WeeklyChallenge, WeeklyChallengeCompletion, ExamSession,
+    WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -96,6 +96,22 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS study_summary TEXT"
             ))
+            # question_bank table — added in task #6
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS question_bank (
+                    id SERIAL PRIMARY KEY,
+                    topic_id INTEGER NOT NULL REFERENCES topics(id),
+                    level VARCHAR(5) NOT NULL,
+                    question_text TEXT NOT NULL,
+                    expected_key_points TEXT,
+                    answer_format VARCHAR(30),
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_qbank_topic_level ON question_bank(topic_id, level)"
+            ))
+
             # student_id FK — added in migration i9c3d4e5f6g7
             conn.execute(text(
                 "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS student_id INTEGER REFERENCES users(id)"
@@ -227,6 +243,17 @@ def _notify_parents(db: Session, session, topic, student_user: Optional[User]):
 
 
 _REVIEW_INTERVALS = {"L1": 1, "L2": 3, "L3": 7, "L4": 14, "L5": 21}
+
+
+def _next_question(db: Session, topic, level: str, prev_qs: list[str],
+                   recent_fmts: list[str] = None, study_summary: str = "") -> dict:
+    """Try the question bank first; fall back to live generation."""
+    from question_bank import draw_from_bank
+    bank_q = draw_from_bank(db, topic.id, level, prev_qs)
+    if bank_q:
+        return bank_q
+    return generate_question(topic, level, prev_qs,
+                              recent_formats=recent_fmts or [], study_summary=study_summary)
 
 
 def _update_mastery(db: Session, session, topic, flagged: bool = False):
@@ -603,6 +630,65 @@ def retry_ingestion(
 
     background_tasks.add_task(run_ingestion, book_id, book.filepath)
     return {"ok": True, "book_id": book_id, "message": "Ingestion restarted from last checkpoint"}
+
+
+@app.post("/api/books/{book_id}/generate-questions")
+def trigger_question_bank(
+    book_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Admin: pre-generate question bank (15 questions × level) for all topics in a book.
+    Runs as a background task. Skips topic+level combos that already have ≥15 questions.
+    """
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if book.ingestion_status != "done":
+        raise HTTPException(status_code=400, detail="Book must be fully ingested before generating questions")
+    from question_bank import generate_for_book
+    background_tasks.add_task(generate_for_book, book_id)
+    return {"ok": True, "book_id": book_id, "message": "Question bank generation started in background"}
+
+
+@app.get("/api/books/{book_id}/question-bank/status")
+def question_bank_status(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Return question bank counts per topic and level for a book."""
+    from sqlalchemy import func as sqlfunc
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
+    topic_ids = [
+        t.id for ch in chapters
+        for t in db.query(Topic).filter(Topic.chapter_id == ch.id).all()
+    ]
+    if not topic_ids:
+        return {"book_id": book_id, "total_questions": 0, "topics": []}
+
+    rows = (
+        db.query(QuestionBank.topic_id, QuestionBank.level, sqlfunc.count(QuestionBank.id))
+        .filter(QuestionBank.topic_id.in_(topic_ids))
+        .group_by(QuestionBank.topic_id, QuestionBank.level)
+        .all()
+    )
+    total = sum(r[2] for r in rows)
+    by_topic: dict[int, dict] = {}
+    for topic_id, level, count in rows:
+        by_topic.setdefault(topic_id, {})[level] = count
+
+    return {
+        "book_id": book_id,
+        "total_questions": total,
+        "topics": [{"topic_id": tid, "levels": lv} for tid, lv in by_topic.items()],
+    }
 
 
 @app.get("/api/ingestion/{book_id}")
@@ -1030,7 +1116,10 @@ def start_session(
                       .order_by(SessionTurn.created_at.desc()).limit(10).all())
         previous_questions = [t.question_text for t in prev_turns]
 
-    q = generate_question(topic, start_level, previous_questions, recent_formats=[],
+    # Try question bank first; fall back to live generation
+    from question_bank import draw_from_bank
+    q = draw_from_bank(db, req.topic_id, start_level, previous_questions) or \
+        generate_question(topic, start_level, previous_questions, recent_formats=[],
                           study_summary=mastery.study_summary or "")
     db.add(SessionTurn(
         session_id=session.id, turn_number=1,
@@ -1153,8 +1242,8 @@ def submit_answer(
         concept_explanation = get_concept_explanation(topic, current_turn.question_text)
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-        nq = generate_question(topic, session.current_level, prev_qs, _recent_formats(),
-                               study_summary=_study_summary)
+        nq = _next_question(db, topic, session.current_level, prev_qs, _recent_formats(),
+                            _study_summary)
         next_question = nq["question"]
         next_answer_format = nq["answer_format"]
         new_turn_number = current_turn.turn_number + 1
@@ -1170,8 +1259,8 @@ def submit_answer(
     elif next_action["action"] in ("advance_level", "next_question"):
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-        nq = generate_question(topic, session.current_level, prev_qs, _recent_formats(),
-                               study_summary=_study_summary)
+        nq = _next_question(db, topic, session.current_level, prev_qs, _recent_formats(),
+                            _study_summary)
         next_question = nq["question"]
         next_answer_format = nq["answer_format"]
         new_turn_number = current_turn.turn_number + 1
@@ -1260,8 +1349,8 @@ def request_hint(
         explanation = get_concept_explanation(topic, current_turn.question_text)
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-        fq = generate_question(topic, session.current_level, prev_qs, recent_hint_formats,
-                               study_summary=_study_summary)
+        fq = _next_question(db, topic, session.current_level, prev_qs, recent_hint_formats,
+                            _study_summary)
         new_turn_number = current_turn.turn_number + 1
         db.add(SessionTurn(
             session_id=session.id, turn_number=new_turn_number,
@@ -2992,7 +3081,7 @@ def get_flashcard_question(
         raise HTTPException(status_code=404, detail="Topic not found")
     topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
 
-    nq = generate_question(topic, "L1", [])
+    nq = _next_question(db, topic, "L1", [])
     return {
         "topic_id": topic.id,
         "topic_title": topic.title,

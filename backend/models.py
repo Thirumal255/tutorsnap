@@ -239,6 +239,21 @@ class TopicMastery(Base):
     student = relationship("User", foreign_keys=[student_id])
 
 
+class QuestionBank(Base):
+    """Pre-generated questions for a topic + level combination."""
+    __tablename__ = "question_bank"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+    level = Column(String(5), nullable=False)               # L1..L5
+    question_text = Column(Text, nullable=False)
+    expected_key_points = Column(Text, nullable=True)       # JSON list
+    answer_format = Column(String(30), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    topic = relationship("Topic")
+
+
 class ExamSession(Base):
     """Stores a timed mock-exam: questions generated upfront, answers submitted in bulk."""
     __tablename__ = "exam_sessions"

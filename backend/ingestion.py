@@ -775,6 +775,16 @@ def run_ingestion(book_id: int, filepath: str, db=None):
         db.commit()
         print(f"\nIngestion complete: {len(chapter_map)} chapters, {topic_count} topics")
 
+        # Auto-trigger question bank generation in a background thread
+        import threading
+        try:
+            from question_bank import generate_for_book
+            t = threading.Thread(target=generate_for_book, args=(book_id,), daemon=True)
+            t.start()
+            print(f"  Question bank generation started in background for book {book_id}")
+        except Exception as qe:
+            print(f"  [QuestionBank] Could not start generation: {qe}")
+
     except Exception as e:
         import traceback
         traceback.print_exc()
