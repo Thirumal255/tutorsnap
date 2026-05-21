@@ -89,6 +89,7 @@ jobs:
           GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest,\
           FRONTEND_URL=FRONTEND_URL:latest" \
             --set-env-vars="\
+          ENVIRONMENT=production,\
           CLAUDE_MODEL=claude-sonnet-4-5-20250929,\
           CLAUDE_FAST_MODEL=claude-haiku-4-5-20251001,\
           USE_GCS=true,\

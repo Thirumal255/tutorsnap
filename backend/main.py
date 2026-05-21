@@ -305,9 +305,12 @@ class DevLoginRequest(BaseModel):
 
 @app.post("/api/auth/dev-login")
 def dev_login(req: DevLoginRequest, db: Session = Depends(get_db)):
-    """Dev-only endpoint — disabled in production (when GOOGLE_CLIENT_ID is real)."""
+    """Dev-only endpoint — returns 404 in production so it appears not to exist."""
+    if os.getenv("ENVIRONMENT", "development").lower() == "production":
+        raise HTTPException(status_code=404, detail="Not found")
+    # Legacy flag also supported
     if os.getenv("DISABLE_DEV_LOGIN", "false").lower() == "true":
-        raise HTTPException(status_code=403, detail="Dev login disabled")
+        raise HTTPException(status_code=404, detail="Not found")
 
     admin_emails = [e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
     user = db.query(User).filter(User.email == req.email).first()
