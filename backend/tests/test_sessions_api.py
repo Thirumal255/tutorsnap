@@ -61,7 +61,7 @@ class TestStartSession:
         topic = make_topic(db, ch.id)
 
         user = make_user(db, email="ss@test.com", google_id="g-ss")
-        make_studied(db, user.name, topic.id)  # unlock: studied=True required
+        make_studied(db, user.name, topic.id, student_id=user.id)  # unlock: studied=True required
         resp = client.post(
             "/api/session/start",
             json={"student_name": user.name, "topic_id": topic.id},
@@ -96,7 +96,7 @@ class TestStartSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="rec@test.com", google_id="g-rec")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         resp = client.post(
             "/api/session/start",
@@ -120,7 +120,7 @@ class TestStartSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="lvl@test.com", google_id="g-lvl")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         resp = client.post(
             "/api/session/start",
@@ -150,7 +150,7 @@ class TestSubmitAnswer:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="ans@test.com", google_id="g-ans")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -192,7 +192,7 @@ class TestSubmitAnswer:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="inc@test.com", google_id="g-inc")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -230,7 +230,7 @@ class TestHintEndpoint:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="hint@test.com", google_id="g-hint")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -262,7 +262,7 @@ class TestHintEndpoint:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="ht@test.com", google_id="g-ht")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -305,7 +305,7 @@ class TestEndSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="end@test.com", google_id="g-end")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         start_resp = client.post(
             "/api/session/start",
@@ -338,7 +338,7 @@ class TestEndSession:
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
         user = make_user(db, email="mark@test.com", google_id="g-mark")
-        make_studied(db, user.name, topic.id)
+        make_studied(db, user.name, topic.id, student_id=user.id)
 
         start_resp = client.post(
             "/api/session/start",

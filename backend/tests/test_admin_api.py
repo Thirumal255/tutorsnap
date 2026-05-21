@@ -147,6 +147,7 @@ class TestAdminStudents:
         topic = make_topic(db, ch.id)
 
         db.add(TopicMastery(
+            student_id=student.id,
             student_name=student.name,
             topic_id=topic.id,
             mastery_level="L4",
@@ -162,7 +163,7 @@ class TestAdminStudents:
         assert resp.status_code == 200
 
         remaining = db.query(TopicMastery).filter(
-            TopicMastery.student_name == student.name
+            TopicMastery.student_id == student.id
         ).count()
         assert remaining == 0
 

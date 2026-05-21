@@ -31,7 +31,7 @@ class TestExamStart:
         chapter = make_chapter(db, book.id)
         topic   = make_topic(db, chapter.id)
         # Mark the chapter as fully completed so the chapter-completion gate passes
-        make_mastery(db, student.name, topic.id, mastery_level="L2")
+        make_mastery(db, student.name, topic.id, mastery_level="L2", student_id=student.id)
 
         with patch("session_engine.call_claude", return_value=_mock_question()):
             resp = client.post(

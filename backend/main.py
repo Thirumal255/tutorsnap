@@ -96,6 +96,20 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS study_summary TEXT"
             ))
+            # student_id FK — added in migration i9c3d4e5f6g7
+            conn.execute(text(
+                "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS student_id INTEGER REFERENCES users(id)"
+            ))
+            # Backfill student_id where still NULL
+            conn.execute(text("""
+                UPDATE topic_mastery
+                SET student_id = (
+                    SELECT id FROM users
+                    WHERE users.name = topic_mastery.student_name
+                    LIMIT 1
+                )
+                WHERE student_id IS NULL
+            """))
             conn.commit()
             print("Migration: schema up to date")
     except Exception as e:
@@ -177,16 +191,16 @@ def _update_user_xp(db: Session, user_id: int, xp_amount: int) -> None:
     # No commit here — caller commits
 
 
-def _student_stats(db: Session, student_name: str) -> dict:
+def _student_stats(db: Session, user_id: int) -> dict:
     total = db.query(func.count(SessionModel.id)).filter(
-        SessionModel.student_name == student_name
+        SessionModel.user_id == user_id
     ).scalar() or 0
     mastered = db.query(func.count(TopicMastery.id)).filter(
-        TopicMastery.student_name == student_name,
+        TopicMastery.student_id == user_id,
         TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
     ).scalar() or 0
     flagged = db.query(func.count(TopicMastery.id)).filter(
-        TopicMastery.student_name == student_name,
+        TopicMastery.student_id == user_id,
         TopicMastery.flagged_for_review == True,
     ).scalar() or 0
     return {"total_sessions": total, "topics_mastered": mastered, "flagged_topics": flagged}
@@ -220,7 +234,7 @@ def _update_mastery(db: Session, session, topic, flagged: bool = False):
     next_review = datetime.utcnow() + timedelta(days=interval)
 
     mastery = db.query(TopicMastery).filter(
-        TopicMastery.student_name == session.student_name,
+        TopicMastery.student_id == session.user_id,
         TopicMastery.topic_id == session.topic_id,
     ).first()
     if mastery:
@@ -233,6 +247,7 @@ def _update_mastery(db: Session, session, topic, flagged: bool = False):
             mastery.flagged_for_review = True
     else:
         db.add(TopicMastery(
+            student_id=session.user_id,
             student_name=session.student_name,
             topic_id=session.topic_id,
             mastery_level=session.current_level,
@@ -713,7 +728,7 @@ def get_topics(
         ]
         if all_topic_ids:
             records = db.query(TopicMastery).filter(
-                TopicMastery.student_name == current_user.name,
+                TopicMastery.student_id == current_user.id,
                 TopicMastery.topic_id.in_(all_topic_ids),
             ).all()
             mastery_map = {r.topic_id: r for r in records}
@@ -866,11 +881,11 @@ def complete_study(
 
     # Upsert mastery record and save study_summary
     mastery = db.query(TopicMastery).filter(
-        TopicMastery.student_name == req.student_name,
+        TopicMastery.student_id == current_user.id,
         TopicMastery.topic_id == topic_id,
     ).first()
     if not mastery:
-        mastery = TopicMastery(student_name=req.student_name, topic_id=topic_id, mastery_level="L1")
+        mastery = TopicMastery(student_id=current_user.id, student_name=current_user.name, topic_id=topic_id, mastery_level="L1")
         db.add(mastery)
         db.flush()
 
@@ -907,7 +922,7 @@ def unlock_practice(
         raise HTTPException(status_code=403, detail="Students only")
 
     mastery = db.query(TopicMastery).filter(
-        TopicMastery.student_name == req.student_name,
+        TopicMastery.student_id == current_user.id,
         TopicMastery.topic_id == topic_id,
     ).first()
     if not mastery:
@@ -944,12 +959,12 @@ def start_session(
     topic.chapter = chapter
 
     mastery = db.query(TopicMastery).filter(
-        TopicMastery.student_name == req.student_name,
+        TopicMastery.student_id == current_user.id,
         TopicMastery.topic_id == req.topic_id,
     ).first()
     just_created = False
     if not mastery:
-        mastery = TopicMastery(student_name=req.student_name, topic_id=req.topic_id, mastery_level="L1")
+        mastery = TopicMastery(student_id=current_user.id, student_name=req.student_name, topic_id=req.topic_id, mastery_level="L1")
         db.add(mastery)
         db.commit()
         db.refresh(mastery)
@@ -982,7 +997,7 @@ def start_session(
     db.refresh(session)
 
     prev_sessions = db.query(SessionModel).filter(
-        SessionModel.student_name == req.student_name,
+        SessionModel.user_id == current_user.id,
         SessionModel.topic_id == req.topic_id,
         SessionModel.id != session.id,
     ).all()
@@ -1035,7 +1050,7 @@ def submit_answer(
     topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
 
     _mastery = db.query(TopicMastery).filter(
-        TopicMastery.student_name == session.student_name,
+        TopicMastery.student_id == session.user_id,
         TopicMastery.topic_id == session.topic_id,
     ).first()
     _study_summary = (_mastery.study_summary or "") if _mastery else ""
@@ -1349,7 +1364,7 @@ def admin_get_students(
     students = db.query(User).filter(User.role == "student").order_by(User.name).all()
     result = []
     for s in students:
-        stats = _student_stats(db, s.name)
+        stats = _student_stats(db, s.id)
         result.append({**_user_dict(s), **stats})
     return result
 
@@ -1364,7 +1379,7 @@ def admin_get_student(
     if not user:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    masteries = db.query(TopicMastery).filter(TopicMastery.student_name == user.name).all()
+    masteries = db.query(TopicMastery).filter(TopicMastery.student_id == user.id).all()
     topic_mastery_list = []
     for m in masteries:
         topic = db.query(Topic).filter(Topic.id == m.topic_id).first()
@@ -1378,7 +1393,7 @@ def admin_get_student(
             "last_hint_tier_needed": m.last_hint_tier_needed,
         })
 
-    recent = (db.query(SessionModel).filter(SessionModel.student_name == user.name)
+    recent = (db.query(SessionModel).filter(SessionModel.user_id == user.id)
               .order_by(SessionModel.started_at.desc()).limit(10).all())
     recent_sessions = []
     for s in recent:
@@ -1458,7 +1473,7 @@ def admin_reset_mastery(
     user = db.query(User).filter(User.id == student_id, User.role == "student").first()
     if not user:
         raise HTTPException(status_code=404, detail="Student not found")
-    deleted = db.query(TopicMastery).filter(TopicMastery.student_name == user.name).delete()
+    deleted = db.query(TopicMastery).filter(TopicMastery.student_id == user.id).delete()
     db.commit()
     return {"message": f"Mastery reset for {user.name}", "topics_cleared": deleted}
 
@@ -1584,7 +1599,7 @@ def admin_resolve_flag(
     if not user:
         raise HTTPException(status_code=404, detail="Student not found")
     mastery = db.query(TopicMastery).filter(
-        TopicMastery.student_name == user.name,
+        TopicMastery.student_id == user.id,
         TopicMastery.topic_id == topic_id,
     ).first()
     if not mastery:
@@ -1632,11 +1647,11 @@ def admin_overview(
     sessions_this_week = db.query(func.count(SessionModel.id)).filter(
         SessionModel.started_at >= week_ago
     ).scalar() or 0
-    active_names = db.query(SessionModel.student_name).filter(
-        SessionModel.started_at >= week_ago
-    ).distinct().all()
-    active_this_week = len(active_names)
-    flagged_students = db.query(func.count(func.distinct(TopicMastery.student_name))).filter(
+    active_this_week = db.query(func.count(func.distinct(SessionModel.user_id))).filter(
+        SessionModel.started_at >= week_ago,
+        SessionModel.user_id.isnot(None),
+    ).scalar() or 0
+    flagged_students = db.query(func.count(func.distinct(TopicMastery.student_id))).filter(
         TopicMastery.flagged_for_review == True
     ).scalar() or 0
     books_uploaded = db.query(func.count(Book.id)).scalar() or 0
@@ -1728,7 +1743,7 @@ def admin_analytics(
     top_students = []
     for u in top_users:
         mastered = db.query(func.count(TopicMastery.id)).filter(
-            TopicMastery.student_name == u.name,
+            TopicMastery.student_id == u.id,
             TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
         ).scalar() or 0
         top_students.append({
@@ -1762,12 +1777,12 @@ def parent_get_children(
         child = db.query(User).filter(User.id == link.student_id).first()
         if not child:
             continue
-        stats = _student_stats(db, child.name)
-        last_session = (db.query(SessionModel).filter(SessionModel.student_name == child.name)
+        stats = _student_stats(db, child.id)
+        last_session = (db.query(SessionModel).filter(SessionModel.user_id == child.id)
                         .order_by(SessionModel.started_at.desc()).first())
         # Streak — consecutive days ending today with ≥1 session
         week_sessions = (db.query(SessionModel)
-                         .filter(SessionModel.student_name == child.name,
+                         .filter(SessionModel.user_id == child.id,
                                  SessionModel.started_at >= week_start).all())
         day_counts: dict[str, int] = {}
         for s in week_sessions:
@@ -1811,7 +1826,7 @@ def parent_get_child_detail(
     if not child:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    sessions = (db.query(SessionModel).filter(SessionModel.student_name == child.name)
+    sessions = (db.query(SessionModel).filter(SessionModel.user_id == child.id)
                 .order_by(SessionModel.started_at.desc()).all())
 
     total_sessions = len(sessions)
@@ -1820,7 +1835,7 @@ def parent_get_child_detail(
         if s.started_at and s.ended_at:
             total_minutes += int((s.ended_at - s.started_at).total_seconds() / 60)
 
-    masteries = db.query(TopicMastery).filter(TopicMastery.student_name == child.name).all()
+    masteries = db.query(TopicMastery).filter(TopicMastery.student_id == child.id).all()
     topics_practised = len(masteries)
     topics_at_l3 = sum(1 for m in masteries if m.mastery_level in ("L3", "L4", "L5"))
     flagged_count = sum(1 for m in masteries if m.flagged_for_review)
@@ -1923,7 +1938,7 @@ def parent_get_child_sessions(
     if not child:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    sessions = (db.query(SessionModel).filter(SessionModel.student_name == child.name)
+    sessions = (db.query(SessionModel).filter(SessionModel.user_id == child.id)
                 .order_by(SessionModel.started_at.desc()).offset(offset).limit(limit).all())
     result = []
     for s in sessions:
@@ -1980,7 +1995,7 @@ def child_weekly_report(
     # New masteries achieved this week (L3+ reached/improved)
     new_masteries = []
     masteries_this_week = db.query(TopicMastery).join(Topic).filter(
-        TopicMastery.student_name == student.name,
+        TopicMastery.student_id == student.id,
         TopicMastery.last_practiced_at >= week_start,
         TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
     ).order_by(TopicMastery.last_practiced_at.desc()).limit(5).all()
@@ -2022,7 +2037,7 @@ def parent_family_activity(
         if not child:
             continue
         week_sessions = (db.query(SessionModel)
-                         .filter(SessionModel.student_name == child.name,
+                         .filter(SessionModel.user_id == child.id,
                                  SessionModel.started_at >= week_start).all())
         day_counts: dict[str, int] = {d: 0 for d in dates}
         for s in week_sessions:
@@ -2091,7 +2106,8 @@ def student_dashboard(
     if current_user.role != "student":
         raise HTTPException(status_code=403, detail="Students only")
 
-    student_name = current_user.name
+    student_id = current_user.id
+    student_name = current_user.name   # kept for display only
     grade = current_user.grade
 
     # ── All books for this grade ──────────────────────────────────────────
@@ -2099,7 +2115,7 @@ def student_dashboard(
 
     # Fetch all mastery records for this student in one query
     all_masteries = db.query(TopicMastery).filter(
-        TopicMastery.student_name == student_name
+        TopicMastery.student_id == student_id
     ).all()
     mastery_by_topic: dict[int, TopicMastery] = {m.topic_id: m for m in all_masteries}
 
@@ -2131,7 +2147,7 @@ def student_dashboard(
     # ── Last practiced topic ──────────────────────────────────────────────
     last_session = (
         db.query(SessionModel)
-        .filter(SessionModel.student_name == student_name)
+        .filter(SessionModel.user_id == student_id)
         .order_by(SessionModel.started_at.desc())
         .first()
     )
@@ -2159,7 +2175,7 @@ def student_dashboard(
     week_sessions = (
         db.query(SessionModel)
         .filter(
-            SessionModel.student_name == student_name,
+            SessionModel.user_id == student_id,
             SessionModel.started_at >= week_start,
         )
         .all()
@@ -2206,7 +2222,7 @@ def student_dashboard(
         "weekly_activity": weekly_activity,
         "streak_days": streak,
         "total_sessions": db.query(SessionModel).filter(
-            SessionModel.student_name == student_name
+            SessionModel.user_id == student_id
         ).count(),
         "total_xp": current_user.total_xp or 0,
         "weekly_xp": current_user.weekly_xp or 0,
@@ -2600,7 +2616,7 @@ def get_review_queue(
     due = (
         db.query(TopicMastery)
         .filter(
-            TopicMastery.student_name == current_user.name,
+            TopicMastery.student_id == current_user.id,
             TopicMastery.next_review_at != None,
             TopicMastery.next_review_at <= now,
             TopicMastery.flagged_for_review == False,
@@ -2685,7 +2701,7 @@ def get_mistakes(
         ch = db.query(Chapter).filter(Chapter.id == t.chapter_id).first()
         bk = db.query(Book).filter(Book.id == ch.book_id).first() if ch else None
         m = db.query(TopicMastery).filter(
-            TopicMastery.student_name == current_user.name,
+            TopicMastery.student_id == current_user.id,
             TopicMastery.topic_id == topic_id,
         ).first()
         result.append({
@@ -2734,7 +2750,7 @@ def start_exam(
         row[0] for row in
         db.query(TopicMastery.topic_id)
         .filter(
-            TopicMastery.student_name == current_user.name,
+            TopicMastery.student_id == current_user.id,
             TopicMastery.mastery_level.isnot(None),
         ).all()
     )
@@ -2975,7 +2991,7 @@ def mark_flashcard(
         raise HTTPException(status_code=403, detail="Students only")
 
     mastery = db.query(TopicMastery).filter(
-        TopicMastery.student_name == current_user.name,
+        TopicMastery.student_id == current_user.id,
         TopicMastery.topic_id == req.topic_id,
     ).first()
 
@@ -3004,7 +3020,7 @@ def student_sessions(
 
     sessions = (
         db.query(SessionModel)
-        .filter(SessionModel.student_name == current_user.name)
+        .filter(SessionModel.user_id == current_user.id)
         .order_by(SessionModel.started_at.desc())
         .limit(limit)
         .all()
@@ -3041,13 +3057,12 @@ def student_progress(
     if current_user.role != "student":
         raise HTTPException(status_code=403, detail="Students only")
 
-    student_name = current_user.name
     grade = current_user.grade
 
     books = db.query(Book).filter(Book.grade == grade, Book.ingestion_status == "done").all()
 
     all_masteries = db.query(TopicMastery).filter(
-        TopicMastery.student_name == student_name
+        TopicMastery.student_id == current_user.id
     ).all()
     mastery_by_topic: dict[int, TopicMastery] = {m.topic_id: m for m in all_masteries}
 

@@ -271,14 +271,15 @@ class TestTopicMastery:
         from models import TopicMastery
         from sqlalchemy.exc import IntegrityError
 
+        student = make_user(db, email="eve@test.com", google_id="g-eve")
         book = make_book(db)
         ch = make_chapter(db, book.id)
         topic = make_topic(db, ch.id)
 
-        db.add(TopicMastery(student_name="Eve", topic_id=topic.id, mastery_level="L1"))
+        db.add(TopicMastery(student_id=student.id, student_name=student.name, topic_id=topic.id, mastery_level="L1"))
         db.commit()
 
-        db.add(TopicMastery(student_name="Eve", topic_id=topic.id, mastery_level="L2"))
+        db.add(TopicMastery(student_id=student.id, student_name=student.name, topic_id=topic.id, mastery_level="L2"))
         with pytest.raises(IntegrityError):
             db.commit()
 

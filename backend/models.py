@@ -215,7 +215,8 @@ class TopicMastery(Base):
     __tablename__ = "topic_mastery"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_name = Column(String(100), nullable=False)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=True)   # preferred FK
+    student_name = Column(String(100), nullable=False)                     # legacy display name (kept for history)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
     mastery_level = Column(String(5), default="L1")
     consecutive_confident = Column(Integer, default=0)
@@ -232,9 +233,10 @@ class TopicMastery(Base):
     studied = Column(Boolean, default=False)               # True after first Study session completed
     study_summary = Column(Text, nullable=True)            # compact summary of what Buddy explained
 
-    __table_args__ = (UniqueConstraint("student_name", "topic_id"),)
+    __table_args__ = (UniqueConstraint("student_id", "topic_id"),)
 
     topic = relationship("Topic", back_populates="masteries")
+    student = relationship("User", foreign_keys=[student_id])
 
 
 class ExamSession(Base):

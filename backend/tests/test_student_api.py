@@ -81,6 +81,7 @@ class TestStudentProgress:
 
         user = make_user(db, email="mf@test.com", google_id="g-mf")
         mastery = TopicMastery(
+            student_id=user.id,
             student_name=user.name,
             topic_id=topic.id,
             mastery_level="L2",
@@ -230,6 +231,7 @@ class TestReviewQueue:
         user = make_user(db, email="due@test.com", google_id="g-due")
         # past review date → due now
         mastery = TopicMastery(
+            student_id=user.id,
             student_name=user.name,
             topic_id=topic.id,
             mastery_level="L2",

@@ -227,11 +227,14 @@ def make_topic(db, chapter_id, number="1.1", title="Topic 1"):
     return t
 
 
-def make_studied(db, student_name: str, topic_id: int):
+def make_studied(db, student_name: str, topic_id: int, student_id: int = None):
     """Create a TopicMastery row with studied=True so /api/session/start is allowed."""
     from models import TopicMastery
 
     existing = db.query(TopicMastery).filter(
+        TopicMastery.student_id == student_id,
+        TopicMastery.topic_id == topic_id,
+    ).first() if student_id else db.query(TopicMastery).filter(
         TopicMastery.student_name == student_name,
         TopicMastery.topic_id == topic_id,
     ).first()
@@ -241,6 +244,7 @@ def make_studied(db, student_name: str, topic_id: int):
         return existing
 
     m = TopicMastery(
+        student_id=student_id,
         student_name=student_name,
         topic_id=topic_id,
         studied=True,
@@ -252,11 +256,14 @@ def make_studied(db, student_name: str, topic_id: int):
     return m
 
 
-def make_mastery(db, student_name: str, topic_id: int, mastery_level: str = "L2", studied: bool = True):
+def make_mastery(db, student_name: str, topic_id: int, mastery_level: str = "L2", studied: bool = True, student_id: int = None):
     """Create a TopicMastery row with mastery_level and studied set (chapter-completion gate)."""
     from models import TopicMastery
 
     existing = db.query(TopicMastery).filter(
+        TopicMastery.student_id == student_id,
+        TopicMastery.topic_id == topic_id,
+    ).first() if student_id else db.query(TopicMastery).filter(
         TopicMastery.student_name == student_name,
         TopicMastery.topic_id == topic_id,
     ).first()
@@ -267,6 +274,7 @@ def make_mastery(db, student_name: str, topic_id: int, mastery_level: str = "L2"
         return existing
 
     m = TopicMastery(
+        student_id=student_id,
         student_name=student_name,
         topic_id=topic_id,
         mastery_level=mastery_level,
