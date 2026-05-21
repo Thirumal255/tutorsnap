@@ -87,9 +87,13 @@ function Leaderboard({ currentUser, refreshUser }) {
       .finally(() => setLoading(false))
   }, [])
 
+  const grade = currentUser?.grade || 0
+  const eligible = grade >= 6
+
   async function toggleVisibility() {
+    if (!eligible) return
     setToggling(true)
-    const newVal = !(currentUser?.show_on_leaderboard ?? true)
+    const newVal = !(currentUser?.show_on_leaderboard ?? false)
     try {
       await updateBuddySettings({ show_on_leaderboard: newVal })
       refreshUser()
@@ -107,6 +111,19 @@ function Leaderboard({ currentUser, refreshUser }) {
     </div>
   )
 
+  // Grade 1-5: leaderboard not available
+  if (!eligible || data?.disabled) {
+    return (
+      <div className="blox-card p-6 text-center space-y-3">
+        <div className="text-5xl">🔒</div>
+        <p className="text-white font-nunito font-bold">Leaderboard unlocks at Grade 6</p>
+        <p className="text-[#8892B0] text-sm">
+          Keep practising and earning XP — the leaderboard opens up when you reach Grade 6!
+        </p>
+      </div>
+    )
+  }
+
   if (!data) return (
     <div className="blox-card p-6 text-center">
       <p className="text-[#8892B0]">Could not load leaderboard.</p>
@@ -117,13 +134,25 @@ function Leaderboard({ currentUser, refreshUser }) {
   const sorted = [...leaderboard].sort((a, b) =>
     tab === 'total' ? b.total_xp - a.total_xp : b.weekly_xp - a.weekly_xp
   )
+  const optedIn = currentUser?.show_on_leaderboard ?? false
 
   return (
     <div className="space-y-4">
+      {/* Opt-in notice if not yet opted in */}
+      {!optedIn && (
+        <div className="bg-[#2D2B5A]/60 border border-[#3D3B6A] rounded-2xl p-3 flex items-center gap-3">
+          <span className="text-2xl">👤</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-xs font-nunito font-bold">You're hidden</p>
+            <p className="text-[#8892B0] text-xs">Turn on the toggle below to appear on the leaderboard.</p>
+          </div>
+        </div>
+      )}
+
       {/* My stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="blox-card p-3 text-center">
-          <p className="text-2xl font-fredoka font-bold text-[#FFD700]">#{my_rank ?? '—'}</p>
+          <p className="text-2xl font-fredoka font-bold text-[#FFD700]">#{optedIn && my_rank ? my_rank : '—'}</p>
           <p className="text-xs text-[#8892B0]">my rank</p>
         </div>
         <div className="blox-card p-3 text-center">
@@ -148,7 +177,7 @@ function Leaderboard({ currentUser, refreshUser }) {
       {/* Rankings */}
       {sorted.length === 0 ? (
         <div className="blox-card p-6 text-center">
-          <p className="text-[#8892B0] text-sm">No students on the leaderboard yet.</p>
+          <p className="text-[#8892B0] text-sm">No students on the leaderboard yet. Opt in below to be the first!</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -177,18 +206,21 @@ function Leaderboard({ currentUser, refreshUser }) {
         </div>
       )}
 
-      {/* Privacy toggle */}
+      {/* Privacy toggle — opt-in */}
       <div className="blox-card p-3 flex items-center justify-between">
-        <p className="text-xs text-[#8892B0]">Show me on the leaderboard</p>
+        <div>
+          <p className="text-xs text-white font-nunito font-semibold">Show me on the leaderboard</p>
+          <p className="text-[10px] text-[#8892B0]">Off by default — your choice</p>
+        </div>
         <button
           onClick={toggleVisibility}
-          disabled={toggling}
+          disabled={toggling || !eligible}
           className={`relative w-11 h-6 rounded-full transition-colors disabled:opacity-50 ${
-            (currentUser?.show_on_leaderboard ?? true) ? 'bg-[#00A2FF]' : 'bg-[#2D2B5A]'
+            optedIn ? 'bg-[#00A2FF]' : 'bg-[#2D2B5A]'
           }`}
         >
           <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-            (currentUser?.show_on_leaderboard ?? true) ? 'left-6' : 'left-1'
+            optedIn ? 'left-6' : 'left-1'
           }`} />
         </button>
       </div>
@@ -246,7 +278,7 @@ export default function StudentAchievements() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-fredoka font-bold text-white">🏆 Achievements</h1>
-          <p className="text-[#8892B0] text-sm mt-0.5">Earn badges and climb the leaderboard</p>
+          <p className="text-[#8892B0] text-sm mt-0.5">Earn badges and climb the leaderboard (Grade 6+)</p>
         </div>
         {stats && mainTab === 'badges' && (
           <div className="blox-card px-4 py-2 text-center">

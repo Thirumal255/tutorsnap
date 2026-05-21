@@ -187,7 +187,7 @@ def _user_dict(u: User) -> dict:
         # Gamification
         "total_xp": u.total_xp or 0,
         "weekly_xp": u.weekly_xp or 0,
-        "show_on_leaderboard": u.show_on_leaderboard if u.show_on_leaderboard is not None else True,
+        "show_on_leaderboard": u.show_on_leaderboard if u.show_on_leaderboard is not None else False,
         "buddy_name": u.buddy_name or "Buddy",
         "buddy_avatar": u.buddy_avatar or "robot",
         "avatar_preset": u.avatar_preset or None,
@@ -2439,7 +2439,8 @@ def get_buddy(current_user: User = Depends(get_current_user)):
     return {
         "buddy_name": current_user.buddy_name or "Buddy",
         "buddy_avatar": current_user.buddy_avatar or "robot",
-        "show_on_leaderboard": current_user.show_on_leaderboard if current_user.show_on_leaderboard is not None else True,
+        "show_on_leaderboard": current_user.show_on_leaderboard if current_user.show_on_leaderboard is not None else False,
+        "leaderboard_eligible": (current_user.grade or 0) >= _LEADERBOARD_MIN_GRADE,
     }
 
 
@@ -2464,13 +2465,17 @@ def update_buddy(
             raise HTTPException(status_code=400, detail=f"Invalid avatar. Choose from: {', '.join(VALID_AVATARS)}")
         user.buddy_avatar = req.buddy_avatar
     if req.show_on_leaderboard is not None:
-        user.show_on_leaderboard = req.show_on_leaderboard
+        # Grades 1-5 cannot opt in — silently ignore the request
+        if (user.grade or 0) >= _LEADERBOARD_MIN_GRADE:
+            user.show_on_leaderboard = req.show_on_leaderboard
+        else:
+            user.show_on_leaderboard = False
 
     db.commit()
     return {
         "buddy_name": user.buddy_name or "Buddy",
         "buddy_avatar": user.buddy_avatar or "robot",
-        "show_on_leaderboard": user.show_on_leaderboard if user.show_on_leaderboard is not None else True,
+        "show_on_leaderboard": user.show_on_leaderboard if user.show_on_leaderboard is not None else False,
     }
 
 
@@ -2579,16 +2584,30 @@ def serve_local_profile_avatar(filename: str):
     return FileResponse(filepath)
 
 
+_LEADERBOARD_MIN_GRADE = 6  # Grades 1-5 are exempt from leaderboard (child safety)
+
+
 @app.get("/api/student/leaderboard")
 def get_leaderboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """XP leaderboard for students in the same grade."""
+    """XP leaderboard for students in the same grade. Disabled for Grades 1-5."""
     if current_user.role != "student":
         raise HTTPException(status_code=403, detail="Students only")
+
+    grade = current_user.grade or 0
+
+    # Leaderboard is not available for younger students
+    if grade < _LEADERBOARD_MIN_GRADE:
+        return {
+            "disabled": True,
+            "reason": "Leaderboard is available from Grade 6 onwards.",
+            "leaderboard": [], "my_rank": None, "my_weekly_xp": 0, "my_total_xp": 0,
+        }
+
     if not current_user.grade:
-        return {"leaderboard": [], "my_rank": None, "my_weekly_xp": 0, "my_total_xp": 0}
+        return {"disabled": False, "leaderboard": [], "my_rank": None, "my_weekly_xp": 0, "my_total_xp": 0}
 
     students = (
         db.query(User)
@@ -2606,7 +2625,9 @@ def get_leaderboard(
     for s in sorted_students:
         rank_counter += 1
         is_me = s.id == current_user.id
-        if not (s.show_on_leaderboard if s.show_on_leaderboard is not None else True) and not is_me:
+        # Opt-in default is False — only show if explicitly opted in, or it's self
+        opted_in = s.show_on_leaderboard if s.show_on_leaderboard is not None else False
+        if not opted_in and not is_me:
             continue
         entry = {
             "rank": rank_counter,
@@ -2622,6 +2643,7 @@ def get_leaderboard(
             my_rank = rank_counter
 
     return {
+        "disabled": False,
         "leaderboard": result,
         "my_rank": my_rank,
         "my_total_xp": current_user.total_xp or 0,
