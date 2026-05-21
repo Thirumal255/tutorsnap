@@ -126,6 +126,16 @@ def run_migrations():
                 )
                 WHERE student_id IS NULL
             """))
+            # Streak columns — added in task #7
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0"
+            ))
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_freeze_available BOOLEAN DEFAULT FALSE"
+            ))
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_freeze_used_at TIMESTAMP"
+            ))
             conn.commit()
             print("Migration: schema up to date")
     except Exception as e:
@@ -205,6 +215,60 @@ def _update_user_xp(db: Session, user_id: int, xp_amount: int) -> None:
     user.total_xp = (user.total_xp or 0) + xp_amount
     user.weekly_xp = (user.weekly_xp or 0) + xp_amount
     # No commit here — caller commits
+
+
+def _compute_streak(db: Session, user: User, today: "date | None" = None) -> int:
+    """
+    Compute a student's current streak with compassionate rules:
+    - Weekend grace: Sat/Sun don't break an ongoing streak (skipping a weekend day
+      is treated the same as having a session that day).
+    - Streak freeze: if the user has streak_freeze_available and we detect a
+      gap on a non-weekend day, consume the freeze (one-time protection) and
+      continue counting.
+    - Returns the new streak count and mutates user.streak_days /
+      user.streak_freeze_available in place (caller must commit).
+    """
+    from datetime import date as _date
+    _today = today or datetime.utcnow().date()
+
+    # Fetch all distinct session dates in the last 365 days (generous window)
+    cutoff = datetime.utcnow() - timedelta(days=365)
+    rows = (
+        db.query(SessionModel.started_at)
+        .filter(SessionModel.user_id == user.id, SessionModel.started_at >= cutoff)
+        .all()
+    )
+    session_dates: set[str] = {r[0].date().isoformat() for r in rows if r[0]}
+
+    streak = 0
+    freeze_used = False
+
+    for i in range(365):
+        d = _today - timedelta(days=i)
+        d_str = d.isoformat()
+        is_weekend = d.weekday() >= 5  # Saturday=5, Sunday=6
+
+        if d_str in session_dates:
+            streak += 1
+        elif is_weekend:
+            # Weekend grace — count as if active (only while streak is building)
+            if streak > 0 or i == 0:
+                streak += 1
+        elif not freeze_used and user.streak_freeze_available:
+            # Consume the freeze token for this missed weekday
+            freeze_used = True
+            user.streak_freeze_available = False
+            user.streak_freeze_used_at = datetime.utcnow()
+            streak += 1
+        else:
+            break  # genuine gap, stop
+
+    # Award a new freeze token at every 7-day streak milestone (if none available)
+    if streak > 0 and streak % 7 == 0 and not user.streak_freeze_available and not freeze_used:
+        user.streak_freeze_available = True
+
+    user.streak_days = streak
+    return streak
 
 
 def _student_stats(db: Session, user_id: int) -> dict:
@@ -1426,12 +1490,18 @@ def end_session(
     answered_turns = [t for t in turns if t.student_answer and t.assessment_score is not None]
     xp_display = sum(max(0, (t.assessment_score or 0) - 40) // 10 * 5 for t in answered_turns)
 
+    # Update persisted streak for the current user
+    new_streak = _compute_streak(db, current_user)
+    db.commit()
+
     return {"session_id": session.id, "student_name": session.student_name,
             "topic_title": topic.title, "level_reached": session.current_level,
             "level_label": level_label(session.current_level),
             "questions_asked": session.questions_asked, "summary": summary,
             "flagged_for_review": session.flagged_for_review,
-            "xp_earned": xp_display}
+            "xp_earned": xp_display,
+            "streak_days": new_streak,
+            "streak_freeze_available": current_user.streak_freeze_available}
 
 
 # ─── Phase C: Admin Routes ─────────────────────────────────────────────────
@@ -1891,7 +1961,7 @@ def parent_get_children(
         stats = _student_stats(db, child.id)
         last_session = (db.query(SessionModel).filter(SessionModel.user_id == child.id)
                         .order_by(SessionModel.started_at.desc()).first())
-        # Streak — consecutive days ending today with ≥1 session
+        # Streak — compassionate streak with weekend grace + freeze
         week_sessions = (db.query(SessionModel)
                          .filter(SessionModel.user_id == child.id,
                                  SessionModel.started_at >= week_start).all())
@@ -1899,13 +1969,7 @@ def parent_get_children(
         for s in week_sessions:
             d = s.started_at.date().isoformat()
             day_counts[d] = day_counts.get(d, 0) + 1
-        streak = 0
-        for i in range(7):
-            d = (today - timedelta(days=i)).isoformat()
-            if day_counts.get(d, 0) > 0:
-                streak += 1
-            else:
-                break
+        streak = _compute_streak(db, child)
         sessions_this_week = sum(day_counts.values())
         result.append({
             "id": child.id, "name": child.name, "grade": child.grade,
@@ -1994,7 +2058,7 @@ def parent_get_child_detail(
                             "Consider reviewing it together."),
             })
 
-    # Streak for this child
+    # Streak for this child — compassionate streak with weekend grace + freeze
     today_dt = datetime.utcnow().date()
     week_start_dt = datetime.utcnow() - timedelta(days=6)
     week_sess = [s for s in sessions if s.started_at and s.started_at >= week_start_dt]
@@ -2002,13 +2066,7 @@ def parent_get_child_detail(
     for s in week_sess:
         d = s.started_at.date().isoformat()
         day_counts_detail[d] = day_counts_detail.get(d, 0) + 1
-    streak_detail = 0
-    for i in range(7):
-        d = (today_dt - timedelta(days=i)).isoformat()
-        if day_counts_detail.get(d, 0) > 0:
-            streak_detail += 1
-        else:
-            break
+    streak_detail = _compute_streak(db, child)
 
     # 7-day activity for this child
     weekly_activity = []
@@ -2126,7 +2184,7 @@ def child_weekly_report(
         },
         "delta_sessions": len(this_week_sessions) - len(last_week_sessions),
         "new_masteries": new_masteries,
-        "streak_days": student.total_xp,  # proxy — real streak stored elsewhere
+        "streak_days": student.streak_days or 0,
     }
 
 
@@ -2302,14 +2360,9 @@ def student_dashboard(
 
     weekly_activity = [{"date": d, "sessions": cnt} for d, cnt in sorted(day_counts.items())]
 
-    # ── Streak: consecutive days with at least 1 session (ending today) ──
-    streak = 0
-    for i in range(7):
-        d = (today - timedelta(days=i)).isoformat()
-        if day_counts.get(d, 0) > 0:
-            streak += 1
-        else:
-            break
+    # ── Streak: compassionate streak with weekend grace + freeze token ────────
+    streak = _compute_streak(db, current_user)
+    db.commit()
 
     # ── Weekly challenge status ──────────────────────────────────────────────
     weekly_challenge_done = False
@@ -2338,6 +2391,7 @@ def student_dashboard(
         "total_xp": current_user.total_xp or 0,
         "weekly_xp": current_user.weekly_xp or 0,
         "weekly_challenge_done": weekly_challenge_done,
+        "streak_freeze_available": current_user.streak_freeze_available or False,
     }
 
 
@@ -2352,6 +2406,29 @@ class WeeklyChallengeSubmitRequest(BaseModel):
     challenge_id: int
     answer: str
     image_data: Optional[str] = None   # base64 JPEG for handwritten answers
+
+
+@app.post("/api/student/use-streak-freeze")
+def use_streak_freeze(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Manually apply a streak freeze token.
+    The token is normally consumed automatically during streak computation,
+    but this endpoint lets the frontend confirm that a freeze was applied
+    and surface it to the student.
+    """
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    streak = _compute_streak(db, current_user)
+    db.commit()
+    return {
+        "streak_days": streak,
+        "streak_freeze_available": current_user.streak_freeze_available or False,
+        "freeze_used": current_user.streak_freeze_used_at is not None,
+    }
 
 
 @app.get("/api/student/buddy")

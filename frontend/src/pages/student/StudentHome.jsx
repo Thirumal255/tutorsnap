@@ -349,6 +349,9 @@ export default function StudentHome() {
             <div className="blox-card px-3 py-2 text-center min-w-[56px]">
               <p className="text-lg font-fredoka font-bold text-[#FF6B6B]">
                 {data.streak_days > 0 ? `🔥${data.streak_days}` : '—'}
+                {data.streak_freeze_available && (
+                  <span className="ml-1 text-sm" title="Streak freeze ready!">🛡️</span>
+                )}
               </p>
               <p className="text-[10px] text-[#8892B0]">streak</p>
             </div>

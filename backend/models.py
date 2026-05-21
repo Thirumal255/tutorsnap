@@ -30,6 +30,11 @@ class User(Base):
     buddy_avatar = Column(String(50), nullable=True)  # preset key: robot/fox/etc.
     avatar_preset = Column(String(50), nullable=True) # profile avatar preset key e.g. "fox"
 
+    # ── Streak ────────────────────────────────────────────────────────────────
+    streak_days = Column(Integer, default=0)                 # persisted current streak
+    streak_freeze_available = Column(Boolean, default=False) # has an unused freeze token
+    streak_freeze_used_at = Column(DateTime, nullable=True)  # when the last freeze was consumed
+
     parent_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.parent_id", back_populates="parent")
     student_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.student_id", back_populates="student")
     notifications = relationship("Notification", back_populates="user")
