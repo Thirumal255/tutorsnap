@@ -17,6 +17,7 @@ import StudentAchievements from './pages/student/StudentAchievements'
 import StudentMistakes from './pages/student/StudentMistakes'
 import ExamMode from './pages/ExamMode'
 import FlashcardMode from './pages/FlashcardMode'
+import InterleavedMode from './pages/InterleavedMode'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminStudents from './pages/admin/AdminStudents'
@@ -79,6 +80,11 @@ export default function App() {
             <Route path="/flashcard" element={
               <ProtectedRoute roles={['student']}>
                 <FlashcardMode />
+              </ProtectedRoute>
+            } />
+            <Route path="/interleaved" element={
+              <ProtectedRoute roles={['student']}>
+                <InterleavedMode />
               </ProtectedRoute>
             } />
 

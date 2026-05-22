@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { getBooks, getTopics, startSession } from '../../api/client'
+import { getBooks, getTopics, startSession, getActiveSessions } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { useToast } from '../../context/ToastContext'
 
@@ -47,6 +47,7 @@ export default function StudentPractice() {
   const [loading, setLoading] = useState(true)
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [starting, setStarting] = useState(null)
+  const [activeSessions, setActiveSessions] = useState([])  // #62
 
   const bySubject = books.reduce((acc, b) => {
     const s = b.subject || 'Other'
@@ -61,12 +62,20 @@ export default function StudentPractice() {
     async function load() {
       if (!user?.grade) { setLoading(false); return }
       try {
-        const res = await getBooks(user.grade)
-        const done = res.data.filter(b => b.status === 'done')
-        setBooks(done)
-        const uniq = [...new Set(done.map(b => b.subject || 'Other'))]
-        setSubjects(uniq)
-        if (!activeSubject && uniq.length > 0) setActiveSubject(uniq[0])
+        const [booksRes, activeRes] = await Promise.allSettled([
+          getBooks(user.grade),
+          getActiveSessions(),  // #62
+        ])
+        if (booksRes.status === 'fulfilled') {
+          const done = booksRes.value.data.filter(b => b.status === 'done')
+          setBooks(done)
+          const uniq = [...new Set(done.map(b => b.subject || 'Other'))]
+          setSubjects(uniq)
+          if (!activeSubject && uniq.length > 0) setActiveSubject(uniq[0])
+        }
+        if (activeRes.status === 'fulfilled') {
+          setActiveSessions(activeRes.value.data || [])
+        }
       } catch {
         setBooks([])
       } finally {
@@ -166,23 +175,57 @@ export default function StudentPractice() {
         <p className="text-[#8892B0] text-sm mt-0.5">Pick a topic and battle it out!</p>
       </div>
 
-      {/* Quick-access: Exam Mode + Flashcards */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* #62 Resume active sessions */}
+      {activeSessions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-[#FFB347] font-semibold uppercase tracking-widest">
+            🔄 Resume where you left off
+          </p>
+          {activeSessions.map(s => (
+            <button
+              key={s.session_id}
+              onClick={() => navigate(`/session/${s.session_id}`)}
+              className="w-full blox-card px-4 py-3 text-left flex items-center gap-3 hover:border-[#FFB347]/50 transition-all group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-[#FFB347]/20 flex items-center justify-center text-xl flex-shrink-0">
+                📖
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-fredoka font-bold text-white truncate">{s.topic_title}</p>
+                <p className="text-xs text-[#8892B0]">{s.chapter_title} · {s.questions_asked} question{s.questions_asked !== 1 ? 's' : ''} answered · {s.current_level}</p>
+              </div>
+              <span className="text-[#FFB347] text-sm flex-shrink-0 group-hover:translate-x-1 transition-transform">▶</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Quick-access: Exam Mode + Flashcards + Mixed Practice */}
+      <div className="grid grid-cols-3 gap-3">
         <button
           onClick={() => navigate('/exam')}
           className="blox-card p-4 text-left hover:border-[#FF6B9D]/60 transition-all blox-hover group"
         >
           <div className="text-3xl mb-2">🎯</div>
-          <p className="font-fredoka font-bold text-white text-base">Exam Mode</p>
-          <p className="text-xs text-[#8892B0] mt-0.5">Timed test · No hints</p>
+          <p className="font-fredoka font-bold text-white text-sm">Exam Mode</p>
+          <p className="text-xs text-[#8892B0] mt-0.5">Timed · No hints</p>
         </button>
         <button
           onClick={() => navigate('/flashcard')}
           className="blox-card p-4 text-left hover:border-[#00CC88]/60 transition-all blox-hover group"
         >
           <div className="text-3xl mb-2">⚡</div>
-          <p className="font-fredoka font-bold text-white text-base">Flashcards</p>
-          <p className="text-xs text-[#8892B0] mt-0.5">Quick review · Spaced rep</p>
+          <p className="font-fredoka font-bold text-white text-sm">Flashcards</p>
+          <p className="text-xs text-[#8892B0] mt-0.5">Quick review</p>
+        </button>
+        {/* #27 Mixed practice */}
+        <button
+          onClick={() => navigate('/interleaved')}
+          className="blox-card p-4 text-left hover:border-[#A78BFA]/60 transition-all blox-hover group"
+        >
+          <div className="text-3xl mb-2">🔀</div>
+          <p className="font-fredoka font-bold text-white text-sm">Mix It Up</p>
+          <p className="text-xs text-[#8892B0] mt-0.5">Multiple topics</p>
         </button>
       </div>
 

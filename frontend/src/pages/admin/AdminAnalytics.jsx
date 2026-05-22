@@ -248,6 +248,42 @@ export default function AdminAnalytics() {
             </div>
           )}
 
+          {/* ── Hardest topics (#61) ────────────────────────────── */}
+          {data.hardest_topics?.length > 0 && (
+            <div className="blox-card p-5 animate-bounce-in" style={{ animationDelay: '0.22s' }}>
+              <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold mb-4">
+                🚩 Hardest topics (most flags)
+              </p>
+              <div className="space-y-2">
+                {data.hardest_topics.map((t, i) => {
+                  const maxFlags = Math.max(...data.hardest_topics.map(x => x.flags), 1)
+                  return (
+                    <div key={t.topic_id} className="flex items-center gap-3">
+                      <span className="text-xs font-fredoka font-bold text-[#8892B0] w-4 flex-shrink-0">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <div className="min-w-0 flex-1">
+                            <span className="font-semibold text-white truncate block">{t.title}</span>
+                            <span className="text-[#8892B0]">{SUBJECT_EMOJI[t.subject] || '📚'} {t.subject}</span>
+                          </div>
+                          <span className="text-[#FF6B6B] font-fredoka font-bold ml-3 flex-shrink-0">
+                            🚩 {t.flags}
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-[#FF6B6B] rounded-full transition-all duration-700"
+                            style={{ width: `${(t.flags / maxFlags) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ── Top students leaderboard ─────────────────────────── */}
           <div className="blox-card p-5 animate-bounce-in" style={{ animationDelay: '0.25s' }}>
             <div className="flex items-center justify-between mb-4">

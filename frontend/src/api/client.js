@@ -134,6 +134,13 @@ export const getParentNotifications = () => api.get('/parent/notifications')
 export const markNotificationRead = (id) => api.post(`/parent/notifications/${id}/read`)
 export const markAllNotificationsRead = () => api.post('/parent/notifications/mark-all-read')
 
+// #62 Session recovery
+export const getActiveSessions  = () => api.get('/student/active-sessions')
+export const getSessionInfo     = (id) => api.get(`/session/${id}/info`)
+
+// #27 Interleaved practice
+export const getInterleavedTopics = (limit = 6) => api.get('/student/interleaved-topics', { params: { limit } })
+
 // #50 Parent encouragement
 export const encourageChild = (childId, message) =>
   api.post(`/parent/children/${childId}/encourage`, { message })

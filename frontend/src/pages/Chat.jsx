@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { submitAnswer, requestHint, requestSubQuestion, endSession } from '../api/client'
+import { submitAnswer, requestHint, requestSubQuestion, endSession, getSessionInfo } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import ChatBubble from '../components/ChatBubble'
 import HintButton from '../components/HintButton'
@@ -82,20 +82,45 @@ export default function Chat() {
 
   useEffect(() => {
     const stored = sessionStorage.getItem(`session_${sessionId}`)
-    if (!stored) { navigate('/practice'); return }
-    const data = JSON.parse(stored)
-    setSession(data)
-    setCurrentLevel(data.currentLevel)
-    setAnswerFormat(data.answerFormat || null)
-    setIsPracticeMode(!!data.isPractice)  // #58
-    setMessages([{ sender: 'buddy', text: data.initialMessage }])
-    if (data.diagnostic) {
-      setDiagnosticPhase(true)
-      setDiagnosticTurn(1)
+    if (stored) {
+      const data = JSON.parse(stored)
+      setSession(data)
+      setCurrentLevel(data.currentLevel)
+      setAnswerFormat(data.answerFormat || null)
+      setIsPracticeMode(!!data.isPractice)  // #58
+      setMessages([{ sender: 'buddy', text: data.initialMessage }])
+      if (data.diagnostic) { setDiagnosticPhase(true); setDiagnosticTurn(1) }
+      if (data.workedExample) setWorkedExample(data.workedExample)
+      return
     }
-    if (data.workedExample) {
-      setWorkedExample(data.workedExample)
-    }
+    // #62 Multi-device recovery: sessionStorage missing (different tab/device)
+    getSessionInfo(sessionId).then(res => {
+      const info = res.data
+      if (info.status === 'completed') { navigate('/practice'); return }
+      const recovered = {
+        sessionId: info.session_id,
+        studentName: info.student_name,
+        topicTitle: info.topic_title,
+        chapterTitle: info.chapter_title,
+        currentLevel: info.current_level,
+        levelLabel: info.level_label,
+        topicId: info.topic_id,
+        answerFormat: info.answer_format || null,
+        diagnostic: info.diagnostic || false,
+        isPractice: info.is_practice || false,
+        workedExample: null,
+        initialMessage: info.last_question
+          ? `Welcome back! Here's where we left off:\n\n${info.last_question}`
+          : `Welcome back to ${info.topic_title}! Let's continue.`,
+      }
+      sessionStorage.setItem(`session_${sessionId}`, JSON.stringify(recovered))
+      setSession(recovered)
+      setCurrentLevel(info.current_level)
+      setAnswerFormat(info.answer_format || null)
+      setIsPracticeMode(!!info.is_practice)
+      setMessages([{ sender: 'buddy', text: recovered.initialMessage }])
+      if (info.diagnostic) { setDiagnosticPhase(true); setDiagnosticTurn(info.diagnostic_turn || 1) }
+    }).catch(() => navigate('/practice'))
   }, [sessionId])
 
   useEffect(() => {

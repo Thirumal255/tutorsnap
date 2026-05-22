@@ -2653,12 +2653,42 @@ def admin_analytics(
             "total_xp": u.total_xp or 0, "topics_mastered": mastered,
         })
 
+    # ── Hardest topics (#61): most flags relative to sessions ──────────────
+    topic_flag_rows = (
+        db.query(
+            Topic.id,
+            Topic.title,
+            Book.subject,
+            func.count(TopicMastery.id).label("flags"),
+        )
+        .join(TopicMastery, TopicMastery.topic_id == Topic.id)
+        .join(Chapter, Chapter.id == Topic.chapter_id)
+        .join(Book, Book.id == Chapter.book_id)
+        .filter(TopicMastery.flagged_for_review == True)
+        .group_by(Topic.id, Topic.title, Book.subject)
+        .order_by(func.count(TopicMastery.id).desc())
+        .limit(8)
+        .all()
+    )
+    hardest_topics = [
+        {"topic_id": r.id, "title": r.title, "subject": r.subject, "flags": r.flags}
+        for r in topic_flag_rows
+    ]
+
+    # ── AI usage summary (last 7 days) ──────────────────────────────────────
+    cutoff_7d = now - timedelta(days=7)
+    ai_cost_7d = db.query(func.sum(AIUsageLog.cost_usd)).filter(
+        AIUsageLog.called_at >= cutoff_7d
+    ).scalar() or 0.0
+
     return {
         "sessions_trend": trend,
         "grade_breakdown": grade_breakdown,
         "subject_breakdown": subject_breakdown,
         "mastery_distribution": mastery_dist,
         "top_students": top_students,
+        "hardest_topics": hardest_topics,    # #61
+        "ai_cost_7d": round(ai_cost_7d, 4), # bonus: quick cost visibility on analytics page
     }
 
 
@@ -3238,6 +3268,170 @@ def publish_weekly_challenge(
         "week_start": week_start.isoformat(),
         "question": challenge.question_text,
     }
+
+
+# ─── Session Recovery & Interleaved Practice Endpoints ────────────────────────
+
+@app.get("/api/student/active-sessions")
+def get_active_sessions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all non-completed sessions for the current student (#62 — multi-device resumption)."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    active = (
+        db.query(SessionModel)
+        .filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "active",
+        )
+        .order_by(SessionModel.started_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    result = []
+    for s in active:
+        topic = db.query(Topic).filter(Topic.id == s.topic_id).first()
+        chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
+        last_turn = (
+            db.query(SessionTurn)
+            .filter(SessionTurn.session_id == s.id)
+            .order_by(SessionTurn.turn_number.desc())
+            .first()
+        )
+        result.append({
+            "session_id": s.id,
+            "topic_id": s.topic_id,
+            "topic_title": topic.title if topic else "",
+            "chapter_title": chapter.title if chapter else "",
+            "current_level": s.current_level,
+            "questions_asked": s.questions_asked or 0,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "last_question": last_turn.question_text if last_turn else None,
+            "answer_format": last_turn.answer_format if last_turn else None,
+            "is_practice": bool(s.is_practice),
+        })
+    return result
+
+
+@app.get("/api/session/{session_id}/info")
+def get_session_info(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return enough session context to reconstruct the chat page (#62)."""
+    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.user_id and session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your session")
+
+    topic = db.query(Topic).filter(Topic.id == session.topic_id).first()
+    chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
+    last_turn = (
+        db.query(SessionTurn)
+        .filter(SessionTurn.session_id == session.id)
+        .order_by(SessionTurn.turn_number.desc())
+        .first()
+    )
+
+    return {
+        "session_id": session.id,
+        "topic_id": session.topic_id,
+        "topic_title": topic.title if topic else "",
+        "chapter_title": chapter.title if chapter else "",
+        "student_name": session.student_name,
+        "current_level": session.current_level,
+        "level_label": level_label(session.current_level),
+        "status": session.status,
+        "is_practice": bool(session.is_practice),
+        "diagnostic": bool(session.diagnostic_phase),
+        "diagnostic_turn": session.diagnostic_turn or 0,
+        "last_question": last_turn.question_text if last_turn else "",
+        "answer_format": last_turn.answer_format if last_turn else None,
+        "turn_number": last_turn.turn_number if last_turn else 1,
+        "questions_asked": session.questions_asked or 0,
+    }
+
+
+@app.get("/api/student/interleaved-topics")
+def get_interleaved_topics(
+    limit: int = Query(6, ge=2, le=10),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return topics suitable for an interleaved mixed-practice session (#27).
+
+    Priority order:
+    1. Overdue spaced-repetition reviews
+    2. Topics studied but not yet at L3 mastery
+    3. Any attempted topics — random selection
+    """
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+    if not current_user.grade:
+        return []
+
+    now = datetime.utcnow()
+
+    # Fetch all mastery records for this student
+    all_mastery = (
+        db.query(TopicMastery)
+        .filter(TopicMastery.student_id == current_user.id)
+        .all()
+    )
+    mastery_map = {m.topic_id: m for m in all_mastery}
+
+    # Grade's topics
+    grade_topics = (
+        db.query(Topic, Book.subject)
+        .join(Chapter, Chapter.id == Topic.chapter_id)
+        .join(Book, Book.id == Chapter.book_id)
+        .filter(Book.grade == current_user.grade, Book.ingestion_status == "done")
+        .all()
+    )
+
+    def _topic_dict(t, subj, m):
+        return {
+            "id": t.id, "title": t.title, "subject": subj,
+            "mastery_level": m.mastery_level if m else None,
+            "studied": bool(m and m.studied) if m else False,
+        }
+
+    # 1. Overdue SR topics
+    overdue = [
+        _topic_dict(t, subj, mastery_map.get(t.id))
+        for t, subj in grade_topics
+        if (m := mastery_map.get(t.id)) and m.next_review_at and m.next_review_at <= now
+    ]
+    random.shuffle(overdue)
+
+    # 2. Studied but below L3
+    below_l3 = [
+        _topic_dict(t, subj, mastery_map.get(t.id))
+        for t, subj in grade_topics
+        if (m := mastery_map.get(t.id)) and m.studied
+        and m.mastery_level not in ("L3", "L4", "L5")
+        and t.id not in {x["id"] for x in overdue}
+    ]
+    random.shuffle(below_l3)
+
+    # 3. Any studied topics not already included
+    studied_rest = [
+        _topic_dict(t, subj, mastery_map.get(t.id))
+        for t, subj in grade_topics
+        if (m := mastery_map.get(t.id)) and m.studied
+        and t.id not in {x["id"] for x in overdue}
+        and t.id not in {x["id"] for x in below_l3}
+    ]
+    random.shuffle(studied_rest)
+
+    candidates = (overdue + below_l3 + studied_rest)[:limit]
+    return candidates
 
 
 # ─── Student Self-Service Routes ───────────────────────────────────────────────
