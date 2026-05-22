@@ -35,6 +35,10 @@ class User(Base):
     streak_freeze_available = Column(Boolean, default=False) # has an unused freeze token
     streak_freeze_used_at = Column(DateTime, nullable=True)  # when the last freeze was consumed
 
+    # ── Onboarding & daily goal ───────────────────────────────────────────────
+    has_onboarded = Column(Boolean, default=False)           # True after first-login flow complete
+    daily_goal_sessions = Column(Integer, default=1)         # target sessions per day
+
     parent_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.parent_id", back_populates="parent")
     student_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.student_id", back_populates="student")
     notifications = relationship("Notification", back_populates="user")

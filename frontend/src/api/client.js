@@ -102,6 +102,16 @@ export const getChildSessions = (id, limit = 20, offset = 0) =>
 export const getChildWeeklyReport = (id) => api.get(`/parent/children/${id}/weekly-report`)
 export const getFamilyActivity = () => api.get('/parent/family-activity')
 
+// Onboarding & daily goal
+export const completeOnboarding = (buddyAvatar, buddyName, dailyGoalSessions) =>
+  api.post('/student/complete-onboarding', {
+    buddy_avatar: buddyAvatar,
+    buddy_name: buddyName,
+    daily_goal_sessions: dailyGoalSessions,
+  })
+export const updateDailyGoal = (sessions) =>
+  api.put('/student/buddy', { daily_goal_sessions: sessions })
+
 // Study Mode
 export const explainTopic     = (topicId) => api.post(`/topics/${topicId}/explain`)
 export const studyChat        = (topicId, studentName, messages) =>

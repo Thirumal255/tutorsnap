@@ -149,6 +149,13 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS ease_factor REAL DEFAULT 2.5"
             ))
+            # Onboarding & daily goal — added in task #13/#17
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_onboarded BOOLEAN DEFAULT FALSE"
+            ))
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_goal_sessions INTEGER DEFAULT 1"
+            ))
             # AI usage log table — added in task #26
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS ai_usage_log (
@@ -217,6 +224,9 @@ def _user_dict(u: User) -> dict:
         "buddy_name": u.buddy_name or "Buddy",
         "buddy_avatar": u.buddy_avatar or "robot",
         "avatar_preset": u.avatar_preset or None,
+        # Onboarding & goal
+        "has_onboarded": bool(u.has_onboarded),
+        "daily_goal_sessions": u.daily_goal_sessions or 1,
     }
 
 
@@ -496,6 +506,11 @@ class LinkStudentRequest(BaseModel):
 
 class ConfirmRequest(BaseModel):
     confirm: bool
+
+class CompleteOnboardingRequest(BaseModel):
+    buddy_avatar: Optional[str] = None
+    buddy_name: Optional[str] = None
+    daily_goal_sessions: Optional[int] = 1
 
 class InitUploadRequest(BaseModel):
     title: str
@@ -1815,6 +1830,15 @@ def end_session(
     new_streak = _compute_streak(db, current_user)
     db.commit()
 
+    # ── Stats snapshot for achievement detection (task #29) ──────────────────
+    total_sessions_now = db.query(func.count(SessionModel.id)).filter(
+        SessionModel.user_id == current_user.id
+    ).scalar() or 0
+    topics_mastered_now = db.query(func.count(TopicMastery.id)).filter(
+        TopicMastery.student_id == current_user.id,
+        TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
+    ).scalar() or 0
+
     return {"session_id": session.id, "student_name": session.student_name,
             "topic_title": topic.title, "level_reached": session.current_level,
             "level_label": level_label(session.current_level),
@@ -1823,7 +1847,11 @@ def end_session(
             "xp_earned": xp_display,
             "xp_breakdown": xp_breakdown,
             "streak_days": new_streak,
-            "streak_freeze_available": current_user.streak_freeze_available}
+            "streak_freeze_available": current_user.streak_freeze_available,
+            # For badge detection
+            "total_sessions": total_sessions_now,
+            "total_xp": current_user.total_xp or 0,
+            "topics_mastered": topics_mastered_now}
 
 
 # ─── Phase C: Admin Routes ─────────────────────────────────────────────────
@@ -2757,6 +2785,18 @@ def student_dashboard(
     streak = _compute_streak(db, current_user)
     db.commit()
 
+    # ── Today's session count (for daily goal ring, task #17) ────────────────
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    sessions_today = db.query(func.count(SessionModel.id)).filter(
+        SessionModel.user_id == student_id,
+        SessionModel.started_at >= today_start,
+    ).scalar() or 0
+
+    # ── Topics mastered count (for achievement checking, task #29) ───────────
+    topics_mastered = sum(
+        1 for m in all_masteries if m.mastery_level in ("L3", "L4", "L5")
+    )
+
     # ── Weekly challenge status ──────────────────────────────────────────────
     weekly_challenge_done = False
     if grade:
@@ -2785,6 +2825,11 @@ def student_dashboard(
         "weekly_xp": current_user.weekly_xp or 0,
         "weekly_challenge_done": weekly_challenge_done,
         "streak_freeze_available": current_user.streak_freeze_available or False,
+        # Daily goal (task #17)
+        "sessions_today": sessions_today,
+        "daily_goal_sessions": current_user.daily_goal_sessions or 1,
+        # Achievement snapshot (task #29)
+        "topics_mastered": topics_mastered,
     }
 
 
@@ -2794,6 +2839,7 @@ class BuddyUpdateRequest(BaseModel):
     buddy_name: Optional[str] = None
     buddy_avatar: Optional[str] = None
     show_on_leaderboard: Optional[bool] = None
+    daily_goal_sessions: Optional[int] = None
 
 class WeeklyChallengeSubmitRequest(BaseModel):
     challenge_id: int
@@ -2863,13 +2909,45 @@ def update_buddy(
             user.show_on_leaderboard = req.show_on_leaderboard
         else:
             user.show_on_leaderboard = False
+    if req.daily_goal_sessions is not None:
+        user.daily_goal_sessions = max(1, min(10, req.daily_goal_sessions))
 
     db.commit()
     return {
         "buddy_name": user.buddy_name or "Buddy",
         "buddy_avatar": user.buddy_avatar or "robot",
         "show_on_leaderboard": user.show_on_leaderboard if user.show_on_leaderboard is not None else False,
+        "daily_goal_sessions": user.daily_goal_sessions or 1,
     }
+
+
+# ── Onboarding endpoint (task #13) ───────────────────────────────────────────
+
+@app.post("/api/student/complete-onboarding")
+def complete_onboarding(
+    req: CompleteOnboardingRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark onboarding complete and persist buddy + daily-goal choices."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    VALID_AVATARS = {"robot", "fox", "panda", "lion", "dolphin", "owl", "dragon", "wizard"}
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    user.has_onboarded = True
+    if req.buddy_avatar and req.buddy_avatar in VALID_AVATARS:
+        user.buddy_avatar = req.buddy_avatar
+    if req.buddy_name:
+        name = req.buddy_name.strip()[:20]
+        user.buddy_name = name if name else None
+    if req.daily_goal_sessions is not None:
+        user.daily_goal_sessions = max(1, min(10, req.daily_goal_sessions))
+
+    db.commit()
+    db.refresh(user)
+    return _user_dict(user)
 
 
 # ── Profile endpoints (student + parent) ─────────────────────────────────────

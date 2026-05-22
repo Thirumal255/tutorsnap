@@ -8,6 +8,7 @@ import {
 } from '../../api/client'
 import { SUBJECT_COLOR } from './StudentLayout'
 import BuddyCustomizer from '../../components/BuddyCustomizer'
+import OnboardingModal from '../../components/OnboardingModal'
 import WritingCanvas from '../../components/WritingCanvas'
 import { useToast } from '../../context/ToastContext'
 
@@ -45,6 +46,44 @@ function MasteryBar({ attempted, mastered, total }) {
           style={{ width: `${pctMastered}%` }} />
       </div>
     </div>
+  )
+}
+
+// ── Daily goal ring (task #17) ───────────────────────────────────────────────
+function GoalRing({ done, goal }) {
+  const r    = 30
+  const circ = 2 * Math.PI * r
+  const pct  = Math.min(done / Math.max(goal, 1), 1)
+  const offset = circ * (1 - pct)
+  const complete = done >= goal
+
+  return (
+    <svg width="72" height="72" viewBox="0 0 72 72" className="flex-shrink-0">
+      {/* Background track */}
+      <circle cx="36" cy="36" r={r} fill="none" stroke="#2D2B5A" strokeWidth="6" />
+      {/* Progress arc */}
+      <circle
+        cx="36" cy="36" r={r}
+        fill="none"
+        stroke={complete ? '#00CC88' : '#00A2FF'}
+        strokeWidth="6"
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
+        transform="rotate(-90 36 36)"
+        style={{ transition: 'stroke-dashoffset 0.7s ease' }}
+      />
+      {/* Count label */}
+      <text x="36" y="33" textAnchor="middle" dominantBaseline="middle"
+        style={{ fontFamily: "'Fredoka One', cursive", fill: complete ? '#00CC88' : 'white',
+                 fontSize: '13px', fontWeight: 'bold' }}>
+        {done}/{goal}
+      </text>
+      <text x="36" y="46" textAnchor="middle" dominantBaseline="middle"
+        style={{ fontFamily: 'Nunito, sans-serif', fill: '#8892B0', fontSize: '8px' }}>
+        today
+      </text>
+    </svg>
   )
 }
 
@@ -241,28 +280,47 @@ export default function StudentHome() {
   const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const [data, setData]         = useState(null)
-  const [loading, setLoading]   = useState(true)
-  const [resuming, setResuming] = useState(null) // topicId currently resuming, or null
-  const [showBuddy, setShowBuddy] = useState(false)
+  const [data, setData]               = useState(null)
+  const [loading, setLoading]         = useState(true)
+  const [resuming, setResuming]       = useState(null)
+  const [showBuddy, setShowBuddy]     = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [reviewQueue, setReviewQueue] = useState([])
-  const [reviewMeta, setReviewMeta] = useState({ completed_today: false, reviewed_today: 0 })
+  const [reviewMeta, setReviewMeta]   = useState({ completed_today: false, reviewed_today: 0 })
 
   useEffect(() => {
     Promise.all([
       getStudentDashboard(),
       getReviewQueue(),
     ]).then(([dashRes, reviewRes]) => {
-      setData(dashRes.data)
+      const dash = dashRes.data
+      setData(dash)
       setReviewQueue(reviewRes.data.due || [])
       setReviewMeta({
         completed_today: reviewRes.data.completed_today || false,
         reviewed_today: reviewRes.data.reviewed_today || 0,
       })
+      // Persist stats snapshot for achievement detection (task #29)
+      if (user?.id) {
+        localStorage.setItem(`tutorsnap_stats_${user.id}`, JSON.stringify({
+          total_sessions:  dash.total_sessions  || 0,
+          total_xp:        dash.total_xp        || 0,
+          streak_days:     dash.streak_days      || 0,
+          topics_mastered: dash.topics_mastered  || 0,
+          saved_at: Date.now(),
+        }))
+      }
     }).catch(() => {
       getStudentDashboard().then(r => setData(r.data)).catch(() => setData(null))
     }).finally(() => setLoading(false))
-  }, [])
+  }, [user?.id])
+
+  // Show onboarding modal for new students (task #13)
+  useEffect(() => {
+    if (user && user.has_onboarded === false) {
+      setShowOnboarding(true)
+    }
+  }, [user])
 
   async function handleContinue(topicId) {
     setResuming(topicId)
@@ -317,6 +375,10 @@ export default function StudentHome() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
+
+      {showOnboarding && (
+        <OnboardingModal onDone={() => setShowOnboarding(false)} />
+      )}
 
       {showBuddy && (
         <BuddyCustomizer
@@ -377,6 +439,36 @@ export default function StudentHome() {
         <>
           {/* ── Weekly challenge ───────────────────────────────────────── */}
           <WeeklyChallengeCard userId={user?.id} />
+
+          {/* ── Daily goal ring (task #17) ────────────────────────────── */}
+          {data && (
+            <div className="blox-card p-4 animate-bounce-in flex items-center gap-4">
+              <GoalRing
+                done={data.sessions_today || 0}
+                goal={user?.daily_goal_sessions || data.daily_goal_sessions || 1}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="font-fredoka font-bold text-white">
+                  {(data.sessions_today || 0) >= (user?.daily_goal_sessions || data.daily_goal_sessions || 1)
+                    ? "🎉 Goal smashed today!"
+                    : "Today's goal"}
+                </p>
+                <p className="text-xs text-[#8892B0] mt-0.5">
+                  {(data.sessions_today || 0) >= (user?.daily_goal_sessions || data.daily_goal_sessions || 1)
+                    ? `${data.sessions_today} session${data.sessions_today !== 1 ? 's' : ''} done — you're on fire! 🔥`
+                    : `${data.sessions_today || 0} of ${user?.daily_goal_sessions || data.daily_goal_sessions || 1} session${(user?.daily_goal_sessions || 1) !== 1 ? 's' : ''} done`}
+                </p>
+              </div>
+              {(data.sessions_today || 0) < (user?.daily_goal_sessions || data.daily_goal_sessions || 1) && (
+                <button
+                  onClick={() => navigate('/practice')}
+                  className="btn-blox-primary flex-shrink-0 text-xs py-1.5 px-3"
+                >
+                  ▶ Study
+                </button>
+              )}
+            </div>
+          )}
 
           {/* ── Spaced repetition review queue ────────────────────────── */}
           {reviewQueue.length > 0 ? (

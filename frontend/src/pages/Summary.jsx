@@ -1,8 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { endSession } from '../api/client'
 import ProgressBadge from '../components/ProgressBadge'
 import { useAuth } from '../auth/AuthContext'
+
+// Badge threshold checks — mirrors StudentAchievements.jsx BADGES (task #29)
+const BADGE_CHECKS = [
+  { id: 'sessions_1',  icon: '🎮', title: 'First Battle',    check: (c, p) => c.total_sessions >= 1  && (p?.total_sessions  ?? 0) < 1  },
+  { id: 'sessions_10', icon: '⚔️', title: 'Warrior',         check: (c, p) => c.total_sessions >= 10 && (p?.total_sessions  ?? 0) < 10 },
+  { id: 'sessions_50', icon: '🏅', title: 'Veteran',         check: (c, p) => c.total_sessions >= 50 && (p?.total_sessions  ?? 0) < 50 },
+  { id: 'mastered_1',  icon: '✅', title: 'Topic Champion',  check: (c, p) => c.topics_mastered >= 1  && (p?.topics_mastered ?? 0) < 1  },
+  { id: 'mastered_5',  icon: '🏆', title: 'Master Blaster',  check: (c, p) => c.topics_mastered >= 5  && (p?.topics_mastered ?? 0) < 5  },
+  { id: 'mastered_20', icon: '👑', title: 'Knowledge King',  check: (c, p) => c.topics_mastered >= 20 && (p?.topics_mastered ?? 0) < 20 },
+  { id: 'xp_100',      icon: '⭐', title: 'XP Starter',      check: (c, p) => c.total_xp >= 100  && (p?.total_xp ?? 0) < 100  },
+  { id: 'xp_500',      icon: '💫', title: 'XP Chaser',       check: (c, p) => c.total_xp >= 500  && (p?.total_xp ?? 0) < 500  },
+  { id: 'xp_2000',     icon: '🌠', title: 'XP Legend',       check: (c, p) => c.total_xp >= 2000 && (p?.total_xp ?? 0) < 2000 },
+  { id: 'streak_3',    icon: '🔥', title: 'On Fire',         check: (c, p) => c.streak_days >= 3  && (p?.streak_days ?? 0) < 3  },
+  { id: 'streak_7',    icon: '🌟', title: 'Week Warrior',    check: (c, p) => c.streak_days >= 7  && (p?.streak_days ?? 0) < 7  },
+]
 
 const CONFETTI_COLORS = ['#FF3333','#00A2FF','#FFD700','#00D68F','#FF6B9D','#A78BFA']
 
@@ -36,17 +51,37 @@ export default function Summary() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const sessionId = parseInt(id)
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData]         = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [prevStats, setPrevStats] = useState(null)
 
   useEffect(() => {
+    // Load prev stats snapshot before the session ended (task #29)
+    if (user?.id) {
+      const snap = localStorage.getItem(`tutorsnap_stats_${user.id}`)
+      if (snap) {
+        try { setPrevStats(JSON.parse(snap)) } catch {}
+      }
+    }
+
     async function load() {
       const stored = sessionStorage.getItem(`summary_${sessionId}`)
       if (stored) {
         const parsed = JSON.parse(stored)
         try {
           const res = await endSession(sessionId)
-          setData({ ...parsed, ...res.data, level: res.data.level_reached })
+          const merged = { ...parsed, ...res.data, level: res.data.level_reached }
+          setData(merged)
+          // Update snapshot with new stats so next session starts fresh
+          if (user?.id && res.data.total_sessions !== undefined) {
+            localStorage.setItem(`tutorsnap_stats_${user.id}`, JSON.stringify({
+              total_sessions:  res.data.total_sessions  || 0,
+              total_xp:        res.data.total_xp        || 0,
+              streak_days:     res.data.streak_days      || 0,
+              topics_mastered: res.data.topics_mastered  || 0,
+              saved_at: Date.now(),
+            }))
+          }
         } catch {
           setData(parsed)
         }
@@ -56,6 +91,15 @@ export default function Summary() {
       try {
         const res = await endSession(sessionId)
         setData({ ...res.data, level: res.data.level_reached })
+        if (user?.id && res.data.total_sessions !== undefined) {
+          localStorage.setItem(`tutorsnap_stats_${user.id}`, JSON.stringify({
+            total_sessions:  res.data.total_sessions  || 0,
+            total_xp:        res.data.total_xp        || 0,
+            streak_days:     res.data.streak_days      || 0,
+            topics_mastered: res.data.topics_mastered  || 0,
+            saved_at: Date.now(),
+          }))
+        }
       } catch {
         setData({ summary: 'Session ended.', level: 'L1', studentName: '', topicTitle: '' })
       } finally {
@@ -63,7 +107,19 @@ export default function Summary() {
       }
     }
     load()
-  }, [sessionId])
+  }, [sessionId, user?.id])
+
+  // Compute newly earned badges (task #29)
+  const newBadges = useMemo(() => {
+    if (!data) return []
+    const curr = {
+      total_sessions:  data.total_sessions  || 0,
+      total_xp:        data.total_xp        || 0,
+      streak_days:     data.streak_days      || 0,
+      topics_mastered: data.topics_mastered  || 0,
+    }
+    return BADGE_CHECKS.filter(b => b.check(curr, prevStats))
+  }, [data, prevStats])
 
   if (loading) {
     return (
@@ -165,6 +221,29 @@ export default function Summary() {
                level === 'L4' ? (isPrimary ? 'One more step to Legend!' : 'Only Gold rank left!') :
                                 (isPrimary ? 'Keep going — Champion awaits!' : 'Keep pushing — Diamond awaits!')}
             </p>
+          </div>
+        )}
+
+        {/* ── New badge celebration (task #29) ── */}
+        {newBadges.length > 0 && (
+          <div className="mb-5 animate-bounce-in">
+            <p className="text-xs font-semibold text-[#FFD700] uppercase tracking-widest mb-2">
+              🏅 Badge{newBadges.length > 1 ? 's' : ''} Unlocked!
+            </p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {newBadges.map(b => (
+                <div
+                  key={b.id}
+                  className="blox-card px-4 py-3 flex items-center gap-2 border-[#FFD700]/50 shadow-[0_0_14px_rgba(255,215,0,0.2)] animate-bounce-in"
+                >
+                  <span className="text-2xl">{b.icon}</span>
+                  <div className="text-left">
+                    <p className="font-fredoka font-bold text-[#FFD700] text-sm leading-tight">{b.title}</p>
+                    <p className="text-[10px] text-[#8892B0]">new badge</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
