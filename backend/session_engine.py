@@ -6,6 +6,11 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+# ── Prompt versioning (#65) ────────────────────────────────────────────────────
+# Bump this string whenever AI system prompts or scoring logic changes
+# so we can correlate content quality with the version that generated it.
+PROMPT_VERSION = "2.1"
+
 # ── Child-safe content moderation (task #36) ──────────────────────────────────
 # Word-boundary patterns for terms that must never appear in AI output shown to children.
 # Kept deliberately targeted to minimise false positives on academic vocabulary

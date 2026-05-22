@@ -33,7 +33,7 @@ from session_engine import (
     generate_question, assess_answer, get_hint, get_concept_explanation,
     get_session_summary, determine_next_action, get_start_level,
     generate_sub_question, generate_worked_example, generate_parent_tip,
-    LEVEL_GUIDE, LEVEL_ORDER,
+    LEVEL_GUIDE, LEVEL_ORDER, PROMPT_VERSION,
 )
 
 app = FastAPI(title="TutorSnap API")
@@ -44,6 +44,18 @@ _DEFAULT_SETTINGS = [
     {"key": "session_timeout_minutes", "value": "30"},
     {"key": "break_reminder_at_questions", "value": "10"},   # suggest a break after N questions
 ]
+
+# ── AI confidence helper (#66) ─────────────────────────────────────────────────
+def _compute_ai_confidence(questions_asked: int, current_level: str) -> int:
+    """
+    Return 0-100 score reflecting how confident the AI is in the session assessment.
+    Higher question count = more data = more confident.
+    Higher mastery level reached = AI had clear evidence of understanding.
+    """
+    _LEVEL_WEIGHT = {"L1": 0.60, "L2": 0.72, "L3": 0.85, "L4": 0.93, "L5": 0.97}
+    question_factor = min(questions_asked / 6.0, 1.0)  # full weight at ≥6 answered
+    level_factor = _LEVEL_WEIGHT.get(current_level or "L1", 0.60)
+    return int(level_factor * question_factor * 100)
 
 
 @app.on_event("startup")
@@ -1550,6 +1562,7 @@ def start_session(
         "diagnostic_total": 3,
         "worked_example": worked_example,
         "is_practice": bool(req.practice_mode),  # #58
+        "prompt_version": PROMPT_VERSION,         # #65
     }
 
 
@@ -1815,7 +1828,8 @@ def submit_answer(
                 "level_label": level_label(session.current_level), "show_hint_button": False,
                 "session_complete": True, "summary": summary,
                 "turn_number": current_turn.turn_number, "xp_earned": xp_earned,
-                "is_practice": bool(session.is_practice)}
+                "is_practice": bool(session.is_practice),
+                "ai_confidence": _compute_ai_confidence(session.questions_asked, session.current_level)}  # #66
 
     next_question = None
     next_answer_format = None
@@ -1897,7 +1911,8 @@ def submit_answer(
                 "level_label": level_label(session.current_level), "show_hint_button": False,
                 "session_complete": True, "summary": summary,
                 "turn_number": current_turn.turn_number, "xp_earned": xp_earned,
-                "at_question_limit": True}
+                "at_question_limit": True,
+                "ai_confidence": _compute_ai_confidence(session.questions_asked, session.current_level)}  # #66
 
     # Soft limit: suggest break
     suggest_break = (session.questions_asked > 0 and
@@ -2127,7 +2142,10 @@ def end_session(
             # For badge detection
             "total_sessions": total_sessions_now,
             "total_xp": current_user.total_xp or 0,
-            "topics_mastered": topics_mastered_now}
+            "topics_mastered": topics_mastered_now,
+            # #65 prompt versioning / #66 confidence
+            "prompt_version": PROMPT_VERSION,
+            "ai_confidence": _compute_ai_confidence(session.questions_asked, session.current_level)}
 
 
 # ─── Phase C: Admin Routes ─────────────────────────────────────────────────
@@ -2689,6 +2707,7 @@ def admin_analytics(
         "top_students": top_students,
         "hardest_topics": hardest_topics,    # #61
         "ai_cost_7d": round(ai_cost_7d, 4), # bonus: quick cost visibility on analytics page
+        "prompt_version": PROMPT_VERSION,    # #65: which prompt version is live
     }
 
 
@@ -2911,6 +2930,24 @@ def parent_get_child_detail(
         d = (today_dt - timedelta(days=6 - i)).isoformat()
         weekly_activity.append({"date": d, "sessions": day_counts_detail.get(d, 0)})
 
+    # ── Score trend (14 days) — derived from session mastery level (#51) ─────────
+    _LEVEL_SCORE = {"L1": 20, "L2": 40, "L3": 60, "L4": 80, "L5": 100}
+    trend_cutoff = datetime.utcnow() - timedelta(days=14)
+    trend_sessions = [s for s in sessions if s.started_at and s.started_at >= trend_cutoff and s.status == "completed"]
+    score_by_day: dict[str, list] = {}
+    for s in trend_sessions:
+        d = s.started_at.date().isoformat()
+        score_by_day.setdefault(d, []).append(_LEVEL_SCORE.get(s.current_level or "L1", 20))
+    score_trend = []
+    for i in range(14):
+        d = (today_dt - timedelta(days=13 - i)).isoformat()
+        scores = score_by_day.get(d, [])
+        score_trend.append({
+            "date": d,
+            "avg_score": round(sum(scores) / len(scores)) if scores else None,
+            "sessions": len(scores),
+        })
+
     return {
         "student": {"name": child.name, "grade": child.grade,
                     "daily_goal_sessions": daily_goal,
@@ -2924,6 +2961,7 @@ def parent_get_child_detail(
         "recent_sessions": recent_sessions,
         "flagged_topics": flagged_topics,
         "weekly_activity": weekly_activity,
+        "score_trend": score_trend,              # #51: 14-day performance trend
     }
 
 

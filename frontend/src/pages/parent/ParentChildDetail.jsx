@@ -76,6 +76,70 @@ function WeekBar({ weekly }) {
   )
 }
 
+// ── Score trend sparkline (#51) ──────────────────────────────────────────────
+function ScoreTrendChart({ trend }) {
+  if (!trend?.length) return null
+  // Only render days that have data; use all 14 for axis
+  const hasAny = trend.some(d => d.avg_score !== null)
+  if (!hasAny) return null
+
+  const scores = trend.map(d => d.avg_score ?? 0)
+  const max = Math.max(...scores.filter(s => s > 0), 60)  // minimum scale to 60
+
+  return (
+    <div className="blox-card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold">
+          📈 14-day performance trend
+        </p>
+        <p className="text-xs text-[#4A5568]">avg mastery level / day</p>
+      </div>
+      <div className="flex items-end gap-1 h-14">
+        {trend.map((d, i) => {
+          const isToday = d.date === new Date().toISOString().slice(0, 10)
+          const hasData = d.avg_score !== null && d.sessions > 0
+          const pct = hasData ? (d.avg_score / max) * 100 : 0
+          const color = !hasData ? '#2D2B5A'
+            : d.avg_score >= 80 ? '#00CC88'
+            : d.avg_score >= 60 ? '#FFB347'
+            : '#FF6B6B'
+          return (
+            <div
+              key={d.date}
+              className="flex-1 flex flex-col items-center gap-0.5"
+              title={hasData ? `${d.date}: ${d.avg_score}% (${d.sessions} session${d.sessions !== 1 ? 's' : ''})` : d.date}
+            >
+              <div className="w-full flex items-end justify-center" style={{ height: '44px' }}>
+                <div
+                  className="w-full rounded-t transition-all duration-700"
+                  style={{
+                    height: hasData ? `${Math.max(pct, 12)}%` : '3px',
+                    background: isToday ? '#A78BFA' : color,
+                    opacity: hasData ? 1 : 0.3,
+                    minHeight: '3px',
+                  }}
+                />
+              </div>
+              {/* Show label every 7 days */}
+              {(i === 0 || i === 6 || i === 13) && (
+                <span className={`text-[8px] ${isToday ? 'text-[#A78BFA]' : 'text-[#4A5568]'}`}>
+                  {new Date(d.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex gap-3 mt-2 text-[10px] text-[#4A5568]">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#00CC88]" />≥80%</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#FFB347]" />60–79%</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#FF6B6B]" />{'<60%'}</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#A78BFA]" />today</span>
+      </div>
+    </div>
+  )
+}
+
 function SubjectBar({ subj, mastered, attempted }) {
   const pct = attempted > 0 ? Math.round((mastered / attempted) * 100) : 0
   return (
@@ -226,7 +290,8 @@ export default function ParentChildDetail() {
   )
 
   const { student, summary, subject_summary = [], topic_mastery = [],
-          flagged_topics = [], recent_sessions = [], weekly_activity } = child
+          flagged_topics = [], recent_sessions = [], weekly_activity,
+          score_trend = [] } = child
   const flagged = topic_mastery.filter(m => m.flagged_for_review)
 
   return (
@@ -459,6 +524,9 @@ export default function ParentChildDetail() {
       {/* ── Overview tab ────────────────────────────────────── */}
       {activeTab === 'overview' && (
         <div className="space-y-3">
+          {/* 14-day score trend (#51) */}
+          <ScoreTrendChart trend={score_trend} />
+
           {subject_summary.length === 0 ? (
             <div className="blox-card p-6 text-center">
               <p className="text-[#8892B0]">No topics practised yet.</p>

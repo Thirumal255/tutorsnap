@@ -149,6 +149,8 @@ export default function Summary() {
     ? (data?.xpEarned ?? data?.xp_earned ?? questionsAsked * 10)
     : 0
   const xpBreakdown = data?.xpBreakdown || data?.xp_breakdown || []
+  const aiConfidence = data?.ai_confidence ?? null   // #66
+  const promptVersion = data?.prompt_version || null // #65
 
   const earlyExit = questionsAsked === 0
   const isMilestone = MILESTONE_LEVELS[level] && !earlyExit && !flagged
@@ -307,6 +309,29 @@ export default function Summary() {
               <div className="bg-[#00CC88]/10 border border-[#00CC88]/30 rounded-2xl p-4 text-center animate-bounce-in">
                 <p className="text-sm text-[#00CC88] font-nunito font-semibold">{reflection}</p>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── AI confidence & prompt version (#65, #66) ── */}
+        {(aiConfidence !== null || promptVersion) && !earlyExit && (
+          <div className="mb-4 flex items-center justify-center gap-2 flex-wrap">
+            {aiConfidence !== null && (
+              <span
+                title="How confident the AI is in this assessment (based on number of questions answered)"
+                className={`text-xs px-3 py-1 rounded-full font-nunito border cursor-default ${
+                  aiConfidence >= 75 ? 'bg-[#00CC88]/10 text-[#00CC88] border-[#00CC88]/30'
+                  : aiConfidence >= 50 ? 'bg-[#FFB347]/10 text-[#FFB347] border-[#FFB347]/30'
+                  : 'bg-[#8892B0]/10 text-[#8892B0] border-[#8892B0]/30'
+                }`}
+              >
+                🤖 AI confidence: {aiConfidence}%
+              </span>
+            )}
+            {promptVersion && (
+              <span className="text-xs px-3 py-1 rounded-full bg-[#2D2B5A]/60 text-[#4A5568] border border-[#2D2B5A] font-nunito cursor-default">
+                v{promptVersion}
+              </span>
             )}
           </div>
         )}

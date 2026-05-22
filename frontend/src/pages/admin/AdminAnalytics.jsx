@@ -356,6 +356,28 @@ export default function AdminAnalytics() {
               </div>
             ))}
           </div>
+
+          {/* ── AI metadata (#65 prompt version, #66 confidence, cost) ─── */}
+          <div className="blox-card p-4 animate-bounce-in flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🤖</span>
+              <div>
+                <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold">AI metadata</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 ml-auto">
+              {data.prompt_version && (
+                <span className="text-xs bg-[#A78BFA]/10 text-[#A78BFA] border border-[#A78BFA]/30 px-3 py-1.5 rounded-full font-fredoka font-bold">
+                  Prompt v{data.prompt_version}
+                </span>
+              )}
+              {data.ai_cost_7d !== undefined && (
+                <span className="text-xs bg-[#FFD700]/10 text-[#FFD700] border border-[#FFD700]/30 px-3 py-1.5 rounded-full font-semibold font-nunito">
+                  💰 ${data.ai_cost_7d.toFixed(4)} / 7d
+                </span>
+              )}
+            </div>
+          </div>
         </>
       )}
     </div>
