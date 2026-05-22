@@ -160,7 +160,13 @@ def get_subject_label(topic) -> str:
     return f"Grade {grade} {subject}"
 
 
-def call_claude(system: str, user: str, max_tokens: int = 800, model: str = None) -> str:
+def call_claude(system: str, user: str, max_tokens: int = 800, model: str = None,
+                _usage_out: list = None) -> str:
+    """Call Claude and return the text response.
+
+    If *_usage_out* is a list, append a dict with keys
+    {model, input_tokens, output_tokens, cost_usd} for cost monitoring.
+    """
     m = model or _SONNET
     try:
         response = _client.messages.create(
@@ -169,13 +175,15 @@ def call_claude(system: str, user: str, max_tokens: int = 800, model: str = None
             system=system,
             messages=[{"role": "user", "content": user}],
         )
+        if _usage_out is not None:
+            _usage_out.append(_extract_usage(response, m))
         return response.content[0].text.strip()
     except Exception as e:
         raise RuntimeError(f"Claude API call failed: {e}") from e
 
 
 def call_claude_vision(system: str, user_text: str, image_base64: str,
-                       max_tokens: int = 800) -> str:
+                       max_tokens: int = 800, _usage_out: list = None) -> str:
     """Call Claude with a base64 image + text for handwriting / drawing assessment."""
     try:
         response = _client.messages.create(
@@ -194,9 +202,45 @@ def call_claude_vision(system: str, user_text: str, image_base64: str,
                 {"type": "text", "text": user_text},
             ]}],
         )
+        if _usage_out is not None:
+            _usage_out.append(_extract_usage(response, _SONNET))
         return response.content[0].text.strip()
     except Exception as e:
         raise RuntimeError(f"Claude Vision API call failed: {e}") from e
+
+
+# ── Pricing constants (USD per million tokens) ────────────────────────────────
+# Update these if model pricing changes.
+_PRICING: dict[str, tuple[float, float]] = {
+    # model substring → (input $/M, output $/M)
+    "sonnet": (3.0, 15.0),
+    "haiku":  (0.8,  4.0),
+    "opus":   (15.0, 75.0),
+}
+
+
+def _extract_usage(response, model_name: str) -> dict:
+    """Build a usage dict from an Anthropic response object.
+
+    Gracefully returns zeros if the response object lacks real usage data
+    (e.g. during tests when the Anthropic client is mocked).
+    """
+    try:
+        usage = getattr(response, "usage", None)
+        inp = int(getattr(usage, "input_tokens", 0) or 0)
+        out = int(getattr(usage, "output_tokens", 0) or 0)
+        if inp < 0 or out < 0 or inp > 10_000_000:  # sanity-check (reject MagicMock ints)
+            raise ValueError("implausible token count")
+    except (TypeError, ValueError, AttributeError):
+        inp, out = 0, 0
+    # pick pricing tier by substring match
+    cost_in, cost_out = 3.0, 15.0  # default: sonnet
+    for key, prices in _PRICING.items():
+        if key in model_name.lower():
+            cost_in, cost_out = prices
+            break
+    cost_usd = (inp * cost_in + out * cost_out) / 1_000_000
+    return {"model": model_name, "input_tokens": inp, "output_tokens": out, "cost_usd": cost_usd}
 
 
 def generate_sub_question(topic, original_question: str, confusion_type: str = None) -> str:
@@ -429,6 +473,7 @@ def assess_answer(
     expected_key_points: list | None = None,
     answer_format: str | None = None,
     image_data: str | None = None,
+    _usage_out: list | None = None,
 ) -> dict:
     """
     Two-phase scoring: compare the student's answer against the reference key points
@@ -545,9 +590,11 @@ def assess_answer(
                 f"Please read the handwriting carefully and assess it as if it were typed text.\n\n"
                 + user
             )
-            raw = call_claude_vision(system, vision_user, image_data, max_tokens=450)
+            raw = call_claude_vision(system, vision_user, image_data, max_tokens=450,
+                                     _usage_out=_usage_out)
         else:
-            raw = call_claude(system, user, max_tokens=450, model=_SONNET)
+            raw = call_claude(system, user, max_tokens=450, model=_SONNET,
+                              _usage_out=_usage_out)
         cleaned = re.sub(r"```[a-z]*\n?", "", raw).strip()
         data = json.loads(cleaned)
         raw_score = int(data.get("score", 0))

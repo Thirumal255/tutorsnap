@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, Boolean, JSON,
+    Column, Integer, String, Text, DateTime, Boolean, JSON, Float,
     ForeignKey, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
@@ -234,9 +234,10 @@ class TopicMastery(Base):
     last_practiced_at = Column(DateTime, nullable=True)
     total_sessions = Column(Integer, default=1)
 
-    # ── Spaced repetition ─────────────────────────────────────────────────
+    # ── Spaced repetition (SM-2) ──────────────────────────────────────────
     next_review_at = Column(DateTime, nullable=True)       # when to resurface this topic
-    review_interval_days = Column(Integer, default=1)      # current interval (grows after "know it")
+    review_interval_days = Column(Integer, default=1)      # current interval in days
+    ease_factor = Column(Float, default=2.5)               # SM-2 ease factor (1.3 – 2.5+)
 
     # ── Study Mode ────────────────────────────────────────────────────────
     studied = Column(Boolean, default=False)               # True after first Study session completed
@@ -246,6 +247,20 @@ class TopicMastery(Base):
 
     topic = relationship("Topic", back_populates="masteries")
     student = relationship("User", foreign_keys=[student_id])
+
+
+class AIUsageLog(Base):
+    """Per-call AI usage log for cost monitoring."""
+    __tablename__ = "ai_usage_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    endpoint = Column(String(80), nullable=False)          # e.g. "submit_answer", "study_chat"
+    model = Column(String(80), nullable=True)
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)                  # estimated cost
+    called_at = Column(DateTime, default=datetime.utcnow)
 
 
 class QuestionBank(Base):

@@ -25,6 +25,7 @@ from models import (
     Book, Chapter, Topic, Session as SessionModel, SessionTurn, TopicMastery,
     AppSettings, User, ParentStudentLink, Notification,
     WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
+    AIUsageLog,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -143,6 +144,23 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_freeze_used_at TIMESTAMP"
             ))
+            # SM-2 ease factor — added in task #24
+            conn.execute(text(
+                "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS ease_factor REAL DEFAULT 2.5"
+            ))
+            # AI usage log table — added in task #26
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_usage_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER REFERENCES users(id),
+                    endpoint TEXT NOT NULL,
+                    model TEXT,
+                    input_tokens INTEGER DEFAULT 0,
+                    output_tokens INTEGER DEFAULT 0,
+                    cost_usd REAL DEFAULT 0.0,
+                    called_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
             conn.commit()
             print("Migration: schema up to date")
     except Exception as e:
@@ -316,6 +334,76 @@ def _notify_parents(db: Session, session, topic, student_user: Optional[User]):
 _REVIEW_INTERVALS = {"L1": 1, "L2": 3, "L3": 7, "L4": 14, "L5": 21}
 
 
+# ── SM-2 spaced-repetition helper (task #24) ──────────────────────────────────
+
+def _sm2_update(mastery, knew_it: bool) -> None:
+    """Apply the SM-2 algorithm to *mastery* in-place.
+
+    SM-2 quality mapping:
+      knew_it=True  → q=5 (perfect recall)
+      knew_it=False → q=1 (complete failure)
+
+    EF' = max(1.3, EF + 0.1 - (5-q)*(0.08 + (5-q)*0.02))
+    Interval: reset to 1 if q<3; else I(1)=1, I(2)=6, I(n)=round(I(n-1)*EF').
+    """
+    q = 5 if knew_it else 1
+    ef = mastery.ease_factor if mastery.ease_factor is not None else 2.5
+    new_ef = max(1.3, ef + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
+    if q < 3:
+        new_interval = 1
+    else:
+        old_interval = mastery.review_interval_days or 1
+        if old_interval <= 1:
+            new_interval = 1
+        elif old_interval <= 6:
+            new_interval = 6
+        else:
+            new_interval = round(old_interval * new_ef)
+    mastery.ease_factor = round(new_ef, 4)
+    mastery.review_interval_days = min(new_interval, 90)  # cap at 90 days
+    mastery.next_review_at = datetime.utcnow() + timedelta(days=mastery.review_interval_days)
+
+
+# ── AI rate limiting (task #25) ───────────────────────────────────────────────
+# In-memory; resets each day. For multi-process deploy, replace with Redis.
+
+_AI_DAILY_LIMIT = int(os.getenv("AI_DAILY_LIMIT", "200"))
+_ai_call_counts: dict[int, dict[str, int]] = {}  # {user_id: {date_str: count}}
+
+
+def _check_ai_rate_limit(user_id: int) -> None:
+    """Raise 429 if the student has exceeded their daily AI call budget."""
+    today = datetime.utcnow().date().isoformat()
+    user_map = _ai_call_counts.setdefault(user_id, {})
+    # prune stale dates to prevent unbounded growth
+    for d in list(user_map):
+        if d != today:
+            del user_map[d]
+    count = user_map.get(today, 0)
+    if count >= _AI_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily AI limit of {_AI_DAILY_LIMIT} calls reached. Try again tomorrow.",
+        )
+    user_map[today] = count + 1
+
+
+# ── AI cost logging (task #26) ────────────────────────────────────────────────
+
+def _log_ai_usage(db: Session, student_id: int | None, endpoint: str, usage_list: list) -> None:
+    """Persist AI usage records collected via *_usage_out* parameter."""
+    for u in usage_list:
+        db.add(AIUsageLog(
+            student_id=student_id,
+            endpoint=endpoint,
+            model=u.get("model"),
+            input_tokens=u.get("input_tokens", 0),
+            output_tokens=u.get("output_tokens", 0),
+            cost_usd=u.get("cost_usd", 0.0),
+        ))
+    # caller must commit
+
+
 def _next_question(db: Session, topic, level: str, prev_qs: list[str],
                    recent_fmts: list[str] = None, study_summary: str = "") -> dict:
     """Try the question bank first; fall back to live generation."""
@@ -328,23 +416,29 @@ def _next_question(db: Session, topic, level: str, prev_qs: list[str],
 
 
 def _update_mastery(db: Session, session, topic, flagged: bool = False):
-    interval = _REVIEW_INTERVALS.get(session.current_level, 3)
-    next_review = datetime.utcnow() + timedelta(days=interval)
+    """Update TopicMastery after a session ends, applying SM-2 scheduling."""
+    # Determine whether the student improved (level went up) for SM-2 quality
+    level_order = ["L1", "L2", "L3", "L4", "L5"]
+    level_idx = level_order.index(session.current_level) if session.current_level in level_order else 0
 
     mastery = db.query(TopicMastery).filter(
         TopicMastery.student_id == session.user_id,
         TopicMastery.topic_id == session.topic_id,
     ).first()
+
     if mastery:
+        prev_idx = level_order.index(mastery.mastery_level) if mastery.mastery_level in level_order else 0
+        knew_it = level_idx >= prev_idx  # maintained or improved = "knew it"
         mastery.mastery_level = session.current_level
         mastery.last_practiced_at = datetime.utcnow()
         mastery.total_sessions += 1
-        mastery.next_review_at = next_review
-        mastery.review_interval_days = interval
+        _sm2_update(mastery, knew_it)
         if flagged or session.flagged_for_review:
             mastery.flagged_for_review = True
     else:
-        db.add(TopicMastery(
+        # First session: seed SM-2 with level-based initial interval
+        init_interval = _REVIEW_INTERVALS.get(session.current_level, 3)
+        new_mastery = TopicMastery(
             student_id=session.user_id,
             student_name=session.student_name,
             topic_id=session.topic_id,
@@ -352,9 +446,11 @@ def _update_mastery(db: Session, session, topic, flagged: bool = False):
             last_practiced_at=datetime.utcnow(),
             total_sessions=1,
             flagged_for_review=flagged or session.flagged_for_review,
-            next_review_at=next_review,
-            review_interval_days=interval,
-        ))
+            next_review_at=datetime.utcnow() + timedelta(days=init_interval),
+            review_interval_days=init_interval,
+            ease_factor=2.5,
+        )
+        db.add(new_mastery)
     db.commit()
 
 
@@ -1232,6 +1328,10 @@ def submit_answer(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Rate limit: students only (admins/parents not restricted)
+    if current_user.role == "student":
+        _check_ai_rate_limit(current_user.id)
+
     session = db.query(SessionModel).filter(SessionModel.id == req.session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1255,13 +1355,16 @@ def submit_answer(
                     .order_by(SessionTurn.turn_number.desc()).first())
 
     ekp = json.loads(current_turn.expected_key_points) if current_turn.expected_key_points else None
+    _usage: list = []
     assessment = assess_answer(
         topic, current_turn.question_text, req.answer,
         session.current_level, session.hint_tier,
         expected_key_points=ekp,
         answer_format=current_turn.answer_format,
         image_data=req.image_data or None,
+        _usage_out=_usage,
     )
+    _log_ai_usage(db, current_user.id, "submit_answer", _usage)
 
     current_turn.student_answer = req.answer
     current_turn.assessment_score = assessment["score"]
@@ -2086,6 +2189,77 @@ def admin_analytics(
         "subject_breakdown": subject_breakdown,
         "mastery_distribution": mastery_dist,
         "top_students": top_students,
+    }
+
+
+@app.get("/api/admin/ai-usage")
+def admin_ai_usage(
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """AI cost monitoring — daily totals and per-student breakdown (task #26)."""
+    from sqlalchemy import func as sqlfunc, cast, Date as SQLDate
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Daily totals
+    daily_rows = (
+        db.query(
+            sqlfunc.date(AIUsageLog.called_at).label("day"),
+            sqlfunc.sum(AIUsageLog.input_tokens).label("input_tokens"),
+            sqlfunc.sum(AIUsageLog.output_tokens).label("output_tokens"),
+            sqlfunc.sum(AIUsageLog.cost_usd).label("cost_usd"),
+            sqlfunc.count(AIUsageLog.id).label("calls"),
+        )
+        .filter(AIUsageLog.called_at >= cutoff)
+        .group_by(sqlfunc.date(AIUsageLog.called_at))
+        .order_by(sqlfunc.date(AIUsageLog.called_at))
+        .all()
+    )
+    daily = [
+        {
+            "date": str(r.day),
+            "calls": r.calls,
+            "input_tokens": r.input_tokens or 0,
+            "output_tokens": r.output_tokens or 0,
+            "cost_usd": round(r.cost_usd or 0.0, 6),
+        }
+        for r in daily_rows
+    ]
+
+    # Per-student totals
+    student_rows = (
+        db.query(
+            AIUsageLog.student_id,
+            User.name,
+            sqlfunc.sum(AIUsageLog.cost_usd).label("cost_usd"),
+            sqlfunc.count(AIUsageLog.id).label("calls"),
+        )
+        .outerjoin(User, User.id == AIUsageLog.student_id)
+        .filter(AIUsageLog.called_at >= cutoff, AIUsageLog.student_id.isnot(None))
+        .group_by(AIUsageLog.student_id, User.name)
+        .order_by(sqlfunc.sum(AIUsageLog.cost_usd).desc())
+        .limit(20)
+        .all()
+    )
+    per_student = [
+        {
+            "student_id": r.student_id,
+            "name": r.name or "Unknown",
+            "calls": r.calls,
+            "cost_usd": round(r.cost_usd or 0.0, 6),
+        }
+        for r in student_rows
+    ]
+
+    total_cost = sum(d["cost_usd"] for d in daily)
+    return {
+        "period_days": days,
+        "total_cost_usd": round(total_cost, 4),
+        "daily": daily,
+        "top_students": per_student,
+        "daily_limit_per_student": _AI_DAILY_LIMIT,
     }
 
 
@@ -3359,14 +3533,8 @@ def mark_flashcard(
         TopicMastery.topic_id == req.topic_id,
     ).first()
 
-    now = datetime.utcnow()
     if mastery:
-        if req.known:
-            new_interval = min(int((mastery.review_interval_days or 1) * 1.5), 21)
-        else:
-            new_interval = 1
-        mastery.review_interval_days = new_interval
-        mastery.next_review_at = now + timedelta(days=new_interval)
+        _sm2_update(mastery, knew_it=req.known)
         db.commit()
 
     return {"updated": bool(mastery), "next_review_days": mastery.review_interval_days if mastery else 1}
