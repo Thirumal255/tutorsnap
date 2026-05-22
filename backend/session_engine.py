@@ -582,15 +582,21 @@ def assess_answer(
         f"  - Leave as [] if all points covered, or if off_topic is true, or if there are no reference points.\n"
         f"  - Example: reference=[\"digits add to 9\",\"last digit 0 or 5\"], student said only last digit rule → missed=[\"digits add to 9\"]"
     )
+    transcription: str | None = None
     try:
         if image_data:
-            # Handwritten answer — use vision model; inject image + text prompt
+            # Handwritten answer — use vision model; inject image + text prompt.
+            # Ask Claude to also return a `transcription` of what it reads, so
+            # the student can verify their handwriting was read correctly (#11).
             vision_user = (
                 f"The student wrote their answer by hand (see the image above).\n"
-                f"Please read the handwriting carefully and assess it as if it were typed text.\n\n"
+                f"IMPORTANT: First, carefully transcribe exactly what you can read from the handwriting "
+                f"into a 'transcription' field in your JSON. Then assess that transcribed text as the student's answer.\n\n"
                 + user
+                + "\n\nIMPORTANT: Include a 'transcription' key in your JSON with the exact text you read from the image. "
+                  "Example: {\"transcription\": \"The answer is 42\", \"score\": 90, ...}"
             )
-            raw = call_claude_vision(system, vision_user, image_data, max_tokens=450,
+            raw = call_claude_vision(system, vision_user, image_data, max_tokens=550,
                                      _usage_out=_usage_out)
         else:
             raw = call_claude(system, user, max_tokens=450, model=_SONNET,
@@ -601,14 +607,16 @@ def assess_answer(
         feedback = str(data.get("feedback", "Let's try again!"))
         off_topic = bool(data.get("off_topic", False))
         missed_key_points = list(data.get("missed_key_points") or [])
+        if image_data:
+            transcription = data.get("transcription") or None
     except Exception:
         return {"score": 0, "feedback": "Let's try again!", "confidence_tag": "struggling",
-                "off_topic": False, "missed_key_points": []}
+                "off_topic": False, "missed_key_points": [], "transcription": None}
 
     if off_topic:
         # Off-topic answers: don't penalise, just ask them to try the same question again.
         return {"score": 0, "feedback": feedback, "confidence_tag": "off_topic",
-                "off_topic": True, "missed_key_points": []}
+                "off_topic": True, "missed_key_points": [], "transcription": transcription}
 
     # Confidence tag is derived from RAW score BEFORE hint_tier penalty.
     # Critical: a student who nails the answer after hints must still be marked "confident"
@@ -631,7 +639,8 @@ def assess_answer(
         score = min(raw_score, 64)  # shaky ceiling, avoids infinite struggle loop
 
     return {"score": score, "feedback": feedback, "confidence_tag": confidence_tag,
-            "off_topic": False, "missed_key_points": missed_key_points}
+            "off_topic": False, "missed_key_points": missed_key_points,
+            "transcription": transcription}
 
 
 def get_hint(topic, question: str, student_answer: str, hint_tier: int,
@@ -882,3 +891,42 @@ def determine_next_action(session, confidence_tag: str, topic, raw_score: int = 
             "new_level": session.current_level,
             "show_hint_button": True,
         }
+
+
+# ── Worked example generator (task #30) ──────────────────────────────────────
+
+def generate_worked_example(topic, level: str, study_summary: str = "") -> str:
+    """Generate a short worked example for a topic at the given level.
+
+    Returns a Markdown string the tutor can show before the first question.
+    Returns an empty string on failure (non-fatal).
+    """
+    subject_label = get_subject_label(topic)
+    context_section = build_topic_context(topic)
+    summary_section = (
+        f"\nStudent's study notes:\n{study_summary}\n" if study_summary else ""
+    )
+    system = (
+        f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
+        f"Your job is to show ONE brief, fully worked example question for this topic "
+        f"at difficulty level {level}. The example should:\n"
+        f"  - Be clearly labelled as an EXAMPLE (not the practice question)\n"
+        f"  - Show the question AND a complete step-by-step solution\n"
+        f"  - Be encouraging and easy to follow\n"
+        f"  - Be 4–8 lines maximum\n"
+        f"  - NOT ask the student to do anything — it is a demonstration\n"
+        f"{TOPIC_BOUNDARY_RULE}\n"
+        f"{context_section}"
+        f"{summary_section}"
+    )
+    user = (
+        f"Create one short worked example at level {level} for this topic. "
+        f"Format:\n"
+        f"**Example:** [question text]\n"
+        f"**Solution:** [step-by-step answer]\n\n"
+        f"Keep it brief (≤8 lines). Do not ask the student to try — just show the example."
+    )
+    try:
+        return call_claude(system, user, max_tokens=300, model=_HAIKU)
+    except Exception:
+        return ""

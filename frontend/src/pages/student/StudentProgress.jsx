@@ -249,6 +249,7 @@ export default function StudentProgress() {
         initialMessage: d.message, currentLevel: d.current_level,
         levelLabel: d.level_label, topicId, answerFormat: d.answer_format || null,
         diagnostic: d.diagnostic || false,
+        workedExample: d.worked_example || null,
       }))
       navigate(`/session/${d.session_id}`)
     } catch (e) {

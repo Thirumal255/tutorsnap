@@ -32,7 +32,7 @@ from auth import get_current_user, require_admin, require_parent, verify_google_
 from session_engine import (
     generate_question, assess_answer, get_hint, get_concept_explanation,
     get_session_summary, determine_next_action, get_start_level,
-    generate_sub_question,
+    generate_sub_question, generate_worked_example,
     LEVEL_GUIDE, LEVEL_ORDER,
 )
 
@@ -42,6 +42,7 @@ _DEFAULT_SETTINGS = [
     {"key": "max_questions_per_session", "value": "20"},
     {"key": "max_hint_tiers", "value": "5"},
     {"key": "session_timeout_minutes", "value": "30"},
+    {"key": "break_reminder_at_questions", "value": "10"},   # suggest a break after N questions
 ]
 
 
@@ -1299,6 +1300,14 @@ def start_session(
     session.questions_asked = 1
     db.commit()
 
+    # ── Worked example (task #30): show before first real practice question ───
+    # Only for non-diagnostic sessions where the student has study notes.
+    worked_example = None
+    if not is_first_practice and mastery.study_summary:
+        worked_example = generate_worked_example(topic, start_level, mastery.study_summary)
+        if not worked_example:
+            worked_example = None  # keep None if generation fails
+
     if is_first_practice:
         intro = (
             f"Before we start, I'll ask you **3 quick questions** to find the best level for you. "
@@ -1319,6 +1328,7 @@ def start_session(
         "diagnostic": is_first_practice,
         "diagnostic_turn": 1 if is_first_practice else 0,
         "diagnostic_total": 3,
+        "worked_example": worked_example,
     }
 
 
@@ -1588,6 +1598,38 @@ def submit_answer(
         session.questions_asked += 1
         db.commit()
 
+    # ── Session length controls (task #12) ────────────────────────────────────
+    _max_qs_setting = db.query(AppSettings).filter(
+        AppSettings.key == "max_questions_per_session"
+    ).first()
+    _max_qs = int(_max_qs_setting.value) if _max_qs_setting else 20
+    _break_at_setting = db.query(AppSettings).filter(
+        AppSettings.key == "break_reminder_at_questions"
+    ).first()
+    _break_at = int(_break_at_setting.value) if _break_at_setting else 10
+
+    # Hard limit: force session_complete when max questions reached
+    if session.questions_asked >= _max_qs:
+        session.status = "completed"
+        session.ended_at = datetime.utcnow()
+        session.final_confidence = assessment["confidence_tag"]
+        _update_mastery(db, session, topic)
+        turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
+        summary = get_session_summary(session, topic, turns)
+        db.commit()
+        return {"session_id": session.id, "feedback": assessment["feedback"],
+                "score": assessment["score"], "confidence_tag": assessment["confidence_tag"],
+                "action": "session_complete", "current_level": session.current_level,
+                "level_label": level_label(session.current_level), "show_hint_button": False,
+                "session_complete": True, "summary": summary,
+                "turn_number": current_turn.turn_number, "xp_earned": xp_earned,
+                "at_question_limit": True}
+
+    # Soft limit: suggest break
+    suggest_break = (session.questions_asked > 0 and
+                     session.questions_asked % _break_at == 0 and
+                     next_action.get("action") == "next_question")
+
     db.commit()
     return {"session_id": session.id, "feedback": assessment["feedback"],
             "score": assessment["score"], "confidence_tag": assessment["confidence_tag"],
@@ -1597,7 +1639,9 @@ def submit_answer(
             "session_complete": False, "next_question": next_question,
             "concept_explanation": concept_explanation, "xp_earned": xp_earned,
             "answer_format": next_answer_format,
-            "turn_number": new_turn_number}
+            "turn_number": new_turn_number,
+            "suggest_break": suggest_break,
+            "transcription": assessment.get("transcription")}
 
 
 @app.post("/api/session/sub-question")

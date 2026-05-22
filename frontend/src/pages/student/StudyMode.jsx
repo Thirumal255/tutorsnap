@@ -180,6 +180,7 @@ export default function StudyMode() {
           levelLabel: d.level_label, topicId: parseInt(topicId),
           answerFormat: d.answer_format || null,
           diagnostic: d.diagnostic || false,
+          workedExample: d.worked_example || null,
         })
       )
       navigate(`/session/${d.session_id}`)

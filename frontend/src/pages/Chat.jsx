@@ -66,6 +66,12 @@ export default function Chat() {
   const [canvasExpanded, setCanvasExpanded] = useState(false)
   const canvasRef = useRef(null)
 
+  // Worked example (#30), transcription (#11), break reminder (#12)
+  const [workedExample, setWorkedExample] = useState(null)
+  const [showWorkedExample, setShowWorkedExample] = useState(false)
+  const [transcription, setTranscription] = useState(null)
+  const [suggestBreak, setSuggestBreak] = useState(false)
+
   const bottomRef = useRef(null)
   const slowTimerRef = useRef(null)
 
@@ -80,6 +86,9 @@ export default function Chat() {
     if (data.diagnostic) {
       setDiagnosticPhase(true)
       setDiagnosticTurn(1)
+    }
+    if (data.workedExample) {
+      setWorkedExample(data.workedExample)
     }
   }, [sessionId])
 
@@ -209,6 +218,17 @@ export default function Chat() {
 
       setCurrentLevel(d.current_level)
       resetGiveUp()
+
+      // Show handwriting transcription so student can verify (#11)
+      if (d.transcription) {
+        setTranscription(d.transcription)
+        setTimeout(() => setTranscription(null), 8000)
+      }
+
+      // Break reminder (#12)
+      if (d.suggest_break) {
+        setSuggestBreak(true)
+      }
 
       // Clear canvas after successful submission
       if (canvasMode && canvasRef.current) canvasRef.current.clear()
@@ -489,8 +509,47 @@ export default function Chat() {
         {showHintButton && (
           <HintButton onHint={handleHint} hintTier={hintTier} isLoading={hintLoading} isFinalHint={hintTier >= 5} />
         )}
+
+        {/* Worked example (#30) — stays in message flow */}
+        {workedExample && (
+          <div className="mb-3 animate-bounce-in">
+            <button
+              onClick={() => setShowWorkedExample(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-[#1A1A3E] border border-[#A78BFA]/30 rounded-xl text-xs text-[#A78BFA] font-semibold hover:border-[#A78BFA]/60 transition-all"
+            >
+              <span>💡 See a worked example first</span>
+              <span>{showWorkedExample ? '▲' : '▼'}</span>
+            </button>
+            {showWorkedExample && (
+              <div className="mt-2 px-3 py-2 bg-[#16213E] border border-[#A78BFA]/20 rounded-xl text-xs text-[#8892B0] font-nunito whitespace-pre-line">
+                {workedExample}
+              </div>
+            )}
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
+
+      {/* Break reminder (#12) — above input, non-scrolling */}
+      {suggestBreak && (
+        <div className="flex-shrink-0 mx-4 mb-2 animate-bounce-in bg-[#FFD700]/10 border border-[#FFD700]/30 rounded-xl px-3 py-2 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-fredoka font-bold text-[#FFD700]">☕ Nice work! Time for a quick stretch?</p>
+            <p className="text-[10px] text-[#8892B0]">You've answered a bunch of questions. A short break helps the brain!</p>
+          </div>
+          <button onClick={() => setSuggestBreak(false)} className="text-[#8892B0] hover:text-white text-lg leading-none flex-shrink-0">×</button>
+        </div>
+      )}
+
+      {/* Handwriting transcription (#11) — above input, non-scrolling */}
+      {transcription && (
+        <div className="flex-shrink-0 mx-4 mb-2 animate-bounce-in bg-[#00A2FF]/10 border border-[#00A2FF]/30 rounded-xl px-3 py-2">
+          <p className="text-[10px] text-[#00A2FF] font-semibold uppercase tracking-wide mb-0.5">We read your handwriting as:</p>
+          <p className="text-xs text-white font-nunito italic">"{transcription}"</p>
+          <p className="text-[10px] text-[#8892B0] mt-0.5">If this looks wrong, try typing your answer instead.</p>
+        </div>
+      )}
 
       {/* Input area */}
       <div className="flex-shrink-0 bg-[#16213E] border-t border-[#2D2B5A] px-4 py-3">
