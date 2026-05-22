@@ -305,7 +305,12 @@ export default function Chat() {
         addMessage('buddy', d.next_question)
         setShowHintButton(false)
       } else if (d.next_question) {
-        if (d.xp_earned > 0) showXP(`+${d.xp_earned} XP`)
+        if (d.bonus_xp > 0) {
+          // #53: Variable reward — surprise double-XP celebration
+          showXP(`🎰 LUCKY BONUS! +${d.xp_earned + d.bonus_xp} XP`)
+        } else if (d.xp_earned > 0) {
+          showXP(`+${d.xp_earned} XP`)
+        }
         addMessage('buddy', d.next_question)
         setHintTier(0)
         setShowHintButton(false)

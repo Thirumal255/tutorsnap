@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   initUpload, completeUpload, uploadPDF, getTopics, getBooks,
-  deleteBook, cancelIngestion, retryIngestion,
+  deleteBook, cancelIngestion, retryIngestion, previewBook,
 } from '../../api/client'
 import { useUpload } from '../../context/UploadContext'
 
@@ -216,6 +216,8 @@ export default function AdminBooks() {
   const [expanded, setExpanded] = useState({})
   const [viewTopics, setViewTopics] = useState(null)
   const [confirmModal, setConfirmModal] = useState(null) // { type: 'delete'|'cancel', bookId, bookTitle }
+  const [bookPreview, setBookPreview] = useState(null)   // #44: rich preview panel data
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   useEffect(() => { loadBooks() }, [])
 
@@ -370,6 +372,24 @@ export default function AdminBooks() {
       res.data.chapters.forEach(ch => { exp[ch.id] = true })
       setExpanded(exp)
     } catch {}
+  }
+
+  // #44: Load rich book preview
+  async function handlePreviewBook(bookId) {
+    if (bookPreview?.book_id === bookId) {
+      setBookPreview(null)
+      return
+    }
+    setPreviewLoading(bookId)
+    try {
+      const res = await previewBook(bookId)
+      setBookPreview(res.data)
+      setViewTopics(null)
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Preview failed.')
+    } finally {
+      setPreviewLoading(false)
+    }
   }
 
   return (
@@ -572,6 +592,100 @@ export default function AdminBooks() {
         />
       )}
 
+      {/* ── Book Preview Panel (#44) ─────────────────────────────────────────── */}
+      {bookPreview && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-wider">📋 Content Preview</p>
+              <p className="text-white font-fredoka font-bold">{bookPreview.title}</p>
+            </div>
+            <button onClick={() => setBookPreview(null)} className="text-xs text-[#8892B0] hover:text-white">✕ Close</button>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Chapters', value: bookPreview.chapter_count, color: 'text-[#00A2FF]' },
+              { label: 'Topics',   value: bookPreview.topic_count,   color: 'text-[#00D68F]' },
+              { label: 'Status',   value: bookPreview.ingestion_status === 'done' ? '✅ Ready' : bookPreview.upload_stage || bookPreview.ingestion_status, color: bookPreview.ingestion_status === 'done' ? 'text-[#00D68F]' : 'text-[#FFD700]' },
+            ].map(s => (
+              <div key={s.label} className="blox-card p-3 text-center">
+                <p className={`text-lg font-fredoka font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-xs text-[#8892B0]">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Sample concepts & vocab */}
+          {(bookPreview.sample_concepts.length > 0 || bookPreview.sample_vocab.length > 0) && (
+            <div className="blox-card p-4 space-y-3">
+              {bookPreview.sample_concepts.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-wide mb-2">🧠 Sample Key Concepts</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {bookPreview.sample_concepts.map((c, i) => (
+                      <span key={i} className="text-xs bg-[#00A2FF]/10 text-[#00A2FF] border border-[#00A2FF]/20 px-2.5 py-1 rounded-full">{c}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {bookPreview.sample_vocab.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-wide mb-2">📖 Sample Vocabulary</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {bookPreview.sample_vocab.map((v, i) => (
+                      <span key={i} className="text-xs bg-[#C084FC]/10 text-[#C084FC] border border-[#C084FC]/20 px-2.5 py-1 rounded-full">{v}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Chapter tree */}
+          <div className="space-y-2">
+            {bookPreview.chapters.map(ch => (
+              <div key={ch.id} className="bg-[#0F0F23] rounded-xl overflow-hidden border border-[#2D2B5A]">
+                <button
+                  onClick={() => setExpanded(p => ({ ...p, [`prev_${ch.id}`]: !p[`prev_${ch.id}`] }))}
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#1A1A3E] transition-colors"
+                >
+                  <span className="font-fredoka font-bold text-white text-sm">
+                    <span className="text-[#00A2FF] mr-2">Ch {ch.chapter_number}</span>{ch.title}
+                  </span>
+                  <span className="text-xs text-[#8892B0]">{ch.topic_count} topics {expanded[`prev_${ch.id}`] ? '▲' : '▼'}</span>
+                </button>
+                {expanded[`prev_${ch.id}`] && (
+                  <ul className="border-t border-[#2D2B5A] divide-y divide-[#2D2B5A]/50">
+                    {ch.topics.map(t => (
+                      <li key={t.id} className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="text-sm font-semibold text-white font-nunito">{t.topic_number} {t.title}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${RANK_COLORS[t.difficulty_ceiling] || ''}`}>
+                            {t.difficulty_ceiling}
+                          </span>
+                        </div>
+                        {t.key_concepts?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {t.key_concepts.slice(0, 5).map((c, i) => (
+                              <span key={i} className="text-xs bg-[#2D2B5A] text-[#8892B0] px-2 py-0.5 rounded-full">{c}</span>
+                            ))}
+                            {t.key_concepts.length > 5 && (
+                              <span className="text-xs text-[#4A5568]">+{t.key_concepts.length - 5} more</span>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Inline topics viewer */}
       {viewTopics && (
         <div className="space-y-3">
@@ -665,6 +779,13 @@ export default function AdminBooks() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handlePreviewBook(b.book_id)}
+                          disabled={previewLoading === b.book_id}
+                          className="text-xs text-[#C084FC] hover:underline font-semibold disabled:opacity-50"
+                        >
+                          {previewLoading === b.book_id ? '…' : bookPreview?.book_id === b.book_id ? '✕ Preview' : '👁 Preview'}
+                        </button>
                         {b.status === 'done' && (
                           <button onClick={() => loadTopicsForBook(b.book_id)}
                             className="text-xs text-[#00A2FF] hover:underline font-semibold">

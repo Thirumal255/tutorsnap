@@ -42,7 +42,7 @@ function timeAgo(isoStr) {
   return new Date(isoStr).toLocaleDateString()
 }
 
-function ChildCard({ child, idx, onClick }) {
+function ChildCard({ child, idx, onClick, trendPct }) {
   const gradient = CHILD_COLORS[idx % CHILD_COLORS.length]
   const hasFlag = child.flagged_topics > 0
 
@@ -116,7 +116,7 @@ function ChildCard({ child, idx, onClick }) {
         </span>
       </div>
 
-      {/* This week mini-bar */}
+      {/* This week mini-bar + trend (#51) */}
       <div className="flex items-center gap-2">
         <span className="text-[10px] text-[#8892B0] flex-shrink-0">This week</span>
         <div className="flex-1 h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden">
@@ -128,6 +128,13 @@ function ChildCard({ child, idx, onClick }) {
         <span className="text-[10px] text-[#8892B0] flex-shrink-0">
           {child.sessions_this_week ?? 0} session{child.sessions_this_week !== 1 ? 's' : ''}
         </span>
+        {trendPct != null && (
+          <span className={`text-[10px] font-bold flex-shrink-0 ${
+            trendPct > 0 ? 'text-[#00CC88]' : trendPct < 0 ? 'text-[#FF6B6B]' : 'text-[#8892B0]'
+          }`}>
+            {trendPct > 0 ? `↑${trendPct}%` : trendPct < 0 ? `↓${Math.abs(trendPct)}%` : '→'}
+          </span>
+        )}
       </div>
 
       <p className="text-xs text-[#00A2FF] mt-3 text-right font-semibold">View details →</p>
@@ -286,14 +293,18 @@ export default function ParentDashboard() {
                   👨‍👩‍👧 My children
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {children.map((child, idx) => (
-                    <ChildCard
-                      key={child.id}
-                      child={child}
-                      idx={idx}
-                      onClick={() => navigate(`/parent/children/${child.id}`)}
-                    />
-                  ))}
+                  {children.map((child, idx) => {
+                    const actEntry = activity.find(a => a.child_id === child.id)
+                    return (
+                      <ChildCard
+                        key={child.id}
+                        child={child}
+                        idx={idx}
+                        trendPct={actEntry?.trend_pct ?? null}
+                        onClick={() => navigate(`/parent/children/${child.id}`)}
+                      />
+                    )
+                  })}
                 </div>
               </div>
 

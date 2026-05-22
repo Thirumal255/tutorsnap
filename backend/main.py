@@ -1045,6 +1045,65 @@ def get_books(
             for b in books]
 
 
+@app.get("/api/admin/books/{book_id}/preview")
+def admin_preview_book(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Rich preview of a book's extracted content for admin review — works on any ingestion status."""
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    chapters = (db.query(Chapter).filter(Chapter.book_id == book_id)
+                .order_by(Chapter.chapter_number).all())
+
+    chapters_data = []
+    all_vocab: list = []
+    all_concepts: list = []
+    topic_count = 0
+
+    for ch in chapters:
+        topics = db.query(Topic).filter(Topic.chapter_id == ch.id).order_by(Topic.id).all()
+        topic_list = []
+        for t in topics:
+            topic_count += 1
+            kc = t.key_concepts or []
+            vc = t.vocabulary or []
+            all_concepts.extend(kc[:3])
+            all_vocab.extend(vc[:3])
+            topic_list.append({
+                "id": t.id,
+                "topic_number": t.topic_number,
+                "title": t.title,
+                "difficulty_ceiling": t.difficulty_ceiling,
+                "key_concepts": kc,
+                "vocabulary": vc,
+            })
+        chapters_data.append({
+            "id": ch.id,
+            "chapter_number": ch.chapter_number,
+            "title": ch.title,
+            "topic_count": len(topic_list),
+            "topics": topic_list,
+        })
+
+    return {
+        "book_id": book.id,
+        "title": book.title or book.filename,
+        "subject": book.subject,
+        "grade": book.grade,
+        "ingestion_status": book.ingestion_status,
+        "upload_stage": book.upload_stage,
+        "chapter_count": len(chapters_data),
+        "topic_count": topic_count,
+        "sample_concepts": list(dict.fromkeys(all_concepts))[:12],
+        "sample_vocab": list(dict.fromkeys(all_vocab))[:12],
+        "chapters": chapters_data,
+    }
+
+
 @app.delete("/api/books/{book_id}")
 def delete_book(
     book_id: int,
@@ -1687,6 +1746,18 @@ def submit_answer(
         if xp_earned > 0:
             _update_user_xp(db, session.user_id, xp_earned)
 
+    # ── Variable reward: surprise double-XP (~15% chance) — task #53 ─────────
+    # Triggers only on a confident, hint-free, high-score answer in next_question turns.
+    bonus_xp = 0
+    if (session.user_id and xp_earned > 0
+            and next_action["action"] in ("next_question",)
+            and assessment.get("confidence_tag") in ("confident", "very_confident")
+            and (session.hint_tier or 0) == 0
+            and assessment.get("score", 0) >= 90
+            and random.random() < 0.15):
+        bonus_xp = xp_earned
+        _update_user_xp(db, session.user_id, bonus_xp)
+
     if next_action["action"] == "session_complete":
         session.ended_at = datetime.utcnow()
         session.status = "completed"
@@ -1797,6 +1868,7 @@ def submit_answer(
             "show_hint_button": next_action.get("show_hint_button", False),
             "session_complete": False, "next_question": next_question,
             "concept_explanation": concept_explanation, "xp_earned": xp_earned,
+            "bonus_xp": bonus_xp,  # task #53: variable reward bonus
             "answer_format": next_answer_format,
             "turn_number": new_turn_number,
             "suggest_break": suggest_break,
@@ -2911,12 +2983,15 @@ def parent_family_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_parent),
 ):
-    """7-day session counts per child — for the family activity chart on Overview."""
+    """7-day session counts per child plus week-over-week trend — for the family activity chart."""
     links = db.query(ParentStudentLink).filter(
         ParentStudentLink.parent_id == current_user.id
     ).all()
-    today = datetime.utcnow().date()
-    week_start = datetime.utcnow() - timedelta(days=6)
+    now = datetime.utcnow()
+    today = now.date()
+    week_start = now - timedelta(days=6)
+    prev_week_start = now - timedelta(days=13)
+    prev_week_end = now - timedelta(days=7)
     dates = [(today - timedelta(days=6 - i)).isoformat() for i in range(7)]
     result = []
     for link in links:
@@ -2931,10 +3006,26 @@ def parent_family_activity(
             d = s.started_at.date().isoformat()
             if d in day_counts:
                 day_counts[d] += 1
+        curr_total = sum(day_counts.values())
+
+        # Previous 7-day window for trend comparison (#51)
+        prev_total = db.query(func.count(SessionModel.id)).filter(
+            SessionModel.user_id == child.id,
+            SessionModel.started_at >= prev_week_start,
+            SessionModel.started_at < prev_week_end,
+        ).scalar() or 0
+        if prev_total == 0:
+            trend_pct = 100 if curr_total > 0 else 0
+        else:
+            trend_pct = round((curr_total - prev_total) / prev_total * 100)
+
         result.append({
             "child_id": child.id,
             "child_name": child.name,
             "activity": [{"date": d, "sessions": day_counts[d]} for d in dates],
+            "curr_week_total": curr_total,
+            "prev_week_total": prev_total,
+            "trend_pct": trend_pct,
         })
     return result
 
@@ -3118,6 +3209,10 @@ def student_dashboard(
         "total_sessions": db.query(SessionModel).filter(
             SessionModel.user_id == student_id
         ).count(),
+        "total_questions_answered": db.query(func.sum(SessionModel.questions_asked)).filter(
+            SessionModel.user_id == student_id,
+            SessionModel.status == "completed",
+        ).scalar() or 0,
         "total_xp": current_user.total_xp or 0,
         "weekly_xp": current_user.weekly_xp or 0,
         "weekly_challenge_done": weekly_challenge_done,

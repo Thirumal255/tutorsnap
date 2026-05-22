@@ -43,9 +43,16 @@ const BADGES = [
   // Challenge
   { id: 'l5_1', icon: '⭐', title: 'Star Player', desc: 'Reach Challenge Mode (L5)', category: 'Challenge',
     check: ({ l5Count: c }) => c >= 1, progress: ({ l5Count: c }) => Math.min(c, 1), goal: 1 },
+  // Effort (#47) — rewarding persistence regardless of score
+  { id: 'effort_25',  icon: '💪', title: 'Persistent',  desc: 'Answer 25 questions',  category: 'Effort',
+    check: ({ totalQuestions: q }) => q >= 25,  progress: ({ totalQuestions: q }) => Math.min(q ?? 0, 25),  goal: 25 },
+  { id: 'effort_100', icon: '🔬', title: 'Gritty',      desc: 'Answer 100 questions', category: 'Effort',
+    check: ({ totalQuestions: q }) => q >= 100, progress: ({ totalQuestions: q }) => Math.min(q ?? 0, 100), goal: 100 },
+  { id: 'effort_500', icon: '🎖️', title: 'Iron Will',   desc: 'Answer 500 questions', category: 'Effort',
+    check: ({ totalQuestions: q }) => q >= 500, progress: ({ totalQuestions: q }) => Math.min(q ?? 0, 500), goal: 500 },
 ]
 
-const CATEGORY_ORDER = ['Sessions', 'Mastery', 'Streaks', 'XP', 'Explore', 'Challenge']
+const CATEGORY_ORDER = ['Sessions', 'Mastery', 'Streaks', 'XP', 'Explore', 'Challenge', 'Effort']
 
 function BadgeCard({ badge, earned, pct }) {
   return (
@@ -256,11 +263,12 @@ export default function StudentAchievements() {
           streak: dash.streak_days,
           totalSessions: dash.total_sessions,
           totalXp: dash.total_xp || 0,
+          totalQuestions: dash.total_questions_answered || 0,   // #47
           mastered, l5Count,
           subjectsTried: subjectsTried.size,
         })
       })
-      .catch(() => setStats({ streak: 0, totalSessions: 0, totalXp: 0, mastered: 0, l5Count: 0, subjectsTried: 0 }))
+      .catch(() => setStats({ streak: 0, totalSessions: 0, totalXp: 0, totalQuestions: 0, mastered: 0, l5Count: 0, subjectsTried: 0 }))
       .finally(() => setLoading(false))
   }, [])
 
