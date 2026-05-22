@@ -1,6 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getChildDetail, getChildSessions, getChildWeeklyReport } from '../../api/client'
+import { getChildDetail, getChildSessions, getChildWeeklyReport, setChildGoal } from '../../api/client'
+
+// ── Support tips per subject (task #33) ─────────────────────────────────────
+const SUPPORT_TIPS = {
+  Mathematics:      "Work through a similar problem step-by-step together, asking them to explain each step aloud.",
+  Science:          "Watch a short video on the concept together and discuss what they observed.",
+  English:          "Read a short passage together and ask them to retell it in their own words.",
+  History:          "Look at a timeline together — ask them to tell you the story of the events.",
+  Geography:        "Use a map or globe to make the concept visual and concrete.",
+  Physics:          "Try a simple at-home experiment that demonstrates the principle.",
+  Chemistry:        "Connect it to everyday life — cooking, cleaning products, and rusting all involve chemistry!",
+  Biology:          "Talk about how the concept relates to their own body or the local environment.",
+  'Social Studies': "Discuss a current news story that connects to what they're learning.",
+  'Computer Science': "Ask them to explain the concept to you — teaching is the best way to master something.",
+  Tamil:            "Read a passage aloud together and discuss the meaning of unfamiliar words.",
+  Hindi:            "Read a passage aloud together and discuss the meaning of unfamiliar words.",
+  Other:            "Ask them to explain the topic in their own words — this reveals where the gaps are.",
+}
 
 const SUBJECT_EMOJI = {
   Mathematics: '🔢', Science: '🔬', English: '📖', 'Social Studies': '🌍',
@@ -130,11 +147,14 @@ export default function ParentChildDetail() {
   const [child, setChild] = useState(null)
   const [sessions, setSessions] = useState([])
   const [weeklyReport, setWeeklyReport] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]           = useState(true)
   const [sessionsLoading, setSessionsLoading] = useState(false)
-  const [offset, setOffset] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [activeTab, setActiveTab] = useState('overview') // overview | mastery | sessions
+  const [offset, setOffset]             = useState(0)
+  const [hasMore, setHasMore]           = useState(false)
+  const [activeTab, setActiveTab]       = useState('overview')
+  const [goalEditing, setGoalEditing]   = useState(false)
+  const [goalValue, setGoalValue]       = useState(1)
+  const [goalSaving, setGoalSaving]     = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -142,6 +162,7 @@ export default function ParentChildDetail() {
       getChildWeeklyReport(id).catch(() => null),
     ]).then(([r, w]) => {
       setChild(r.data)
+      setGoalValue(r.data?.student?.daily_goal_sessions || 1)
       if (w) setWeeklyReport(w.data)
     }).finally(() => setLoading(false))
     loadSessions(0)
@@ -157,6 +178,19 @@ export default function ParentChildDetail() {
       setOffset(off + PAGE)
     } catch {}
     finally { setSessionsLoading(false) }
+  }
+
+  async function saveGoal() {
+    setGoalSaving(true)
+    try {
+      await setChildGoal(id, goalValue)
+      setChild(prev => prev ? {
+        ...prev,
+        student: { ...prev.student, daily_goal_sessions: goalValue }
+      } : prev)
+      setGoalEditing(false)
+    } catch {}
+    finally { setGoalSaving(false) }
   }
 
   if (loading) return (
@@ -232,30 +266,102 @@ export default function ParentChildDetail() {
         </div>
       )}
 
-      {/* ── Needs attention ─────────────────────────────────── */}
+      {/* ── Daily goal card (task #15) ───────────────────────── */}
+      <div className="blox-card p-4 flex items-center gap-4 animate-bounce-in">
+        <div className="flex-shrink-0 text-center">
+          <p className="text-2xl font-fredoka font-bold text-[#00A2FF]">
+            {student.sessions_today ?? 0}/{student.daily_goal_sessions ?? 1}
+          </p>
+          <p className="text-[10px] text-[#8892B0]">today's sessions</p>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="h-2 bg-[#2D2B5A] rounded-full overflow-hidden mb-1">
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${
+                (student.sessions_today ?? 0) >= (student.daily_goal_sessions ?? 1)
+                  ? 'bg-[#00CC88]' : 'bg-[#00A2FF]'
+              }`}
+              style={{ width: `${Math.min(((student.sessions_today ?? 0) / (student.daily_goal_sessions ?? 1)) * 100, 100)}%` }}
+            />
+          </div>
+          <p className="text-xs text-white font-semibold">
+            {(student.sessions_today ?? 0) >= (student.daily_goal_sessions ?? 1)
+              ? '🎉 Goal reached today!'
+              : `Daily goal: ${student.daily_goal_sessions ?? 1} session${(student.daily_goal_sessions ?? 1) !== 1 ? 's' : ''}/day`}
+          </p>
+        </div>
+        <button
+          onClick={() => setGoalEditing(e => !e)}
+          className="flex-shrink-0 text-xs text-[#00A2FF] hover:text-white border border-[#00A2FF]/40 hover:border-[#00A2FF] rounded-xl px-3 py-1.5 transition-all font-nunito"
+        >
+          Set goal
+        </button>
+      </div>
+
+      {goalEditing && (
+        <div className="blox-card p-4 space-y-3 animate-bounce-in">
+          <p className="text-xs text-[#8892B0] font-semibold uppercase tracking-widest">
+            🎯 Set daily goal for {student.name}
+          </p>
+          <div className="flex gap-2 justify-center">
+            {[1, 2, 3, 4, 5].map(g => (
+              <button
+                key={g}
+                onClick={() => setGoalValue(g)}
+                className={`w-11 h-11 rounded-xl font-fredoka font-bold text-lg transition-all border-2 ${
+                  goalValue === g
+                    ? 'border-[#00A2FF] bg-[#00A2FF] text-white'
+                    : 'border-[#2D2B5A] text-[#8892B0] hover:border-[#8892B0] hover:text-white'
+                }`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={saveGoal}
+              disabled={goalSaving}
+              className="btn-blox-primary flex-1 py-2.5 text-sm disabled:opacity-50"
+            >
+              {goalSaving ? 'Saving…' : `Set to ${goalValue} session${goalValue !== 1 ? 's' : ''}/day`}
+            </button>
+            <button
+              onClick={() => setGoalEditing(false)}
+              className="px-4 py-2.5 text-sm text-[#8892B0] border border-[#2D2B5A] hover:border-[#8892B0] rounded-xl transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Needs attention + support tips (tasks #15, #33) ─── */}
       {flagged.length > 0 && (
         <div className="blox-card p-4 border-[#FF3333]/40">
           <p className="text-sm font-fredoka font-bold text-[#FF6B6B] mb-3">
             🚩 Needs attention ({flagged.length})
           </p>
-          <div className="space-y-2">
-            {flagged.map((m, i) => (
-              <div key={i} className="flex items-start gap-3 py-2 border-b border-[#2D2B5A] last:border-0">
-                <span className="text-lg">{MASTERY_ICON[m.mastery_level] || '⬜'}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">{m.topic_title}</p>
-                  <p className="text-xs text-[#8892B0]">{m.chapter_title} · {m.sessions_on_topic} sessions</p>
+          <div className="space-y-3">
+            {flagged_topics.map((m, i) => {
+              const tip = SUPPORT_TIPS[m.subject] || SUPPORT_TIPS.Other
+              return (
+                <div key={i} className="py-2 border-b border-[#2D2B5A] last:border-0">
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg">{MASTERY_ICON[m.mastery_level] || '🚩'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{m.topic_title}</p>
+                      <p className="text-xs text-[#8892B0]">{m.chapter_title}</p>
+                    </div>
+                  </div>
+                  {/* Support tip (task #33) */}
+                  <div className="mt-2 bg-[#00A2FF]/5 border border-[#00A2FF]/20 rounded-xl px-3 py-2 flex items-start gap-2">
+                    <span className="text-sm flex-shrink-0">💡</span>
+                    <p className="text-xs text-[#8892B0] leading-relaxed">{tip}</p>
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className={`text-sm font-fredoka font-bold ${LEVEL_COLOR[m.mastery_level] || 'text-white'}`}>
-                    {m.mastery_level}
-                  </p>
-                  <p className="text-xs text-[#8892B0]">
-                    Hint tier {m.last_hint_tier_needed ?? 0}
-                  </p>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

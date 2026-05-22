@@ -2533,6 +2533,12 @@ def parent_get_children(
             day_counts[d] = day_counts.get(d, 0) + 1
         streak = _compute_streak(db, child)
         sessions_this_week = sum(day_counts.values())
+        # Today's session count for goal ring
+        today_start_child = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        sessions_today_child = db.query(func.count(SessionModel.id)).filter(
+            SessionModel.user_id == child.id,
+            SessionModel.started_at >= today_start_child,
+        ).scalar() or 0
         result.append({
             "id": child.id, "name": child.name, "grade": child.grade,
             "avatar_url": child.avatar_url,
@@ -2542,6 +2548,8 @@ def parent_get_children(
             "flagged_topics": stats["flagged_topics"],
             "streak_days": streak,
             "sessions_this_week": sessions_this_week,
+            "daily_goal_sessions": child.daily_goal_sessions or 1,
+            "sessions_today": sessions_today_child,
         })
     return result
 
@@ -2613,12 +2621,19 @@ def parent_get_child_detail(
         if m.flagged_for_review:
             topic = db.query(Topic).filter(Topic.id == m.topic_id).first()
             chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
+            book = db.query(Book).filter(Book.id == chapter.book_id).first() if chapter else None
             flagged_topics.append({
                 "topic_title": topic.title if topic else "",
                 "chapter_title": chapter.title if chapter else "",
+                "subject": book.subject if book else "Other",
                 "message": (f"{child.name} needed extra help with {topic.title if topic else 'this topic'}. "
                             "Consider reviewing it together."),
             })
+
+    # Today's session count & daily goal (task #15/#17)
+    today_start_dt = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    sessions_today_count = sum(1 for s in sessions if s.started_at and s.started_at >= today_start_dt)
+    daily_goal = child.daily_goal_sessions or 1
 
     # Streak for this child — compassionate streak with weekend grace + freeze
     today_dt = datetime.utcnow().date()
@@ -2637,7 +2652,9 @@ def parent_get_child_detail(
         weekly_activity.append({"date": d, "sessions": day_counts_detail.get(d, 0)})
 
     return {
-        "student": {"name": child.name, "grade": child.grade},
+        "student": {"name": child.name, "grade": child.grade,
+                    "daily_goal_sessions": daily_goal,
+                    "sessions_today": sessions_today_count},
         "summary": {"total_sessions": total_sessions, "total_time_minutes": total_minutes,
                     "topics_practised": topics_practised, "topics_at_l3_or_above": topics_at_l3,
                     "flagged_topics": flagged_count, "streak_days": streak_detail,
@@ -2648,6 +2665,33 @@ def parent_get_child_detail(
         "flagged_topics": flagged_topics,
         "weekly_activity": weekly_activity,
     }
+
+
+class SetChildGoalRequest(BaseModel):
+    daily_goal_sessions: int  # 1–10
+
+
+@app.post("/api/parent/children/{student_id}/set-goal")
+def parent_set_child_goal(
+    student_id: int,
+    req: SetChildGoalRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_parent),
+):
+    """Allow a parent to set their child's daily session goal (task #15)."""
+    link = db.query(ParentStudentLink).filter(
+        ParentStudentLink.parent_id == current_user.id,
+        ParentStudentLink.student_id == student_id,
+    ).first()
+    if not link:
+        raise HTTPException(status_code=403, detail="Not linked to this student")
+    child = db.query(User).filter(User.id == student_id).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    child.daily_goal_sessions = max(1, min(10, req.daily_goal_sessions))
+    db.commit()
+    return {"daily_goal_sessions": child.daily_goal_sessions, "name": child.name}
 
 
 @app.get("/api/parent/children/{student_id}/sessions")

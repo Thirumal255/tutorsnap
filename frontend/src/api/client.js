@@ -102,6 +102,8 @@ export const getChildDetail = (id) => api.get(`/parent/children/${id}`)
 export const getChildSessions = (id, limit = 20, offset = 0) =>
   api.get(`/parent/children/${id}/sessions?limit=${limit}&offset=${offset}`)
 export const getChildWeeklyReport = (id) => api.get(`/parent/children/${id}/weekly-report`)
+export const setChildGoal = (id, sessions) =>
+  api.post(`/parent/children/${id}/set-goal`, { daily_goal_sessions: sessions })
 export const getFamilyActivity = () => api.get('/parent/family-activity')
 
 // Onboarding & daily goal

@@ -3,6 +3,23 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { getMyChildren, getFamilyActivity, getParentNotifications, markNotificationRead } from '../../api/client'
 
+// Subject-specific support tips (task #33)
+const SUBJECT_TIP = {
+  Mathematics:      "Try working through a similar problem together, asking them to explain each step.",
+  Science:          "Watch a short video on the concept together and discuss what you both notice.",
+  English:          "Read a short passage together and take turns asking each other questions.",
+  History:          "Look at a timeline together — ask them to tell you the story in their own words.",
+  Geography:        "Use a map or globe to make the concept visual and tangible.",
+  Physics:          "Try a simple at-home experiment that demonstrates the principle.",
+  Chemistry:        "Everyday cooking, cleaning, and rusting are chemistry — connect the topic to real life!",
+  Biology:          "Talk about how the concept relates to their own body or local environment.",
+  'Social Studies': "Discuss a current news story that connects to what they're studying.",
+  'Computer Science': "Ask them to teach the concept to you — explaining it reveals what they know.",
+  Tamil:            "Read a passage aloud together and discuss the meaning of unfamiliar words.",
+  Hindi:            "Read a passage aloud together and discuss the meaning of unfamiliar words.",
+  Other:            "Ask them to explain the topic in their own words — it shows you where the gaps are.",
+}
+
 const CHILD_COLORS = [
   'from-[#FF6B9D] to-[#FF3333]',
   'from-[#00A2FF] to-[#0066CC]',
@@ -80,6 +97,23 @@ function ChildCard({ child, idx, onClick }) {
             {hasFlag ? '🚩 Flagged' : 'Flagged'}
           </p>
         </div>
+      </div>
+
+      {/* Today's goal progress */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] text-[#8892B0] flex-shrink-0">Today</span>
+        <div className="flex-1 h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ${
+              (child.sessions_today ?? 0) >= (child.daily_goal_sessions ?? 1) ? 'bg-[#00CC88]' : 'bg-[#00A2FF]'
+            }`}
+            style={{ width: `${Math.min(((child.sessions_today ?? 0) / (child.daily_goal_sessions ?? 1)) * 100, 100)}%` }}
+          />
+        </div>
+        <span className="text-[10px] text-[#8892B0] flex-shrink-0">
+          {child.sessions_today ?? 0}/{child.daily_goal_sessions ?? 1}
+          {(child.sessions_today ?? 0) >= (child.daily_goal_sessions ?? 1) && ' ✓'}
+        </span>
       </div>
 
       {/* This week mini-bar */}
@@ -262,6 +296,38 @@ export default function ParentDashboard() {
                   ))}
                 </div>
               </div>
+
+              {/* Support tips for flagged topics (task #33) */}
+              {children.some(c => c.flagged_topics > 0) && (
+                <div className="blox-card p-4 border-[#FFB347]/30 animate-bounce-in">
+                  <p className="text-xs text-[#FFB347] font-semibold uppercase tracking-widest mb-3">
+                    💡 How to help at home
+                  </p>
+                  <div className="space-y-3">
+                    {alerts.map(n => {
+                      // Try to extract subject from notification body or title (heuristic)
+                      const subject = Object.keys(SUBJECT_TIP).find(s =>
+                        n.title?.includes(s) || n.body?.includes(s)
+                      )
+                      const tip = SUBJECT_TIP[subject] || SUBJECT_TIP.Other
+                      return (
+                        <div key={n.id} className="flex items-start gap-3">
+                          <span className="text-lg flex-shrink-0">🚩</span>
+                          <div>
+                            <p className="text-xs text-white font-semibold font-nunito">{n.title}</p>
+                            <p className="text-xs text-[#8892B0] mt-1 leading-relaxed">💡 {tip}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {alerts.length === 0 && (
+                      <p className="text-xs text-[#8892B0] italic">
+                        Open your child's detail page to see support tips for specific flagged topics.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Family activity chart */}
               {activity.length > 0 && (
