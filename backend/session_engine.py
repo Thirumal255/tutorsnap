@@ -6,6 +6,44 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+# ── Child-safe content moderation (task #36) ──────────────────────────────────
+# Word-boundary patterns for terms that must never appear in AI output shown to children.
+# Kept deliberately targeted to minimise false positives on academic vocabulary
+# (e.g. "assess", "bass", "class" must NOT be caught by a profanity filter).
+_MODERATION_PATTERNS: list[tuple[str, int]] = [
+    # Profanity — strict word boundaries
+    (r'\b(fuck|fucking|shit|bitch|cunt|asshole|bastard|damnit|wtf|omfg)\b', re.IGNORECASE),
+    # Self-harm / crisis language
+    (r'\b(kill\s+yourself|kys|commit\s+suicide|self[\s\-]harm|cut\s+yourself|end\s+your\s+life)\b', re.IGNORECASE),
+    # Sexual content — targeted to avoid biology/anatomy false positives
+    (r'\b(pornograph\w*|masturbat\w*|orgasm|erectile\s+dysfunction)\b', re.IGNORECASE),
+    # Hate speech slurs
+    (r'\b(nigger|nigga|faggot|chink|kike|spic|wetback)\b', re.IGNORECASE),
+]
+
+_MODERATION_FALLBACK = (
+    "Let's keep focused on your studies! I'm here to help you learn. 😊"
+)
+
+
+def moderate_output(text: str, fallback: str = _MODERATION_FALLBACK) -> str:
+    """Return *text* unchanged if it passes child-safety checks.
+
+    If any blocked pattern is found, log a warning and return *fallback*.
+    This is a defence-in-depth layer — Claude's system prompts are the
+    primary safety mechanism; this catches edge-case outputs.
+    """
+    if not text:
+        return text
+    for pattern, flags in _MODERATION_PATTERNS:
+        if re.search(pattern, text, flags):
+            print(
+                f"[MODERATION] Blocked output (pattern='{pattern[:40]}…', "
+                f"output_len={len(text)})"
+            )
+            return fallback
+    return text
+
 ABSOLUTE_RULE = """
 ABSOLUTE RULE — This overrides every other instruction:
 You must NEVER directly state the answer to the practice question.
@@ -177,7 +215,7 @@ def call_claude(system: str, user: str, max_tokens: int = 800, model: str = None
         )
         if _usage_out is not None:
             _usage_out.append(_extract_usage(response, m))
-        return response.content[0].text.strip()
+        return moderate_output(response.content[0].text.strip())
     except Exception as e:
         raise RuntimeError(f"Claude API call failed: {e}") from e
 
@@ -204,7 +242,7 @@ def call_claude_vision(system: str, user_text: str, image_base64: str,
         )
         if _usage_out is not None:
             _usage_out.append(_extract_usage(response, _SONNET))
-        return response.content[0].text.strip()
+        return moderate_output(response.content[0].text.strip())
     except Exception as e:
         raise RuntimeError(f"Claude Vision API call failed: {e}") from e
 

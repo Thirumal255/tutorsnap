@@ -1577,16 +1577,29 @@ def submit_answer(
     )
     db.commit()
 
-    # ── XP awards ─────────────────────────────────────────────────────────────
+    # ── XP awards (task #42 — integrity: scaled by level, min 3 turns) ───────
+    # Per-turn XP scales with difficulty so grinding easy topics gives less XP.
+    # session_complete bonus scales by level reached.
+    # Minimum 3 answered turns before any session/advance bonus is paid.
+    _XP_PER_TURN = {"L1": 5, "L2": 8, "L3": 10, "L4": 15, "L5": 20}
+    _XP_SESSION_COMPLETE = {"L1": 50, "L2": 70, "L3": 100, "L4": 130, "L5": 160}
+    _XP_ADVANCE_LEVEL    = {"L1": 15, "L2": 20, "L3": 30, "L4": 40, "L5": 50}
+
     xp_earned = 0
     if session.user_id:
         action = next_action["action"]
+        lvl = session.current_level or "L1"
+        turns_answered = session.questions_asked or 0
+
         if action == "session_complete":
-            xp_earned = 100
+            # Full bonus only after meaningful engagement (≥3 turns)
+            xp_earned = _XP_SESSION_COMPLETE.get(lvl, 100) if turns_answered >= 3 else 20
         elif action == "advance_level":
-            xp_earned = 50
-        elif action == "next_question" and assessment.get("score", 0) >= 80:
-            xp_earned = 10
+            xp_earned = _XP_ADVANCE_LEVEL.get(lvl, 30) if turns_answered >= 3 else 0
+        elif action in ("next_question", "retry_question") and assessment.get("score", 0) >= 80:
+            # Per-turn reward for a correct answer (hint penalty already applied to score)
+            xp_earned = _XP_PER_TURN.get(lvl, 10)
+
         if xp_earned > 0:
             _update_user_xp(db, session.user_id, xp_earned)
 

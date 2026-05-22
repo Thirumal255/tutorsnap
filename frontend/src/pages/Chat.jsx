@@ -72,6 +72,10 @@ export default function Chat() {
   const [transcription, setTranscription] = useState(null)
   const [suggestBreak, setSuggestBreak] = useState(false)
 
+  // Frustration detection (task #41) — 3 consecutive non-confident answers
+  const [consecutiveWrong, setConsecutiveWrong] = useState(0)
+  const [showFrustrationCard, setShowFrustrationCard] = useState(false)
+
   const bottomRef = useRef(null)
   const slowTimerRef = useRef(null)
 
@@ -218,6 +222,16 @@ export default function Chat() {
 
       setCurrentLevel(d.current_level)
       resetGiveUp()
+
+      // Frustration detection (task #41)
+      if (d.confidence_tag === 'confident') {
+        setConsecutiveWrong(0)
+        setShowFrustrationCard(false)
+      } else if (d.confidence_tag !== 'off_topic') {
+        const newCount = consecutiveWrong + 1
+        setConsecutiveWrong(newCount)
+        if (newCount >= 3) setShowFrustrationCard(true)
+      }
 
       // Show handwriting transcription so student can verify (#11)
       if (d.transcription) {
@@ -531,6 +545,35 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
 
+      {/* Frustration card (task #41) — shown after 3 consecutive wrong answers */}
+      {showFrustrationCard && (
+        <div className="flex-shrink-0 mx-4 mb-2 animate-bounce-in bg-[#C084FC]/10 border border-[#C084FC]/30 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl flex-shrink-0">💜</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-fredoka font-bold text-[#C084FC]">This one's tough — that's completely okay!</p>
+              <p className="text-[10px] text-[#8892B0] mt-0.5 leading-relaxed">
+                Struggling is how your brain grows. Take a breath, try a hint, or ask Buddy for help.
+              </p>
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => { setShowFrustrationCard(false); setConsecutiveWrong(0) }}
+                  className="text-xs text-[#C084FC] border border-[#C084FC]/40 rounded-lg px-3 py-1 hover:bg-[#C084FC]/10 transition-all font-nunito font-semibold"
+                >
+                  Keep going 💪
+                </button>
+                <button
+                  onClick={() => { navigate('/practice'); setShowFrustrationCard(false) }}
+                  className="text-xs text-[#8892B0] border border-[#2D2B5A] rounded-lg px-3 py-1 hover:text-white transition-all font-nunito"
+                >
+                  Take a break
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Break reminder (#12) — above input, non-scrolling */}
       {suggestBreak && (
         <div className="flex-shrink-0 mx-4 mb-2 animate-bounce-in bg-[#FFD700]/10 border border-[#FFD700]/30 rounded-xl px-3 py-2 flex items-center justify-between gap-3">
@@ -597,7 +640,12 @@ export default function Chat() {
                   <WritingCanvas ref={canvasRef} className="h-full" style={{ height: '100%' }} />
                 </div>
                 {/* Submit row */}
-                <div className="flex gap-3 px-4 py-3 bg-[#16213E] border-t border-[#2D2B5A] flex-shrink-0">
+                <div className="flex flex-col gap-2 px-4 py-3 bg-[#16213E] border-t border-[#2D2B5A] flex-shrink-0">
+                  {/* Privacy disclosure (task #37) */}
+                  <p className="text-[10px] text-[#4A5568] text-center">
+                    ✏️ Handwriting is sent to AI for grading only — not stored after assessment.
+                  </p>
+                  <div className="flex gap-3">
                   <button onClick={() => { setCanvasMode(false); setCanvasExpanded(false) }}
                     className="flex-1 text-sm text-[#8892B0] border border-[#2D2B5A] rounded-xl py-2.5 hover:border-[#8892B0] hover:text-white transition-all font-nunito">
                     ⌨️ Type instead
@@ -611,6 +659,7 @@ export default function Chat() {
                       </svg>
                     ) : '⚡ Submit'}
                   </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -636,6 +685,10 @@ export default function Chat() {
                 </div>
               </div>
               <WritingCanvas ref={canvasRef} />
+              {/* Privacy disclosure (task #37) */}
+              <p className="text-[10px] text-[#4A5568] text-center leading-tight">
+                ✏️ Handwriting is sent to AI for grading only — not stored after assessment.
+              </p>
               <div className="flex gap-2 mt-1">
                 <button onClick={() => setCanvasMode(false)}
                   className="flex-1 text-sm text-[#8892B0] border border-[#2D2B5A] rounded-xl py-2.5 hover:border-[#8892B0] hover:text-white transition-all font-nunito">
