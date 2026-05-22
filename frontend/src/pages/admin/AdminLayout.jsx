@@ -10,6 +10,7 @@ const NAV = [
   { to: '/admin/books',      label: 'Books',     icon: '📚' },
   { to: '/admin/flagged',    label: 'Flagged',   icon: '🚩' },
   { to: '/admin/analytics',  label: 'Analytics', icon: '📊' },
+  { to: '/admin/audit-log',  label: 'Audit Log', icon: '📋' },
   { to: '/admin/settings',   label: 'Settings',  icon: '⚙️' },
 ]
 

@@ -93,6 +93,8 @@ export const getStudentSessions = (limit = 50) => api.get('/student/sessions', {
 
 // Admin extended
 export const getAdminAnalytics = () => api.get('/admin/analytics')
+export const importStudentsCSV = (students) => api.post('/admin/students/import', { students })
+export const getAdminAuditLog = (limit = 100) => api.get('/admin/audit-log', { params: { limit } })
 
 // Parent
 export const getMyChildren = () => api.get('/parent/children')

@@ -267,6 +267,21 @@ class AIUsageLog(Base):
     called_at = Column(DateTime, default=datetime.utcnow)
 
 
+class AdminAuditLog(Base):
+    """Records admin actions for accountability (task #22)."""
+    __tablename__ = "admin_audit_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    admin_name = Column(String(200), nullable=True)
+    action = Column(String(100), nullable=False)    # e.g. "create_student"
+    target_type = Column(String(50), nullable=True) # "student" | "book" | "students"
+    target_id = Column(Integer, nullable=True)
+    target_name = Column(String(200), nullable=True)
+    details = Column(Text, nullable=True)           # free-text or JSON extra info
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class QuestionBank(Base):
     """Pre-generated questions for a topic + level combination."""
     __tablename__ = "question_bank"

@@ -26,6 +26,7 @@ import AdminFlagged from './pages/admin/AdminFlagged'
 import AdminSettings from './pages/admin/AdminSettings'
 import AdminBooks from './pages/admin/AdminBooks'
 import AdminAnalytics from './pages/admin/AdminAnalytics'
+import AdminAuditLog from './pages/admin/AdminAuditLog'
 import ParentLayout from './pages/parent/ParentLayout'
 import ParentDashboard from './pages/parent/ParentDashboard'
 import ParentChildDetail from './pages/parent/ParentChildDetail'
@@ -109,6 +110,7 @@ export default function App() {
               <Route path="settings" element={<AdminSettings />} />
               <Route path="books" element={<AdminBooks />} />
               <Route path="analytics" element={<AdminAnalytics />} />
+              <Route path="audit-log" element={<AdminAuditLog />} />
             </Route>
 
             {/* Parent */}

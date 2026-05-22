@@ -25,7 +25,7 @@ from models import (
     Book, Chapter, Topic, Session as SessionModel, SessionTurn, TopicMastery,
     AppSettings, User, ParentStudentLink, Notification,
     WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
-    AIUsageLog,
+    AIUsageLog, AdminAuditLog,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -155,6 +155,23 @@ def run_migrations():
             ))
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_goal_sessions INTEGER DEFAULT 1"
+            ))
+            # Admin audit log — added in task #22
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS admin_audit_log (
+                    id SERIAL PRIMARY KEY,
+                    admin_id INTEGER REFERENCES users(id),
+                    admin_name VARCHAR(200),
+                    action VARCHAR(100) NOT NULL,
+                    target_type VARCHAR(50),
+                    target_id INTEGER,
+                    target_name VARCHAR(200),
+                    details TEXT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_audit_created_at ON admin_audit_log(created_at DESC)"
             ))
             # AI usage log table — added in task #26
             conn.execute(text("""
@@ -415,6 +432,27 @@ def _log_ai_usage(db: Session, student_id: int | None, endpoint: str, usage_list
     # caller must commit
 
 
+def _audit_log(
+    db: Session,
+    admin: Optional[User],
+    action: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    target_name: Optional[str] = None,
+    details: Optional[str] = None,
+) -> None:
+    """Append a row to admin_audit_log. Caller must commit."""
+    db.add(AdminAuditLog(
+        admin_id=admin.id if admin else None,
+        admin_name=admin.name if admin else None,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        target_name=target_name,
+        details=details,
+    ))
+
+
 def _next_question(db: Session, topic, level: str, prev_qs: list[str],
                    recent_fmts: list[str] = None, study_summary: str = "") -> dict:
     """Try the question bank first; fall back to live generation."""
@@ -511,6 +549,14 @@ class CompleteOnboardingRequest(BaseModel):
     buddy_avatar: Optional[str] = None
     buddy_name: Optional[str] = None
     daily_goal_sessions: Optional[int] = 1
+
+class StudentImportRow(BaseModel):
+    email: str
+    name: str
+    grade: Optional[int] = None
+
+class StudentImportRequest(BaseModel):
+    students: list[StudentImportRow]
 
 class InitUploadRequest(BaseModel):
     title: str
@@ -1882,6 +1928,9 @@ def admin_create_student(
         is_active=True,
     )
     db.add(student)
+    db.flush()  # get the id before commit
+    _audit_log(db, current_user, "create_student", "student", student.id, student.name,
+               f"Grade: {req.grade}")
     db.commit()
     db.refresh(student)
     return _user_dict(student)
@@ -1958,7 +2007,10 @@ def admin_update_grade(
     user = db.query(User).filter(User.id == student_id, User.role == "student").first()
     if not user:
         raise HTTPException(status_code=404, detail="Student not found")
+    old_grade = user.grade
     user.grade = req.grade
+    _audit_log(db, current_user, "update_grade", "student", user.id, user.name,
+               f"Grade {old_grade} → {req.grade}")
     db.commit()
     db.refresh(user)
     return _user_dict(user)
@@ -1974,6 +2026,7 @@ def admin_deactivate(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = False
+    _audit_log(db, current_user, "deactivate_student", "student", user.id, user.name)
     db.commit()
     return {"message": "Student deactivated"}
 
@@ -1988,6 +2041,7 @@ def admin_activate(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = True
+    _audit_log(db, current_user, "activate_student", "student", user.id, user.name)
     db.commit()
     return {"message": "Student activated"}
 
@@ -2005,8 +2059,92 @@ def admin_reset_mastery(
     if not user:
         raise HTTPException(status_code=404, detail="Student not found")
     deleted = db.query(TopicMastery).filter(TopicMastery.student_id == user.id).delete()
+    _audit_log(db, current_user, "reset_mastery", "student", user.id, user.name,
+               f"{deleted} topic records cleared")
     db.commit()
     return {"message": f"Mastery reset for {user.name}", "topics_cleared": deleted}
+
+
+# ── Bulk CSV import (task #21) ────────────────────────────────────────────────
+
+@app.post("/api/admin/students/import")
+def admin_import_students(
+    req: StudentImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Import up to 200 students from a parsed CSV payload."""
+    if len(req.students) > 200:
+        raise HTTPException(status_code=400, detail="Maximum 200 students per import")
+
+    results = []
+    created = updated = errors = 0
+
+    for row in req.students:
+        email = (row.email or "").strip().lower()
+        name  = (row.name  or "").strip()
+        if not email or not name:
+            results.append({"email": email, "name": name, "status": "error",
+                             "error": "Email and name are required"})
+            errors += 1
+            continue
+        try:
+            existing = db.query(User).filter(User.email == email).first()
+            if existing:
+                existing.role = "student"
+                existing.name = name
+                if row.grade:
+                    existing.grade = row.grade
+                db.commit()
+                results.append({"email": email, "name": name, "status": "updated", "error": None})
+                updated += 1
+            else:
+                student = User(email=email, name=name,
+                               google_id=f"stub_{email}",
+                               role="student", grade=row.grade, is_active=True)
+                db.add(student)
+                db.commit()
+                results.append({"email": email, "name": name, "status": "created", "error": None})
+                created += 1
+        except Exception as exc:
+            db.rollback()
+            results.append({"email": email, "name": name, "status": "error", "error": str(exc)})
+            errors += 1
+
+    _audit_log(db, current_user, "import_students", "students", None, None,
+               f"{created} created, {updated} updated, {errors} errors")
+    db.commit()
+
+    return {"results": results, "created": created, "updated": updated, "errors": errors}
+
+
+# ── Audit log read endpoint (task #22) ───────────────────────────────────────
+
+@app.get("/api/admin/audit-log")
+def admin_audit_log(
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    rows = (
+        db.query(AdminAuditLog)
+        .order_by(AdminAuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "admin_name": r.admin_name or "System",
+            "action": r.action,
+            "target_type": r.target_type,
+            "target_id": r.target_id,
+            "target_name": r.target_name,
+            "details": r.details,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
 
 
 @app.get("/api/admin/parents")
@@ -2136,6 +2274,9 @@ def admin_resolve_flag(
     if not mastery:
         raise HTTPException(status_code=404, detail="Mastery record not found")
     mastery.flagged_for_review = False
+    topic = db.query(Topic).filter(Topic.id == topic_id).first()
+    _audit_log(db, current_user, "resolve_flag", "student", user.id, user.name,
+               f"Topic: {topic.title if topic else topic_id}")
     db.commit()
     return {"message": "Flag resolved"}
 
