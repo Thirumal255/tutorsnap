@@ -109,14 +109,14 @@ export default function StudentPractice() {
     })
   }
 
-  async function handleStart(topicId, topicTitle, chapterTitle, studied) {
-    if (!studied) {
+  async function handleStart(topicId, topicTitle, chapterTitle, studied, practiceMode = false) {
+    if (!studied && !practiceMode) {
       toast.info('📖 Study this topic first to unlock Practice!')
       return
     }
     setStarting(topicId)
     try {
-      const res = await startSession(user.name, topicId)
+      const res = await startSession(user.name, topicId, practiceMode)
       const d = res.data
       sessionStorage.setItem(
         `session_${d.session_id}`,
@@ -128,6 +128,7 @@ export default function StudentPractice() {
           answerFormat: d.answer_format || null,
           diagnostic: d.diagnostic || false,
           workedExample: d.worked_example || null,
+          isPractice: !!d.is_practice,  // #58
         })
       )
       navigate(`/session/${d.session_id}`)
@@ -351,6 +352,17 @@ export default function StudentPractice() {
                                         >
                                           {starting === t.id ? '⚡…' : t.studied ? '▶ Play' : '🔒 Play'}
                                         </button>
+                                        {/* #58: No-pressure practice (bypasses mastery/XP) */}
+                                        {t.studied && (
+                                          <button
+                                            onClick={() => handleStart(t.id, t.title, ch.title, true, true)}
+                                            disabled={starting === t.id}
+                                            title="Practice without affecting your progress or XP"
+                                            className="text-[9px] py-1 px-2 rounded-lg border border-[#2D2B5A] text-[#4A5568] hover:border-[#8892B0] hover:text-[#8892B0] transition-all disabled:opacity-40"
+                                          >
+                                            🎮 No-pressure
+                                          </button>
+                                        )}
                                       </div>
                                     </li>
                                   ))}

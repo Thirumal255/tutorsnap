@@ -157,6 +157,14 @@ function SetupScreen({ onStart, subjects, completedChaptersBySubject, loading })
   )
 }
 
+// ── CHECKPOINT MESSAGES (task #55) ────────────────────────────────────────────
+const CHECKPOINT_MSGS = [
+  { emoji: '🔥', title: 'Halfway there!',        body: "You're doing great — keep the momentum going!" },
+  { emoji: '⚡', title: 'Flying through it!',    body: "Look at you go! Almost at the finish line." },
+  { emoji: '🌟', title: 'On fire!',              body: "You're smashing it. Just a few more questions!" },
+  { emoji: '💪', title: 'Strong work so far!',   body: "Your effort shows. Finish strong!" },
+]
+
 // ── IN PROGRESS ───────────────────────────────────────────────────────────────
 function ExamScreen({ exam, onSubmit }) {
   const [current, setCurrent] = useState(0)
@@ -164,6 +172,9 @@ function ExamScreen({ exam, onSubmit }) {
   const [timeLeft, setTimeLeft] = useState(exam.time_limit_seconds)
   const [submitting, setSubmitting] = useState(false)
   const timerRef = useRef(null)
+  const [checkpoint, setCheckpoint] = useState(null)   // #55: { emoji, title, body }
+  const checkpointTimerRef = useRef(null)
+  const answeredCountRef = useRef(0)  // track how many answers have been filled
 
   const handleSubmit = useCallback(async (force = false) => {
     if (submitting) return
@@ -208,6 +219,17 @@ function ExamScreen({ exam, onSubmit }) {
         />
       </div>
 
+      {/* #55 Checkpoint banner */}
+      {checkpoint && (
+        <div className="fixed inset-0 pointer-events-none z-40 flex items-center justify-center">
+          <div className="bg-[#16213E] border border-[#00A2FF]/40 shadow-glow-blue rounded-3xl px-8 py-5 text-center animate-bounce-in">
+            <div className="text-5xl mb-2">{checkpoint.emoji}</div>
+            <p className="font-fredoka font-bold text-white text-xl">{checkpoint.title}</p>
+            <p className="text-[#8892B0] text-sm mt-1">{checkpoint.body}</p>
+          </div>
+        </div>
+      )}
+
       {/* Question area */}
       <div className="flex-1 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-2xl space-y-6">
@@ -228,9 +250,22 @@ function ExamScreen({ exam, onSubmit }) {
           <textarea
             value={answers[current]}
             onChange={e => {
+              const prev = answers[current]
               const next = [...answers]
               next[current] = e.target.value
               setAnswers(next)
+              // #55: detect when student finishes typing into a previously-blank answer
+              const wasBlank = !prev.trim()
+              const nowFilled = !!e.target.value.trim()
+              if (wasBlank && nowFilled) {
+                const newAnswered = next.filter(a => a.trim()).length
+                if (newAnswered > 0 && newAnswered % 5 === 0 && newAnswered < exam.questions.length) {
+                  const msg = CHECKPOINT_MSGS[Math.floor(newAnswered / 5 - 1) % CHECKPOINT_MSGS.length]
+                  setCheckpoint(msg)
+                  clearTimeout(checkpointTimerRef.current)
+                  checkpointTimerRef.current = setTimeout(() => setCheckpoint(null), 2500)
+                }
+              }
             }}
             placeholder="Type your answer here…"
             rows={4}

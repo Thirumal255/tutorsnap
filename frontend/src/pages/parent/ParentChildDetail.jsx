@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getChildDetail, getChildSessions, getChildWeeklyReport, setChildGoal } from '../../api/client'
+import { getChildDetail, getChildSessions, getChildWeeklyReport, setChildGoal, encourageChild } from '../../api/client'
 
 // ── Support tips per subject (task #33) ─────────────────────────────────────
 const SUPPORT_TIPS = {
@@ -155,6 +155,11 @@ export default function ParentChildDetail() {
   const [goalEditing, setGoalEditing]   = useState(false)
   const [goalValue, setGoalValue]       = useState(1)
   const [goalSaving, setGoalSaving]     = useState(false)
+  // #50 Cheer
+  const [cheerOpen, setCheerOpen]       = useState(false)
+  const [cheerMsg, setCheerMsg]         = useState('')
+  const [cheerSending, setCheerSending] = useState(false)
+  const [cheerSent, setCheerSent]       = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -191,6 +196,18 @@ export default function ParentChildDetail() {
       setGoalEditing(false)
     } catch {}
     finally { setGoalSaving(false) }
+  }
+
+  async function sendCheer() {
+    if (!cheerMsg.trim() || cheerSending) return
+    setCheerSending(true)
+    try {
+      await encourageChild(id, cheerMsg.trim())
+      setCheerSent(true)
+      setCheerMsg('')
+      setTimeout(() => { setCheerOpen(false); setCheerSent(false) }, 2000)
+    } catch {}
+    finally { setCheerSending(false) }
   }
 
   if (loading) return (
@@ -232,12 +249,61 @@ export default function ParentChildDetail() {
             <p className="text-xs text-[#8892B0]">Grade {student.grade}</p>
           </div>
         </div>
-        {flagged.length > 0 && (
-          <span className="ml-auto text-xs bg-[#FF3333]/20 text-[#FF6B6B] border border-[#FF3333]/30 px-3 py-1 rounded-full font-semibold">
-            🚩 {flagged.length} need{flagged.length === 1 ? 's' : ''} attention
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {flagged.length > 0 && (
+            <span className="text-xs bg-[#FF3333]/20 text-[#FF6B6B] border border-[#FF3333]/30 px-3 py-1 rounded-full font-semibold">
+              🚩 {flagged.length} need{flagged.length === 1 ? 's' : ''} attention
+            </span>
+          )}
+          {/* #50: Cheer button */}
+          <button
+            onClick={() => setCheerOpen(o => !o)}
+            className="text-xs bg-[#FF6B9D]/20 text-[#FF6B9D] border border-[#FF6B9D]/30 hover:bg-[#FF6B9D]/30 px-3 py-1 rounded-full font-semibold transition-all"
+          >
+            💌 Cheer
+          </button>
+        </div>
       </div>
+
+      {/* ── Cheer modal (#50) ───────────────────────────────── */}
+      {cheerOpen && (
+        <div className="blox-card p-4 space-y-3 animate-bounce-in border-[#FF6B9D]/30">
+          <p className="text-xs text-[#FF6B9D] font-semibold uppercase tracking-widest">
+            💌 Send {student.name.split(' ')[0]} a message via {student.buddy_name || 'Buddy'}
+          </p>
+          {cheerSent ? (
+            <p className="text-center text-[#00CC88] font-fredoka font-bold py-2">🎉 Cheer sent!</p>
+          ) : (
+            <>
+              <textarea
+                value={cheerMsg}
+                onChange={e => setCheerMsg(e.target.value.slice(0, 280))}
+                placeholder={`e.g. "Keep it up! I'm proud of you 🌟"`}
+                rows={3}
+                className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm font-nunito resize-none focus:outline-none focus:border-[#FF6B9D] placeholder-[#4A5568]"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-[#4A5568]">{cheerMsg.length}/280</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setCheerOpen(false); setCheerMsg('') }}
+                    className="px-3 py-1.5 text-xs text-[#8892B0] border border-[#2D2B5A] hover:border-[#8892B0] rounded-xl transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={sendCheer}
+                    disabled={!cheerMsg.trim() || cheerSending}
+                    className="px-4 py-1.5 text-xs font-semibold bg-[#FF6B9D]/20 text-[#FF6B9D] border border-[#FF6B9D]/40 hover:bg-[#FF6B9D]/30 rounded-xl disabled:opacity-40 transition-all"
+                  >
+                    {cheerSending ? 'Sending…' : '💌 Send'}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Stat strip ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -159,6 +159,10 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_mastery_goal INTEGER DEFAULT 0"
             ))
+            # Practice mode (#58) — low-stakes sessions with no mastery/XP updates
+            conn.execute(text(
+                "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE"
+            ))
             # Admin audit log — added in task #22
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS admin_audit_log (
@@ -596,6 +600,11 @@ class GoogleLoginRequest(BaseModel):
 class StartSessionRequest(BaseModel):
     student_name: str
     topic_id: int
+    practice_mode: Optional[bool] = False  # #58: low-stakes mode — skips mastery & XP
+
+
+class EncourageRequest(BaseModel):                          # #50
+    message: str
 
 class AnswerRequest(BaseModel):
     session_id: int
@@ -1457,7 +1466,8 @@ def start_session(
     # total_sessions defaults to 1 when the record is first created at session
     # start; a completed session increments it to ≥2, so > 1 reliably identifies
     # students who genuinely practiced before the gate existed.
-    if not mastery.studied:
+    # Practice mode (#58) bypasses the gate — no mastery/XP changes anyway.
+    if not mastery.studied and not req.practice_mode:
         if not just_created and mastery.total_sessions > 1:
             mastery.studied = True
             db.commit()
@@ -1469,6 +1479,9 @@ def start_session(
     is_first_practice = (mastery.total_sessions == 1)
     start_level = "L1" if is_first_practice else get_start_level(mastery.mastery_level)
 
+    # Practice mode: skip diagnostic and start at mastery level (or L1 if first)
+    if req.practice_mode:
+        is_first_practice = False  # no diagnostic in practice mode
     session = SessionModel(
         student_name=req.student_name,
         user_id=current_user.id,
@@ -1477,6 +1490,7 @@ def start_session(
         status="active",
         diagnostic_phase=is_first_practice,
         diagnostic_turn=1 if is_first_practice else 0,
+        is_practice=bool(req.practice_mode),  # #58
     )
     db.add(session)
     db.commit()
@@ -1535,6 +1549,7 @@ def start_session(
         "diagnostic_turn": 1 if is_first_practice else 0,
         "diagnostic_total": 3,
         "worked_example": worked_example,
+        "is_practice": bool(req.practice_mode),  # #58
     }
 
 
@@ -1728,12 +1743,13 @@ def submit_answer(
     # Per-turn XP scales with difficulty so grinding easy topics gives less XP.
     # session_complete bonus scales by level reached.
     # Minimum 3 answered turns before any session/advance bonus is paid.
+    # Practice mode (#58) skips all XP and mastery updates.
     _XP_PER_TURN = {"L1": 5, "L2": 8, "L3": 10, "L4": 15, "L5": 20}
     _XP_SESSION_COMPLETE = {"L1": 50, "L2": 70, "L3": 100, "L4": 130, "L5": 160}
     _XP_ADVANCE_LEVEL    = {"L1": 15, "L2": 20, "L3": 30, "L4": 40, "L5": 50}
 
     xp_earned = 0
-    if session.user_id:
+    if session.user_id and not session.is_practice:
         action = next_action["action"]
         lvl = session.current_level or "L1"
         turns_answered = session.questions_asked or 0
@@ -1753,7 +1769,7 @@ def submit_answer(
     # ── Variable reward: surprise double-XP (~15% chance) — task #53 ─────────
     # Triggers only on a confident, hint-free, high-score answer in next_question turns.
     bonus_xp = 0
-    if (session.user_id and xp_earned > 0
+    if (session.user_id and not session.is_practice and xp_earned > 0
             and next_action["action"] in ("next_question",)
             and assessment.get("confidence_tag") in ("confident", "very_confident")
             and (session.hint_tier or 0) == 0
@@ -1769,11 +1785,14 @@ def submit_answer(
         # Generate summary before _update_mastery so it can be stored in session_memory (#40)
         turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
         summary = get_session_summary(session, topic, turns)
-        _update_mastery(db, session, topic, session_summary=summary)
+        # Practice mode: generate summary for feedback but skip mastery update (#58)
+        if not session.is_practice:
+            _update_mastery(db, session, topic, session_summary=summary)
         db.commit()
 
         # ── Parent tip notification (task #49, background so it doesn't delay response) ──
-        if session.user_id:
+        # Skip for practice sessions (no meaningful mastery change to report)
+        if session.user_id and not session.is_practice:
             _parent_links = db.query(ParentStudentLink).filter(
                 ParentStudentLink.student_id == session.user_id
             ).all()
@@ -1795,7 +1814,8 @@ def submit_answer(
                 "action": "session_complete", "current_level": session.current_level,
                 "level_label": level_label(session.current_level), "show_hint_button": False,
                 "session_complete": True, "summary": summary,
-                "turn_number": current_turn.turn_number, "xp_earned": xp_earned}
+                "turn_number": current_turn.turn_number, "xp_earned": xp_earned,
+                "is_practice": bool(session.is_practice)}
 
     next_question = None
     next_answer_format = None
@@ -1868,7 +1888,8 @@ def submit_answer(
         session.final_confidence = assessment["confidence_tag"]
         turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
         summary = get_session_summary(session, topic, turns)
-        _update_mastery(db, session, topic, session_summary=summary)
+        if not session.is_practice:  # #58: skip mastery in practice mode
+            _update_mastery(db, session, topic, session_summary=summary)
         db.commit()
         return {"session_id": session.id, "feedback": assessment["feedback"],
                 "score": assessment["score"], "confidence_tag": assessment["confidence_tag"],
@@ -1992,10 +2013,11 @@ def request_hint(
                 "fresh_question": fq["question"], "answer_format": fq["answer_format"]}
 
     if session.hint_tier > max_hints and session.concept_reset_done:
-        session.flagged_for_review = True
-        _update_mastery(db, session, topic, flagged=True)
         session.status = "completed"
         session.ended_at = datetime.utcnow()
+        if not session.is_practice:  # #58: no flagging in practice mode
+            session.flagged_for_review = True
+            _update_mastery(db, session, topic, flagged=True)
         student_user = (db.query(User).filter(User.id == session.user_id).first()
                         if session.user_id else None)
         _notify_parents(db, session, topic, student_user)
@@ -2042,7 +2064,8 @@ def end_session(
                                     if last_turn and last_turn.confidence_tag else "shaky")
         turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
         summary = get_session_summary(session, topic, turns)
-        _update_mastery(db, session, topic, session_summary=summary)
+        if not session.is_practice:  # #58: skip mastery in practice mode
+            _update_mastery(db, session, topic, session_summary=summary)
         db.commit()
     else:
         turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
@@ -3094,6 +3117,127 @@ def parent_mark_read(
     notif.is_read = True
     db.commit()
     return {"message": "Marked as read"}
+
+
+@app.post("/api/parent/children/{student_id}/encourage")
+def encourage_child(
+    student_id: int,
+    req: EncourageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_parent),
+):
+    """Send a cheer/encouragement message to a child via their buddy (#50)."""
+    link = db.query(ParentStudentLink).filter(
+        ParentStudentLink.parent_id == current_user.id,
+        ParentStudentLink.student_id == student_id,
+    ).first()
+    if not link:
+        raise HTTPException(status_code=403, detail="Not your child")
+
+    message = req.message.strip()[:280]
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    child = db.query(User).filter(User.id == student_id).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    buddy_name = child.buddy_name or "Buddy"
+    parent_name = current_user.name.split()[0] if current_user.name else "Your parent"
+    db.add(Notification(
+        user_id=student_id,
+        type="parent_cheer",
+        title=f"💌 {buddy_name} has a message from {parent_name}!",
+        body=message,
+    ))
+    db.commit()
+    return {"message": "Cheer sent!"}
+
+
+# ─── Admin Weekly Challenge Draft (#56) ───────────────────────────────────────
+
+@app.get("/api/admin/weekly-challenge/draft")
+def draft_weekly_challenge(
+    grade: int = Query(..., ge=1, le=12),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Generate (but don't save) a draft weekly challenge for a given grade (#56)."""
+    all_topics = (
+        db.query(Topic)
+        .join(Chapter, Chapter.id == Topic.chapter_id)
+        .join(Book, Book.id == Chapter.book_id)
+        .filter(Book.grade == grade, Book.ingestion_status == "done")
+        .all()
+    )
+    if not all_topics:
+        raise HTTPException(status_code=404, detail="No ingested topics for this grade")
+
+    chosen_topic = random.choice(all_topics)
+    chosen_topic.chapter = db.query(Chapter).filter(Chapter.id == chosen_topic.chapter_id).first()
+    try:
+        nq = generate_question(chosen_topic, "L4", [])
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to generate draft question")
+
+    topic_chapter = chosen_topic.chapter
+    topic_book = db.query(Book).filter(Book.id == topic_chapter.book_id).first() if topic_chapter else None
+
+    return {
+        "grade": grade,
+        "topic_id": chosen_topic.id,
+        "topic_title": chosen_topic.title,
+        "subject": topic_book.subject if topic_book else "",
+        "question": nq["question"],
+        "expected_key_points": nq["expected_key_points"],
+        "answer_format": nq["answer_format"],
+    }
+
+
+class WeeklyChallengeDraftPublishRequest(BaseModel):
+    grade: int
+    topic_id: int
+    question: str
+    expected_key_points: Optional[list] = None
+    answer_format: Optional[str] = None
+
+
+@app.post("/api/admin/weekly-challenge/publish")
+def publish_weekly_challenge(
+    req: WeeklyChallengeDraftPublishRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Save an admin-approved draft as this week's challenge (#56).
+    Replaces any existing challenge for the grade+week."""
+    week_start = _get_week_start()
+
+    # Delete existing challenge for this grade+week (idempotent)
+    existing = db.query(WeeklyChallenge).filter(
+        WeeklyChallenge.grade == req.grade,
+        WeeklyChallenge.week_start == week_start,
+    ).first()
+    if existing:
+        db.delete(existing)
+        db.flush()
+
+    challenge = WeeklyChallenge(
+        grade=req.grade,
+        week_start=week_start,
+        topic_id=req.topic_id,
+        question_text=req.question.strip(),
+        expected_key_points=json.dumps(req.expected_key_points or []),
+        answer_format=req.answer_format or "explanation",
+    )
+    db.add(challenge)
+    db.commit()
+    db.refresh(challenge)
+    return {
+        "id": challenge.id,
+        "grade": req.grade,
+        "week_start": week_start.isoformat(),
+        "question": challenge.question_text,
+    }
 
 
 # ─── Student Self-Service Routes ───────────────────────────────────────────────

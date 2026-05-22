@@ -168,6 +168,9 @@ class Session(Base):
     diagnostic_phase = Column(Boolean, default=False)   # True during the 3-question placement test
     diagnostic_turn = Column(Integer, default=0)        # which diagnostic question we're on (1-3)
 
+    # ── Practice mode (#58) — no mastery/XP updates ──────────────────────────
+    is_practice = Column(Boolean, default=False)        # True → low-stakes; skips mastery & XP
+
     topic = relationship("Topic", back_populates="sessions")
     turns = relationship("SessionTurn", back_populates="session")
     user = relationship("User", back_populates="sessions")

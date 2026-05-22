@@ -41,8 +41,8 @@ export const previewBook = (bookId) => api.get(`/admin/books/${bookId}/preview`)
 export const deleteBook = (bookId) => api.delete(`/books/${bookId}`)
 export const cancelIngestion = (bookId) => api.post(`/books/${bookId}/cancel`)
 export const retryIngestion  = (bookId) => api.post(`/books/${bookId}/retry`)
-export const startSession = (studentName, topicId) =>
-  api.post('/session/start', { student_name: studentName, topic_id: topicId })
+export const startSession = (studentName, topicId, practiceMode = false) =>
+  api.post('/session/start', { student_name: studentName, topic_id: topicId, practice_mode: practiceMode })
 export const submitAnswer = (sessionId, answer, imageData = null) =>
   api.post('/session/answer', { session_id: sessionId, answer, ...(imageData ? { image_data: imageData } : {}) })
 export const requestSubQuestion = (sessionId, confusionType = null) =>
@@ -133,3 +133,11 @@ export const uploadProfileAvatar = (formData) => api.post('/profile/avatar', for
 export const getParentNotifications = () => api.get('/parent/notifications')
 export const markNotificationRead = (id) => api.post(`/parent/notifications/${id}/read`)
 export const markAllNotificationsRead = () => api.post('/parent/notifications/mark-all-read')
+
+// #50 Parent encouragement
+export const encourageChild = (childId, message) =>
+  api.post(`/parent/children/${childId}/encourage`, { message })
+
+// #56 Admin weekly challenge draft
+export const draftWeeklyChallenge = (grade) => api.get('/admin/weekly-challenge/draft', { params: { grade } })
+export const publishWeeklyChallenge = (data) => api.post('/admin/weekly-challenge/publish', data)

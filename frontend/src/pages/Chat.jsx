@@ -38,6 +38,7 @@ export default function Chat() {
   const buddyName   = user?.buddy_name  || 'Buddy'
 
   const [session, setSession] = useState(null)
+  const [isPracticeMode, setIsPracticeMode] = useState(false)  // #58
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -86,6 +87,7 @@ export default function Chat() {
     setSession(data)
     setCurrentLevel(data.currentLevel)
     setAnswerFormat(data.answerFormat || null)
+    setIsPracticeMode(!!data.isPractice)  // #58
     setMessages([{ sender: 'buddy', text: data.initialMessage }])
     if (data.diagnostic) {
       setDiagnosticPhase(true)
@@ -456,6 +458,13 @@ export default function Chat() {
       {xpGained && (
         <div className="absolute top-16 right-4 z-50 font-fredoka font-bold text-[#FFD700] text-lg animate-coin-pop pointer-events-none">
           {xpGained} ⭐
+        </div>
+      )}
+
+      {/* #58 Practice mode banner */}
+      {isPracticeMode && (
+        <div className="bg-[#1A1A3E] border-b border-[#2D2B5A] px-4 py-1.5 flex items-center gap-2 flex-shrink-0">
+          <span className="text-xs font-semibold text-[#8892B0]">🎮 Practice Mode — no XP or mastery changes</span>
         </div>
       )}
 
