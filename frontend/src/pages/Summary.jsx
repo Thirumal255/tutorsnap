@@ -90,6 +90,7 @@ export default function Summary() {
   const xp = questionsAsked > 0
     ? (data?.xpEarned ?? data?.xp_earned ?? questionsAsked * 10)
     : 0
+  const xpBreakdown = data?.xpBreakdown || data?.xp_breakdown || []
 
   const earlyExit = questionsAsked === 0
   const isMilestone = MILESTONE_LEVELS[level] && !earlyExit && !flagged
@@ -127,7 +128,18 @@ export default function Summary() {
         {xp > 0 ? (
           <div className="bg-gradient-to-r from-[#FFD700]/20 to-[#FFA500]/20 border border-[#FFD700]/40 rounded-2xl p-4 mb-5 shadow-glow-gold">
             <p className="text-4xl font-fredoka font-bold text-[#FFD700]">+{xp} XP ⭐</p>
-            <p className="text-[#8892B0] text-sm mt-1">{questionsAsked} question{questionsAsked !== 1 ? 's' : ''} answered</p>
+            {xpBreakdown.length > 0 ? (
+              <div className="mt-2 space-y-1">
+                {xpBreakdown.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs font-nunito text-[#8892B0]">
+                    <span>{item.label}</span>
+                    <span className="text-[#FFD700] font-semibold">+{item.xp}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[#8892B0] text-sm mt-1">{questionsAsked} question{questionsAsked !== 1 ? 's' : ''} answered</p>
+            )}
           </div>
         ) : (
           <div className="bg-[#2D2B5A]/40 border border-[#2D2B5A] rounded-2xl p-4 mb-5">

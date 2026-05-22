@@ -1736,10 +1736,36 @@ def end_session(
     turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
     summary = get_session_summary(session, topic, turns)
 
-    # Compute display-only XP based on actual answers (NOT added to user total —
-    # XP is only awarded inside submit_answer for in-session achievements)
+    # ── XP breakdown (task #16) ────────────────────────────────────────────────
     answered_turns = [t for t in turns if t.student_answer and t.assessment_score is not None]
-    xp_display = sum(max(0, (t.assessment_score or 0) - 40) // 10 * 5 for t in answered_turns)
+
+    # Per-answer XP: 10 pts for ≥80, 5 pts for 60–79, 0 for <60
+    per_q_xp = sum(
+        10 if (t.assessment_score or 0) >= 80 else
+        5  if (t.assessment_score or 0) >= 60 else
+        0
+        for t in answered_turns
+    )
+
+    # Level-up bonus: compare previous mastery level vs reached level
+    level_order = ["L1", "L2", "L3", "L4", "L5"]
+    prev_mastery = db.query(TopicMastery).filter(
+        TopicMastery.student_id == session.user_id,
+        TopicMastery.topic_id == session.topic_id,
+    ).first()
+    prev_level = prev_mastery.mastery_level if prev_mastery else "L1"
+    reached_level = session.current_level
+    prev_idx = level_order.index(prev_level) if prev_level in level_order else 0
+    reached_idx = level_order.index(reached_level) if reached_level in level_order else 0
+    level_bonus = max(0, (reached_idx - prev_idx)) * 25  # 25 XP per level gained
+
+    xp_display = per_q_xp + level_bonus
+    xp_breakdown = []
+    if per_q_xp > 0:
+        xp_breakdown.append({"label": f"Answered {len(answered_turns)} question{'s' if len(answered_turns) != 1 else ''}", "xp": per_q_xp})
+    if level_bonus > 0:
+        levels_gained = reached_idx - prev_idx
+        xp_breakdown.append({"label": f"Level{'s' if levels_gained > 1 else ''} up! ⬆", "xp": level_bonus})
 
     # Update persisted streak for the current user
     new_streak = _compute_streak(db, current_user)
@@ -1751,6 +1777,7 @@ def end_session(
             "questions_asked": session.questions_asked, "summary": summary,
             "flagged_for_review": session.flagged_for_review,
             "xp_earned": xp_display,
+            "xp_breakdown": xp_breakdown,
             "streak_days": new_streak,
             "streak_freeze_available": current_user.streak_freeze_available}
 
@@ -3146,11 +3173,18 @@ def get_review_queue(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Topics where next_review_at has passed — ordered soonest-overdue first."""
+    """Topics where next_review_at has passed — ordered soonest-overdue first.
+
+    Also returns daily completion state (task #19):
+    - reviewed_today: items that were due today and were practised today
+    - completed_today: True when no items remain overdue
+    """
     if current_user.role != "student":
         raise HTTPException(status_code=403, detail="Students only")
 
     now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
     due = (
         db.query(TopicMastery)
         .filter(
@@ -3162,6 +3196,20 @@ def get_review_queue(
         .order_by(TopicMastery.next_review_at)
         .limit(10)
         .all()
+    )
+
+    # Count topics that were due today (next_review_at within today) but the student
+    # already practised them today — this gives a "you're caught up" signal.
+    reviewed_today = (
+        db.query(func.count(TopicMastery.id))
+        .filter(
+            TopicMastery.student_id == current_user.id,
+            TopicMastery.last_practiced_at >= today_start,
+            TopicMastery.next_review_at != None,
+            TopicMastery.next_review_at >= today_start,  # was due today
+            TopicMastery.next_review_at <= now,
+        )
+        .scalar() or 0
     )
 
     result = []
@@ -3180,7 +3228,11 @@ def get_review_queue(
             "overdue_days": overdue_days,
         })
 
-    return {"due": result, "count": len(result)}
+    completed_today = len(result) == 0
+
+    return {"due": result, "count": len(result),
+            "reviewed_today": reviewed_today,
+            "completed_today": completed_today}
 
 
 @app.get("/api/student/mistakes")

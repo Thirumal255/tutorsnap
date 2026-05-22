@@ -246,6 +246,7 @@ export default function StudentHome() {
   const [resuming, setResuming] = useState(null) // topicId currently resuming, or null
   const [showBuddy, setShowBuddy] = useState(false)
   const [reviewQueue, setReviewQueue] = useState([])
+  const [reviewMeta, setReviewMeta] = useState({ completed_today: false, reviewed_today: 0 })
 
   useEffect(() => {
     Promise.all([
@@ -254,6 +255,10 @@ export default function StudentHome() {
     ]).then(([dashRes, reviewRes]) => {
       setData(dashRes.data)
       setReviewQueue(reviewRes.data.due || [])
+      setReviewMeta({
+        completed_today: reviewRes.data.completed_today || false,
+        reviewed_today: reviewRes.data.reviewed_today || 0,
+      })
     }).catch(() => {
       getStudentDashboard().then(r => setData(r.data)).catch(() => setData(null))
     }).finally(() => setLoading(false))
@@ -373,7 +378,7 @@ export default function StudentHome() {
           <WeeklyChallengeCard userId={user?.id} />
 
           {/* ── Spaced repetition review queue ────────────────────────── */}
-          {reviewQueue.length > 0 && (
+          {reviewQueue.length > 0 ? (
             <div className="blox-card p-4 border-[#FF6B9D]/30 animate-bounce-in">
               <p className="text-xs text-[#FF6B9D] font-semibold uppercase tracking-widest mb-3">
                 🔁 Due for review ({reviewQueue.length})
@@ -396,6 +401,18 @@ export default function StudentHome() {
                     </button>
                   </div>
                 ))}
+              </div>
+            </div>
+          ) : reviewMeta.reviewed_today > 0 && (
+            <div className="blox-card p-4 border-[#00CC88]/30 animate-bounce-in">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">✅</span>
+                <div>
+                  <p className="text-sm font-fredoka font-bold text-[#00CC88]">Review done for today!</p>
+                  <p className="text-xs text-[#8892B0]">
+                    You reviewed {reviewMeta.reviewed_today} topic{reviewMeta.reviewed_today !== 1 ? 's' : ''} today. See you tomorrow!
+                  </p>
+                </div>
               </div>
             </div>
           )}
