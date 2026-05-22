@@ -17,11 +17,13 @@ export default function ProfilePage() {
   const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
 
+  const isStudent = user?.role === 'student'
+
   const [name, setName] = useState(user?.name || '')
   // null = use Google photo / whatever avatar_url is; string = chosen preset key
   const [selectedPreset, setSelectedPreset] = useState(user?.avatar_preset || null)
   const [previewUrl, setPreviewUrl] = useState(null)       // blob URL for local preview
-  const [pendingFile, setPendingFile]   = useState(null)   // File object to upload
+  const [pendingFile, setPendingFile]   = useState(null)   // File object to upload (non-students only)
   const [tab, setTab]   = useState('preset')               // 'preset' | 'upload'
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState(null)
@@ -141,33 +143,40 @@ export default function ProfilePage() {
 
         {/* ── Avatar picker ────────────────────────────────────── */}
         <div className="blox-card p-4 space-y-3">
-          {/* Tab switcher */}
-          <div className="flex gap-2 bg-[#0F0F23] rounded-xl p-1">
-            <button
-              onClick={() => setTab('preset')}
-              className={`flex-1 py-2 rounded-lg text-xs font-nunito font-semibold transition-all ${
-                tab === 'preset'
-                  ? 'bg-[#00A2FF] text-white shadow'
-                  : 'text-[#8892B0] hover:text-white'
-              }`}
-            >
-              🎭 Choose Avatar
-            </button>
-            <button
-              onClick={() => setTab('upload')}
-              className={`flex-1 py-2 rounded-lg text-xs font-nunito font-semibold transition-all ${
-                tab === 'upload'
-                  ? 'bg-[#00A2FF] text-white shadow'
-                  : 'text-[#8892B0] hover:text-white'
-              }`}
-            >
-              🖼️ From Gallery
-            </button>
-          </div>
+          {/* Tab switcher — gallery upload hidden for students */}
+          {!isStudent && (
+            <div className="flex gap-2 bg-[#0F0F23] rounded-xl p-1">
+              <button
+                onClick={() => setTab('preset')}
+                className={`flex-1 py-2 rounded-lg text-xs font-nunito font-semibold transition-all ${
+                  tab === 'preset'
+                    ? 'bg-[#00A2FF] text-white shadow'
+                    : 'text-[#8892B0] hover:text-white'
+                }`}
+              >
+                🎭 Choose Avatar
+              </button>
+              <button
+                onClick={() => setTab('upload')}
+                className={`flex-1 py-2 rounded-lg text-xs font-nunito font-semibold transition-all ${
+                  tab === 'upload'
+                    ? 'bg-[#00A2FF] text-white shadow'
+                    : 'text-[#8892B0] hover:text-white'
+                }`}
+              >
+                🖼️ From Gallery
+              </button>
+            </div>
+          )}
 
-          {/* Preset grid */}
-          {tab === 'preset' && (
+          {/* Preset grid — always shown; always active for students */}
+          {(isStudent || tab === 'preset') && (
             <div className="space-y-2">
+              {isStudent && (
+                <p className="text-[10px] text-[#4A5568] text-center">
+                  Choose a preset avatar or use your Google photo below
+                </p>
+              )}
               <div className="grid grid-cols-5 gap-2">
                 {PRESET_KEYS.map(key => (
                   <button
@@ -205,8 +214,8 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {/* Upload from gallery */}
-          {tab === 'upload' && (
+          {/* Upload from gallery — parents and admins only */}
+          {!isStudent && tab === 'upload' && (
             <div className="space-y-3">
               <input
                 ref={fileRef}

@@ -2690,8 +2690,14 @@ async def upload_profile_avatar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a custom profile photo. Stores in GCS (prod) or local uploads/profiles/ (dev)."""
-    if current_user.role not in ("student", "parent"):
+    """Upload a custom profile photo. Stores in GCS (prod) or local uploads/profiles/ (dev).
+    Students may only use preset avatars or their Google photo — gallery upload is disabled."""
+    if current_user.role == "student":
+        raise HTTPException(
+            status_code=403,
+            detail="Students can use preset avatars or their Google profile photo only."
+        )
+    if current_user.role not in ("parent", "admin"):
         raise HTTPException(status_code=403, detail="Not allowed")
 
     if not file.content_type or not file.content_type.startswith("image/"):
