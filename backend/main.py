@@ -32,7 +32,7 @@ from auth import get_current_user, require_admin, require_parent, verify_google_
 from session_engine import (
     generate_question, assess_answer, get_hint, get_concept_explanation,
     get_session_summary, determine_next_action, get_start_level,
-    generate_sub_question, generate_worked_example,
+    generate_sub_question, generate_worked_example, generate_parent_tip,
     LEVEL_GUIDE, LEVEL_ORDER,
 )
 
@@ -155,6 +155,9 @@ def run_migrations():
             ))
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_goal_sessions INTEGER DEFAULT 1"
+            ))
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_mastery_goal INTEGER DEFAULT 0"
             ))
             # Admin audit log — added in task #22
             conn.execute(text("""
@@ -1538,6 +1541,7 @@ def start_session(
 @app.post("/api/session/answer")
 def submit_answer(
     req: AnswerRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1767,6 +1771,25 @@ def submit_answer(
         summary = get_session_summary(session, topic, turns)
         _update_mastery(db, session, topic, session_summary=summary)
         db.commit()
+
+        # ── Parent tip notification (task #49, background so it doesn't delay response) ──
+        if session.user_id:
+            _parent_links = db.query(ParentStudentLink).filter(
+                ParentStudentLink.student_id == session.user_id
+            ).all()
+            if _parent_links:
+                _student = db.query(User).filter(User.id == session.user_id).first()
+                _mastery_lvl = _mastery.mastery_level if _mastery else "L1"
+                background_tasks.add_task(
+                    _send_parent_tip_bg,
+                    student_name=_student.name if _student else "Your child",
+                    topic_title=topic.title,
+                    key_concepts=topic.key_concepts or [],
+                    mastery_level=_mastery_lvl,
+                    session_summary=summary,
+                    parent_ids=[lnk.parent_id for lnk in _parent_links],
+                )
+
         return {"session_id": session.id, "feedback": assessment["feedback"],
                 "score": assessment["score"], "confidence_tag": assessment["confidence_tag"],
                 "action": "session_complete", "current_level": session.current_level,
@@ -3222,6 +3245,14 @@ def student_dashboard(
         "daily_goal_sessions": current_user.daily_goal_sessions or 1,
         # Achievement snapshot (task #29)
         "topics_mastered": topics_mastered,
+        # Mastery goal (#59)
+        "weekly_mastery_goal": current_user.weekly_mastery_goal or 0,
+        "topics_mastered_this_week": sum(
+            1 for m in all_masteries
+            if m.mastery_level in ("L3", "L4", "L5")
+            and m.last_practiced_at
+            and m.last_practiced_at >= week_start
+        ),
     }
 
 
@@ -3232,6 +3263,34 @@ class BuddyUpdateRequest(BaseModel):
     buddy_avatar: Optional[str] = None
     show_on_leaderboard: Optional[bool] = None
     daily_goal_sessions: Optional[int] = None
+    weekly_mastery_goal: Optional[int] = None  # #59
+
+
+def _send_parent_tip_bg(
+    student_name: str,
+    topic_title: str,
+    key_concepts: list,
+    mastery_level: str,
+    session_summary: str,
+    parent_ids: list,
+) -> None:
+    """Background task (#49): generate AI tip and notify linked parents."""
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        tip = generate_parent_tip(topic_title, key_concepts, mastery_level, session_summary)
+        for pid in parent_ids:
+            db.add(Notification(
+                user_id=pid,
+                type="session_tip",
+                title=f"💡 {student_name} practised {topic_title}",
+                body=tip,
+            ))
+        db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
 
 class WeeklyChallengeSubmitRequest(BaseModel):
     challenge_id: int
@@ -3303,6 +3362,8 @@ def update_buddy(
             user.show_on_leaderboard = False
     if req.daily_goal_sessions is not None:
         user.daily_goal_sessions = max(1, min(10, req.daily_goal_sessions))
+    if req.weekly_mastery_goal is not None:   # #59
+        user.weekly_mastery_goal = max(0, min(20, req.weekly_mastery_goal))
 
     db.commit()
     return {
@@ -3310,6 +3371,7 @@ def update_buddy(
         "buddy_avatar": user.buddy_avatar or "robot",
         "show_on_leaderboard": user.show_on_leaderboard if user.show_on_leaderboard is not None else False,
         "daily_goal_sessions": user.daily_goal_sessions or 1,
+        "weekly_mastery_goal": user.weekly_mastery_goal or 0,
     }
 
 

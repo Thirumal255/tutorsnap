@@ -1036,3 +1036,30 @@ def generate_worked_example(topic, level: str, study_summary: str = "") -> str:
         return call_claude(system, user, max_tokens=300, model=_HAIKU)
     except Exception:
         return ""
+
+
+def generate_parent_tip(
+    topic_title: str,
+    key_concepts: list,
+    mastery_level: str,
+    session_summary: str,
+) -> str:
+    """#49: One-to-two-sentence AI tip for a parent about what their child just practised."""
+    concepts = ", ".join(key_concepts[:4]) if key_concepts else topic_title
+    summary_snippet = (session_summary or "")[:250]
+    user = (
+        f"A student just finished a practice session on '{topic_title}'. "
+        f"Their current mastery level: {mastery_level}. Key concepts covered: {concepts}. "
+        f"Session summary: {summary_snippet}\n\n"
+        f"Write 1–2 sentences for the parent: briefly state what was practised and suggest ONE "
+        f"simple, specific thing they can do at home to reinforce it. "
+        f"Be warm, practical and under 70 words. No emoji, no bullet points."
+    )
+    try:
+        return call_claude("You are a friendly tutor writing a brief note to a parent.", user,
+                           max_tokens=120, model=_HAIKU)
+    except Exception:
+        return (
+            f"Your child practised {topic_title} today — ask them to explain one thing they "
+            f"learned in their own words. That single step makes the knowledge stick!"
+        )

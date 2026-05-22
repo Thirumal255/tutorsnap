@@ -13,18 +13,24 @@ const BUDDY_PRESETS = [
 ]
 
 /**
- * BuddyCustomizer — slide-up modal for choosing buddy avatar + nickname.
+ * BuddyCustomizer — slide-up modal for buddy avatar + nickname + goals.
  * Props:
- *   currentAvatar  (string)  — current avatar key
- *   currentName    (string)  — current buddy name
- *   onClose        (fn)      — close the modal
- *   onSave         (fn({buddy_name, buddy_avatar})) — called after successful save
+ *   currentAvatar       (string)  — current avatar key
+ *   currentName         (string)  — current buddy name
+ *   currentMasteryGoal  (number)  — current weekly mastery goal (0 = none)
+ *   onClose             (fn)      — close the modal
+ *   onSave              (fn({buddy_name, buddy_avatar})) — called after successful save
  */
-export default function BuddyCustomizer({ currentAvatar = 'robot', currentName = 'Buddy', onClose, onSave }) {
-  const [avatar, setAvatar] = useState(currentAvatar)
-  const [name, setName]     = useState(currentName === 'Buddy' ? '' : currentName)
-  const [saving, setSaving] = useState(false)
-  const [error, setError]   = useState('')
+export default function BuddyCustomizer({
+  currentAvatar = 'robot', currentName = 'Buddy',
+  currentMasteryGoal = 0,
+  onClose, onSave,
+}) {
+  const [avatar, setAvatar]           = useState(currentAvatar)
+  const [name, setName]               = useState(currentName === 'Buddy' ? '' : currentName)
+  const [masteryGoal, setMasteryGoal] = useState(currentMasteryGoal)  // #59
+  const [saving, setSaving]           = useState(false)
+  const [error, setError]             = useState('')
 
   const selectedEmoji = BUDDY_PRESETS.find(p => p.key === avatar)?.emoji || '🤖'
 
@@ -33,8 +39,9 @@ export default function BuddyCustomizer({ currentAvatar = 'robot', currentName =
     setError('')
     try {
       const res = await updateBuddySettings({
-        buddy_name:   name.trim() || 'Buddy',
-        buddy_avatar: avatar,
+        buddy_name:          name.trim() || 'Buddy',
+        buddy_avatar:        avatar,
+        weekly_mastery_goal: masteryGoal,
       })
       onSave?.(res.data)
       onClose?.()
@@ -101,6 +108,27 @@ export default function BuddyCustomizer({ currentAvatar = 'robot', currentName =
                 <span className="text-[9px] text-[#8892B0] font-nunito">{p.label}</span>
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Weekly mastery goal (#59) */}
+        <div>
+          <label className="text-xs text-[#8892B0] font-semibold uppercase tracking-widest">
+            Weekly mastery goal
+          </label>
+          <p className="text-xs text-[#4A5568] mt-0.5 mb-2">Topics to master per week (0 = no goal)</p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMasteryGoal(g => Math.max(0, g - 1))}
+              className="w-9 h-9 rounded-xl bg-[#2D2B5A] text-white font-bold text-lg hover:bg-[#3D3B6A] transition-all"
+            >−</button>
+            <span className="flex-1 text-center font-fredoka font-bold text-white text-xl">
+              {masteryGoal === 0 ? '—' : masteryGoal}
+            </span>
+            <button
+              onClick={() => setMasteryGoal(g => Math.min(20, g + 1))}
+              className="w-9 h-9 rounded-xl bg-[#2D2B5A] text-white font-bold text-lg hover:bg-[#3D3B6A] transition-all"
+            >+</button>
           </div>
         </div>
 

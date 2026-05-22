@@ -50,12 +50,13 @@ function MasteryBar({ attempted, mastered, total }) {
 }
 
 // ── Daily goal ring (task #17) ───────────────────────────────────────────────
-function GoalRing({ done, goal }) {
+function GoalRing({ done, goal, color = null, label = 'today' }) {
   const r    = 30
   const circ = 2 * Math.PI * r
   const pct  = Math.min(done / Math.max(goal, 1), 1)
   const offset = circ * (1 - pct)
   const complete = done >= goal
+  const activeColor = color || (complete ? '#00CC88' : '#00A2FF')
 
   return (
     <svg width="72" height="72" viewBox="0 0 72 72" className="flex-shrink-0">
@@ -65,7 +66,7 @@ function GoalRing({ done, goal }) {
       <circle
         cx="36" cy="36" r={r}
         fill="none"
-        stroke={complete ? '#00CC88' : '#00A2FF'}
+        stroke={complete ? '#00CC88' : activeColor}
         strokeWidth="6"
         strokeLinecap="round"
         strokeDasharray={circ}
@@ -81,7 +82,7 @@ function GoalRing({ done, goal }) {
       </text>
       <text x="36" y="46" textAnchor="middle" dominantBaseline="middle"
         style={{ fontFamily: 'Nunito, sans-serif', fill: '#8892B0', fontSize: '8px' }}>
-        today
+        {label}
       </text>
     </svg>
   )
@@ -384,6 +385,7 @@ export default function StudentHome() {
         <BuddyCustomizer
           currentAvatar={user?.buddy_avatar || 'robot'}
           currentName={user?.buddy_name || 'Buddy'}
+          currentMasteryGoal={data?.weekly_mastery_goal || 0}
           onClose={() => setShowBuddy(false)}
           onSave={() => { refreshUser(); setShowBuddy(false) }}
         />
@@ -470,6 +472,30 @@ export default function StudentHome() {
             </div>
           )}
 
+          {/* ── Weekly mastery goal ring (#59) ───────────────────────── */}
+          {data && (data.weekly_mastery_goal || 0) > 0 && (
+            <div className="blox-card p-4 animate-bounce-in flex items-center gap-4">
+              <GoalRing
+                done={data.topics_mastered_this_week || 0}
+                goal={data.weekly_mastery_goal}
+                color="#00CC88"
+                label="this week"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="font-fredoka font-bold text-white">
+                  {(data.topics_mastered_this_week || 0) >= data.weekly_mastery_goal
+                    ? '🏆 Mastery goal crushed this week!'
+                    : 'Weekly mastery goal'}
+                </p>
+                <p className="text-xs text-[#8892B0] mt-0.5">
+                  {(data.topics_mastered_this_week || 0) >= data.weekly_mastery_goal
+                    ? `You mastered ${data.topics_mastered_this_week} topic${data.topics_mastered_this_week !== 1 ? 's' : ''} this week!`
+                    : `${data.topics_mastered_this_week || 0} of ${data.weekly_mastery_goal} topics mastered this week`}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* ── Smart "What's next" CTA (task #52) ───────────────────── */}
           {(() => {
             const dailyGoal = user?.daily_goal_sessions || data.daily_goal_sessions || 1
@@ -545,9 +571,18 @@ export default function StudentHome() {
           {/* ── Spaced repetition review queue ────────────────────────── */}
           {reviewQueue.length > 0 ? (
             <div className="blox-card p-4 border-[#FF6B9D]/30 animate-bounce-in">
-              <p className="text-xs text-[#FF6B9D] font-semibold uppercase tracking-widest mb-3">
-                🔁 Due for review ({reviewQueue.length})
-              </p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-[#FF6B9D] font-semibold uppercase tracking-widest">
+                  🔁 Due for review ({reviewQueue.length})
+                </p>
+                {/* #57: Flash all review topics at once */}
+                <button
+                  onClick={() => navigate('/flashcard', { state: { reviewTopics: reviewQueue.map(q => ({ id: q.topic_id, title: q.title })) } })}
+                  className="text-xs font-nunito font-semibold px-2.5 py-1 rounded-full bg-[#FFB347]/20 text-[#FFB347] border border-[#FFB347]/30 hover:bg-[#FFB347]/30 transition-all"
+                >
+                  ⚡ Flash all
+                </button>
+              </div>
               <div className="space-y-2">
                 {reviewQueue.slice(0, 3).map(item => (
                   <div key={item.topic_id} className="flex items-center justify-between gap-3">

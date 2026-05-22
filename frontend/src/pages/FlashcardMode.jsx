@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { getStudentProgress, getFlashcardQuestion, markFlashcard } from '../api/client'
 
 const SUBJECT_EMOJI = {
@@ -319,7 +319,24 @@ function FlashCard({ chapter, onDone }) {
 
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export default function FlashcardMode() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [selectedChapter, setSelectedChapter] = useState(null)
+
+  // #57: If launched from review queue with pre-selected topics, skip chapter select
+  const reviewTopics = location.state?.reviewTopics  // [{ id, title }, ...]
+  useEffect(() => {
+    if (reviewTopics && reviewTopics.length > 0 && !selectedChapter) {
+      // Build a synthetic chapter object from the review topic list
+      setSelectedChapter({
+        id: 'review',
+        chapter_number: '🔁',
+        title: 'Review Queue',
+        subject: 'Review',
+        topics: reviewTopics.map(t => ({ id: t.id, title: t.title })),
+      })
+    }
+  }, []) // eslint-disable-line
 
   if (!selectedChapter) {
     return <ChapterSelect onSelect={setSelectedChapter} />
@@ -328,7 +345,11 @@ export default function FlashcardMode() {
   return (
     <FlashCard
       chapter={selectedChapter}
-      onDone={() => setSelectedChapter(null)}
+      onDone={() => {
+        // If launched from review queue, go back to home; otherwise back to chapter select
+        if (reviewTopics) navigate('/')
+        else setSelectedChapter(null)
+      }}
     />
   )
 }

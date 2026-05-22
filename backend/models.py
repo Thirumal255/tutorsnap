@@ -38,6 +38,7 @@ class User(Base):
     # ── Onboarding & daily goal ───────────────────────────────────────────────
     has_onboarded = Column(Boolean, default=False)           # True after first-login flow complete
     daily_goal_sessions = Column(Integer, default=1)         # target sessions per day
+    weekly_mastery_goal = Column(Integer, default=0)         # #59: topics to master per week (0 = no goal)
 
     parent_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.parent_id", back_populates="parent")
     student_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.student_id", back_populates="student")
