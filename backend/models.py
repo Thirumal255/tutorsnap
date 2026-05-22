@@ -247,6 +247,14 @@ class TopicMastery(Base):
     studied = Column(Boolean, default=False)               # True after first Study session completed
     study_summary = Column(Text, nullable=True)            # compact summary of what Buddy explained
 
+    # ── Mastery quality gate (task #38) ──────────────────────────────────
+    # True only when level >= L3 AND total_sessions >= 2 (rigorous threshold)
+    mastery_confirmed = Column(Boolean, default=False)
+
+    # ── Session-to-session AI memory (task #40) ───────────────────────────
+    # JSON array of last 3 session summaries [{summary, level, date}, ...]
+    session_memory = Column(Text, nullable=True)
+
     __table_args__ = (UniqueConstraint("student_id", "topic_id"),)
 
     topic = relationship("Topic", back_populates="masteries")

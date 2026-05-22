@@ -198,6 +198,44 @@ def get_subject_label(topic) -> str:
     return f"Grade {grade} {subject}"
 
 
+def _grade_profile(grade: int) -> str:
+    """Return grade-band language/difficulty guidance for AI system prompts (task #39).
+
+    Three bands mirror the typical school structure:
+      Primary      (1-4)  : concrete language, recall focus
+      Junior Sec   (5-9)  : standard range, reasoning encouraged
+      Senior Sec  (10-12) : exam-ready, rigorous, multi-step
+    """
+    if grade <= 4:
+        return (
+            "GRADE PROFILE (Primary, Grades 1-4):\n"
+            "- Use very simple, friendly language — short sentences, no jargon\n"
+            "- Favour concrete, picture-friendly examples (counting, grouping, everyday objects)\n"
+            "- Questions should be short and direct; avoid long problem statements\n"
+            "- Limit difficulty to L1-L2 unless the topic ceiling explicitly allows higher\n"
+            "- Celebrate every attempt warmly and simply\n"
+            "- Never use abstract notation without first giving a concrete example\n"
+        )
+    elif grade <= 9:
+        return (
+            "GRADE PROFILE (Junior Secondary, Grades 5-9):\n"
+            "- Use clear, approachable language — define any technical term on first use\n"
+            "- Full difficulty range L1-L4 is appropriate for this grade band\n"
+            "- Balance conceptual understanding with procedural practice\n"
+            "- Encourage students to explain their reasoning, not just state an answer\n"
+            "- Keep word problems real-world and relatable for 11-15 year olds\n"
+        )
+    else:
+        return (
+            "GRADE PROFILE (Senior Secondary, Grades 10-12):\n"
+            "- Use precise, subject-accurate vocabulary — students are exam-ready\n"
+            "- Full difficulty range L1-L5, including multi-step synthesis questions (L5)\n"
+            "- Expect and reward rigorous reasoning, structured working, and formal notation\n"
+            "- Challenge assumptions; push students towards exam-level critical thinking\n"
+            "- Word problems may involve complex multi-stage scenarios\n"
+        )
+
+
 def call_claude(system: str, user: str, max_tokens: int = 800, model: str = None,
                 _usage_out: list = None) -> str:
     """Call Claude and return the text response.
@@ -314,11 +352,14 @@ def generate_sub_question(topic, original_question: str, confusion_type: str = N
 
 
 def generate_question(topic, level: str, previous_questions: list[str], recent_formats: list[str] = None,
-                      study_summary: str = "") -> dict:
+                      study_summary: str = "", session_memory: str = "") -> dict:
     """Generate a question and return a dict with question, expected_key_points, answer_format."""
     subject_label = get_subject_label(topic)
+    book = getattr(topic.chapter, "book", None) if topic.chapter else None
+    grade = getattr(book, "grade", None) or 7
     system = (
         f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
+        f"{_grade_profile(grade)}\n"
         f"{ABSOLUTE_RULE}\n"
         f"{TOPIC_BOUNDARY_RULE}\n"
         f"{build_topic_context(topic)}"
@@ -455,10 +496,31 @@ Example E — L4 analysis, explanation format:
         f"Your question MUST be drawn from concepts covered in this study session.\n"
     ) if study_summary.strip() else ""
 
+    # ── Session memory (task #40) — inject past-session summaries so Buddy can
+    # avoid re-testing mastered concepts and target known weak areas. ───────────
+    memory_ctx = ""
+    if session_memory:
+        try:
+            memories = json.loads(session_memory)
+            if memories:
+                mem_lines = [
+                    f"  - {m.get('date','')}: Level {m.get('level','')} — {m.get('summary','')[:200]}"
+                    for m in memories[-3:]
+                ]
+                memory_ctx = (
+                    "\nPAST SESSIONS — what Buddy already knows about this student's history on this topic:\n"
+                    + "\n".join(mem_lines)
+                    + "\nUse this to avoid repeating already-mastered concepts, target persistent weak "
+                      "areas, and acknowledge genuine progress where relevant.\n"
+                )
+        except Exception:
+            pass
+
     user = (
         f"Generate exactly ONE practice question at difficulty level {level}.\n"
         f"Level {level} means: {LEVEL_GUIDE[level]}\n\n"
         f"{study_ctx}"
+        f"{memory_ctx}"
         f"{exercise_instruction}\n"
         f"LEVEL GUIDANCE:\n{LEVEL_STARTERS.get(level, '')}\n\n"
         f"{variety_rule}"
@@ -519,8 +581,11 @@ def assess_answer(
     When image_data (base64 JPEG) is provided the answer is handwritten — use vision.
     """
     subject_label = get_subject_label(topic)
+    _book = getattr(topic.chapter, "book", None) if topic.chapter else None
+    _grade = getattr(_book, "grade", None) or 7
     system = (
         f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
+        f"{_grade_profile(_grade)}\n"
         f"{ASSESS_RULE}\n"
         f"{build_topic_context(topic)}"
     )
@@ -684,8 +749,11 @@ def assess_answer(
 def get_hint(topic, question: str, student_answer: str, hint_tier: int,
              missed_key_points: list = None) -> str:
     subject_label = get_subject_label(topic)
+    _hbook = getattr(topic.chapter, "book", None) if topic.chapter else None
+    _hgrade = getattr(_hbook, "grade", None) or 7
     system = (
         f"You are Buddy, a friendly AI tutor for a {subject_label} student.\n"
+        f"{_grade_profile(_hgrade)}\n"
         f"{ABSOLUTE_RULE}\n"
         f"IMPORTANT — Hint context rule: The student's answer shown below has already been\n"
         f"assessed as INCORRECT or INCOMPLETE by the grading system. Do NOT tell the student\n"

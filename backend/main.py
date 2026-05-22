@@ -186,6 +186,14 @@ def run_migrations():
                     called_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # Mastery quality gate (task #38)
+            conn.execute(text(
+                "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS mastery_confirmed BOOLEAN DEFAULT FALSE"
+            ))
+            # Session-to-session AI memory (task #40)
+            conn.execute(text(
+                "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS session_memory TEXT"
+            ))
             conn.commit()
             print("Migration: schema up to date")
     except Exception as e:
@@ -328,9 +336,10 @@ def _student_stats(db: Session, user_id: int) -> dict:
     total = db.query(func.count(SessionModel.id)).filter(
         SessionModel.user_id == user_id
     ).scalar() or 0
+    # task #38: only count topics that passed the quality gate (L3+ AND ≥2 sessions)
     mastered = db.query(func.count(TopicMastery.id)).filter(
         TopicMastery.student_id == user_id,
-        TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
+        TopicMastery.mastery_confirmed == True,
     ).scalar() or 0
     flagged = db.query(func.count(TopicMastery.id)).filter(
         TopicMastery.student_id == user_id,
@@ -454,19 +463,46 @@ def _audit_log(
 
 
 def _next_question(db: Session, topic, level: str, prev_qs: list[str],
-                   recent_fmts: list[str] = None, study_summary: str = "") -> dict:
-    """Try the question bank first; fall back to live generation."""
+                   recent_fmts: list[str] = None, study_summary: str = "",
+                   session_memory: str = "") -> dict:
+    """Try the question bank first; fall back to live AI generation; final static fallback.
+
+    task #6  — graceful failure: never crash the session if AI is unavailable.
+    task #40 — session_memory passed to generate_question for continuity.
+    """
     from question_bank import draw_from_bank
     bank_q = draw_from_bank(db, topic.id, level, prev_qs)
     if bank_q:
         return bank_q
-    return generate_question(topic, level, prev_qs,
-                              recent_formats=recent_fmts or [], study_summary=study_summary)
+    try:
+        return generate_question(
+            topic, level, prev_qs,
+            recent_formats=recent_fmts or [],
+            study_summary=study_summary,
+            session_memory=session_memory,
+        )
+    except Exception as exc:
+        print(f"[_next_question] AI generation failed ({exc}); using static fallback.")
+        # Static fallback — always safe, never crashes the session
+        key_concepts = topic.key_concepts or []
+        hint = (f" Focus on: {', '.join(key_concepts[:2])}." if key_concepts else "")
+        return {
+            "question": (
+                f"📘 {topic.title} — Can you explain one key concept from this topic "
+                f"in your own words?{hint}"
+            ),
+            "expected_key_points": list(key_concepts[:2]) or ["any concept from the topic"],
+            "answer_format": "explanation",
+        }
 
 
-def _update_mastery(db: Session, session, topic, flagged: bool = False):
-    """Update TopicMastery after a session ends, applying SM-2 scheduling."""
-    # Determine whether the student improved (level went up) for SM-2 quality
+def _update_mastery(db: Session, session, topic, flagged: bool = False, session_summary: str = ""):
+    """Update TopicMastery after a session ends, applying SM-2 scheduling.
+
+    session_summary (task #40): compact text summary of this session; appended
+    to the rolling session_memory JSON array (last 3 entries kept).
+    mastery_confirmed (task #38): set True only when level >= L3 AND total_sessions >= 2.
+    """
     level_order = ["L1", "L2", "L3", "L4", "L5"]
     level_idx = level_order.index(session.current_level) if session.current_level in level_order else 0
 
@@ -475,29 +511,59 @@ def _update_mastery(db: Session, session, topic, flagged: bool = False):
         TopicMastery.topic_id == session.topic_id,
     ).first()
 
+    now = datetime.utcnow()
+
+    def _build_memory_entry() -> dict:
+        return {
+            "summary": session_summary[:500],
+            "level": session.current_level,
+            "date": now.strftime("%Y-%m-%d"),
+        }
+
     if mastery:
         prev_idx = level_order.index(mastery.mastery_level) if mastery.mastery_level in level_order else 0
         knew_it = level_idx >= prev_idx  # maintained or improved = "knew it"
         mastery.mastery_level = session.current_level
-        mastery.last_practiced_at = datetime.utcnow()
+        mastery.last_practiced_at = now
         mastery.total_sessions += 1
         _sm2_update(mastery, knew_it)
         if flagged or session.flagged_for_review:
             mastery.flagged_for_review = True
+
+        # ── Task #38: mastery quality gate ────────────────────────────────────
+        final_idx = level_order.index(mastery.mastery_level) if mastery.mastery_level in level_order else 0
+        mastery.mastery_confirmed = (final_idx >= 2 and mastery.total_sessions >= 2)
+
+        # ── Task #40: session memory (rolling last-3) ─────────────────────────
+        if session_summary:
+            existing: list = []
+            try:
+                existing = json.loads(mastery.session_memory or "[]")
+                if not isinstance(existing, list):
+                    existing = []
+            except Exception:
+                existing = []
+            existing.append(_build_memory_entry())
+            mastery.session_memory = json.dumps(existing[-3:])
     else:
-        # First session: seed SM-2 with level-based initial interval
+        # First practice session: seed SM-2 with level-based initial interval.
+        # mastery_confirmed stays False (total_sessions = 1, below the 2-session threshold).
         init_interval = _REVIEW_INTERVALS.get(session.current_level, 3)
         new_mastery = TopicMastery(
             student_id=session.user_id,
             student_name=session.student_name,
             topic_id=session.topic_id,
             mastery_level=session.current_level,
-            last_practiced_at=datetime.utcnow(),
+            last_practiced_at=now,
             total_sessions=1,
+            mastery_confirmed=False,
             flagged_for_review=flagged or session.flagged_for_review,
-            next_review_at=datetime.utcnow() + timedelta(days=init_interval),
+            next_review_at=now + timedelta(days=init_interval),
             review_interval_days=init_interval,
             ease_factor=2.5,
+            session_memory=(
+                json.dumps([_build_memory_entry()]) if session_summary else None
+            ),
         )
         db.add(new_mastery)
     db.commit()
@@ -1351,7 +1417,8 @@ def start_session(
         previous_questions = [t.question_text for t in prev_turns]
 
     # Try question bank first; fall back to live generation
-    q = _next_question(db, topic, start_level, previous_questions, [], mastery.study_summary or "")
+    q = _next_question(db, topic, start_level, previous_questions, [],
+                       mastery.study_summary or "", mastery.session_memory or "")
     db.add(SessionTurn(
         session_id=session.id, turn_number=1,
         question_text=q["question"], level=start_level,
@@ -1421,6 +1488,7 @@ def submit_answer(
         TopicMastery.topic_id == session.topic_id,
     ).first()
     _study_summary = (_mastery.study_summary or "") if _mastery else ""
+    _session_memory = (_mastery.session_memory or "") if _mastery else ""  # task #40
 
     current_turn = (db.query(SessionTurn).filter(SessionTurn.session_id == session.id)
                     .order_by(SessionTurn.turn_number.desc()).first())
@@ -1467,7 +1535,7 @@ def submit_answer(
 
             prev_qs = [t.question_text for t in
                        db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-            nq = _next_question(db, topic, next_diag_level, prev_qs, [], _study_summary)
+            nq = _next_question(db, topic, next_diag_level, prev_qs, [], _study_summary, _session_memory)
             new_turn_number = current_turn.turn_number + 1
             db.add(SessionTurn(
                 session_id=session.id, turn_number=new_turn_number,
@@ -1534,7 +1602,7 @@ def submit_answer(
             # First real question at placement level
             prev_qs = [t.question_text for t in
                        db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
-            nq = _next_question(db, topic, placement, prev_qs, [], _study_summary)
+            nq = _next_question(db, topic, placement, prev_qs, [], _study_summary, _session_memory)
             new_turn_number = current_turn.turn_number + 1
             db.add(SessionTurn(
                 session_id=session.id, turn_number=new_turn_number,
@@ -1607,9 +1675,10 @@ def submit_answer(
         session.ended_at = datetime.utcnow()
         session.status = "completed"
         session.final_confidence = assessment["confidence_tag"]
-        _update_mastery(db, session, topic)
+        # Generate summary before _update_mastery so it can be stored in session_memory (#40)
         turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
         summary = get_session_summary(session, topic, turns)
+        _update_mastery(db, session, topic, session_summary=summary)
         db.commit()
         return {"session_id": session.id, "feedback": assessment["feedback"],
                 "score": assessment["score"], "confidence_tag": assessment["confidence_tag"],
@@ -1642,7 +1711,7 @@ def submit_answer(
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
         nq = _next_question(db, topic, session.current_level, prev_qs, _recent_formats(),
-                            _study_summary)
+                            _study_summary, _session_memory)
         next_question = nq["question"]
         next_answer_format = nq["answer_format"]
         new_turn_number = current_turn.turn_number + 1
@@ -1659,7 +1728,7 @@ def submit_answer(
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
         nq = _next_question(db, topic, session.current_level, prev_qs, _recent_formats(),
-                            _study_summary)
+                            _study_summary, _session_memory)
         next_question = nq["question"]
         next_answer_format = nq["answer_format"]
         new_turn_number = current_turn.turn_number + 1
@@ -1687,9 +1756,9 @@ def submit_answer(
         session.status = "completed"
         session.ended_at = datetime.utcnow()
         session.final_confidence = assessment["confidence_tag"]
-        _update_mastery(db, session, topic)
         turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
         summary = get_session_summary(session, topic, turns)
+        _update_mastery(db, session, topic, session_summary=summary)
         db.commit()
         return {"session_id": session.id, "feedback": assessment["feedback"],
                 "score": assessment["score"], "confidence_tag": assessment["confidence_tag"],
@@ -1783,7 +1852,7 @@ def request_hint(
         prev_qs = [t.question_text for t in
                    db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
         fq = _next_question(db, topic, session.current_level, prev_qs, recent_hint_formats,
-                            _study_summary)
+                            _study_summary, _session_memory)
         new_turn_number = current_turn.turn_number + 1
         db.add(SessionTurn(
             session_id=session.id, turn_number=new_turn_number,
@@ -1848,11 +1917,13 @@ def end_session(
         session.ended_at = datetime.utcnow()
         session.final_confidence = (last_turn.confidence_tag
                                     if last_turn and last_turn.confidence_tag else "shaky")
-        _update_mastery(db, session, topic)
+        turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
+        summary = get_session_summary(session, topic, turns)
+        _update_mastery(db, session, topic, session_summary=summary)
         db.commit()
-
-    turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
-    summary = get_session_summary(session, topic, turns)
+    else:
+        turns = db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()
+        summary = get_session_summary(session, topic, turns)
 
     # ── XP breakdown (task #16) ────────────────────────────────────────────────
     answered_turns = [t for t in turns if t.student_answer and t.assessment_score is not None]

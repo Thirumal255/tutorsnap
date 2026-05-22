@@ -113,6 +113,7 @@ export default function StudentMistakes() {
   const [starting, setStarting] = useState(null)
   const [filter, setFilter] = useState('all') // 'all' | subject name
   const [sort, setSort] = useState('recent')  // 'recent' | 'score'
+  const [groupByTopic, setGroupByTopic] = useState(true)  // task #43: topic-drill mode
 
   useEffect(() => {
     getMistakes()
@@ -125,7 +126,7 @@ export default function StudentMistakes() {
     navigate(`/study/${topicId}`)
   }
 
-  async function handleRepractice(topicId) {
+  async function handleRepractice(topicId, isDrill = false) {
     setStarting(topicId)
     try {
       const res = await startSession(user.name, topicId)
@@ -140,6 +141,7 @@ export default function StudentMistakes() {
           answerFormat: d.answer_format || null,
           diagnostic: d.diagnostic || false,
           workedExample: d.worked_example || null,
+          mistakeDrill: isDrill,  // task #43: flag for drill mode
         })
       )
       navigate(`/session/${d.session_id}`)
@@ -164,6 +166,27 @@ export default function StudentMistakes() {
       if (sort === 'score') return (a.score ?? 100) - (b.score ?? 100)
       return new Date(b.practiced_at || 0) - new Date(a.practiced_at || 0)
     })
+
+  // task #43: group by topic_id — map of topic_id → { topic info, mistakes[] }
+  const topicGroups = groupByTopic
+    ? Object.values(
+        visible.reduce((acc, m) => {
+          const key = m.topic_id
+          if (!acc[key]) {
+            acc[key] = {
+              topic_id: m.topic_id,
+              topic_title: m.topic_title,
+              subject: m.subject,
+              chapter_title: m.chapter_title,
+              studied: m.studied,
+              mistakes: [],
+            }
+          }
+          acc[key].mistakes.push(m)
+          return acc
+        }, {})
+      )
+    : null
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-5">
@@ -211,7 +234,7 @@ export default function StudentMistakes() {
             </div>
           </div>
 
-          {/* Filters */}
+          {/* Filters + view toggle */}
           <div className="flex gap-2 flex-wrap items-center justify-between">
             <div className="flex gap-2 flex-wrap">
               <button
@@ -234,33 +257,101 @@ export default function StudentMistakes() {
                 </button>
               ))}
             </div>
-            <select
-              value={sort}
-              onChange={e => setSort(e.target.value)}
-              className="bg-[#2D2B5A] text-[#8892B0] text-xs rounded-lg px-2 py-1.5 border border-[#2D2B5A] focus:outline-none"
-            >
-              <option value="recent">Most Recent</option>
-              <option value="score">Lowest Score</option>
-            </select>
+            <div className="flex items-center gap-2">
+              {/* topic grouping toggle (task #43) */}
+              <button
+                onClick={() => setGroupByTopic(g => !g)}
+                title={groupByTopic ? 'Switch to list view' : 'Switch to topic-drill view'}
+                className={`px-3 py-1.5 rounded-full text-xs font-nunito font-semibold transition-all ${
+                  groupByTopic ? 'bg-[#C084FC]/30 text-[#C084FC] border border-[#C084FC]/40'
+                               : 'bg-[#2D2B5A] text-[#8892B0] hover:text-white'
+                }`}
+              >
+                {groupByTopic ? '🎯 By Topic' : '📋 List'}
+              </button>
+              <select
+                value={sort}
+                onChange={e => setSort(e.target.value)}
+                className="bg-[#2D2B5A] text-[#8892B0] text-xs rounded-lg px-2 py-1.5 border border-[#2D2B5A] focus:outline-none"
+              >
+                <option value="recent">Most Recent</option>
+                <option value="score">Lowest Score</option>
+              </select>
+            </div>
           </div>
 
-          {/* Mistake list */}
-          <div className="space-y-2">
-            {visible.length === 0 && (
-              <div className="blox-card p-6 text-center">
-                <p className="text-[#8892B0]">Nothing to strengthen in this subject.</p>
+          {/* ── Mistake list (topic-grouped or flat) ───────────────────────── */}
+          {visible.length === 0 && (
+            <div className="blox-card p-6 text-center">
+              <p className="text-[#8892B0]">Nothing to strengthen in this subject.</p>
+            </div>
+          )}
+
+          {/* Topic-drill view (task #43) */}
+          {groupByTopic && topicGroups && topicGroups.map(group => (
+            <div key={group.topic_id} className="blox-card overflow-hidden">
+              {/* Topic header */}
+              <div className="px-4 py-3 bg-[#1A1A3E] border-b border-[#2D2B5A] flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-xs text-[#8892B0] font-nunito">
+                      {SUBJECT_EMOJI[group.subject] || '📚'} {group.subject}
+                    </span>
+                    <span className="text-[#2D2B5A]">·</span>
+                    <span className="text-xs text-[#4A5568] truncate">{group.chapter_title}</span>
+                  </div>
+                  <p className="font-fredoka font-bold text-white text-sm truncate">{group.topic_title}</p>
+                  <p className="text-[10px] text-[#FF6B6B] mt-0.5">
+                    {group.mistakes.length} question{group.mistakes.length !== 1 ? 's' : ''} to strengthen
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {group.studied === false && (
+                    <button
+                      onClick={() => handleStudy(group.topic_id)}
+                      className="text-xs py-1.5 px-3 rounded-xl font-nunito font-bold bg-[#C77DFF]/20 text-[#C77DFF] border border-[#C77DFF]/40 hover:bg-[#C77DFF]/30 transition-all"
+                    >
+                      📖 Study
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRepractice(group.topic_id, true)}
+                    disabled={starting === group.topic_id}
+                    className="btn-blox-primary text-xs py-1.5 px-4 disabled:opacity-50"
+                  >
+                    {starting === group.topic_id ? '⚡…' : '🎯 Drill topic'}
+                  </button>
+                </div>
               </div>
-            )}
-            {visible.map((m, i) => (
-              <MistakeCard
-                key={`${m.topic_id}-${i}`}
-                mistake={m}
-                onRepractice={handleRepractice}
-                onStudy={handleStudy}
-                starting={starting}
-              />
-            ))}
-          </div>
+              {/* Individual mistake cards inside the group */}
+              <div className="divide-y divide-[#2D2B5A]">
+                {group.mistakes.map((m, i) => (
+                  <MistakeCard
+                    key={`${m.topic_id}-${i}`}
+                    mistake={m}
+                    onRepractice={handleRepractice}
+                    onStudy={handleStudy}
+                    starting={starting}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* Flat list view */}
+          {!groupByTopic && (
+            <div className="space-y-2">
+              {visible.map((m, i) => (
+                <MistakeCard
+                  key={`${m.topic_id}-${i}`}
+                  mistake={m}
+                  onRepractice={handleRepractice}
+                  onStudy={handleStudy}
+                  starting={starting}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
