@@ -2,16 +2,20 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { endSession } from '../api/client'
 import ProgressBadge from '../components/ProgressBadge'
+import { useAuth } from '../auth/AuthContext'
 
 const CONFETTI_COLORS = ['#FF3333','#00A2FF','#FFD700','#00D68F','#FF6B9D','#A78BFA']
 
-function Confetti() {
-  const pieces = Array.from({ length: 20 }, (_, i) => ({
+// Big milestone = L3+ reached
+const MILESTONE_LEVELS = { L3: true, L4: true, L5: true }
+
+function Confetti({ count = 28 }) {
+  const pieces = Array.from({ length: count }, (_, i) => ({
     id: i,
     color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
     left: `${Math.random() * 100}%`,
-    delay: `${Math.random() * 1}s`,
-    size: `${6 + Math.random() * 8}px`,
+    delay: `${Math.random() * 1.2}s`,
+    size: `${6 + Math.random() * 10}px`,
   }))
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -30,6 +34,7 @@ function Confetti() {
 export default function Summary() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const sessionId = parseInt(id)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -87,10 +92,13 @@ export default function Summary() {
     : 0
 
   const earlyExit = questionsAsked === 0
+  const isMilestone = MILESTONE_LEVELS[level] && !earlyExit && !flagged
+  const confettiCount = level === 'L5' ? 60 : level === 'L4' ? 45 : 28
+  const isPrimary = (user?.grade || 0) <= 5 && (user?.grade || 0) > 0
 
   return (
     <div className="min-h-screen bg-[#0F0F23] flex items-center justify-center px-4 py-10 relative overflow-hidden">
-      {!earlyExit && <Confetti />}
+      {!earlyExit && <Confetti count={confettiCount} />}
 
       {/* BG glow */}
       <div className="absolute inset-0 pointer-events-none">
@@ -128,9 +136,29 @@ export default function Summary() {
           </div>
         )}
 
+        {/* Milestone celebration card */}
+        {isMilestone && (
+          <div className="bg-gradient-to-r from-[#FFD700]/20 to-[#FF6B9D]/20 border border-[#FFD700]/40 rounded-2xl p-3 mb-4 animate-bounce-in">
+            <p className="text-[#FFD700] font-fredoka font-bold text-sm">
+              {isPrimary
+                ? (level === 'L5' ? '✨ AMAZING! You\'re a Legend!' :
+                   level === 'L4' ? '🏆 WOW! You\'re a Champion!' :
+                                    '🌟 GREAT JOB! You\'re a Hero!')
+                : (level === 'L5' ? '👑 LEGENDARY! You reached Gold rank!' :
+                   level === 'L4' ? '💎 AMAZING! You reached Diamond rank!' :
+                                    '⚔️ GREAT! You reached Iron rank!')}
+            </p>
+            <p className="text-[#8892B0] text-xs mt-0.5">
+              {level === 'L5' ? 'You\'ve mastered this topic — incredible!' :
+               level === 'L4' ? (isPrimary ? 'One more step to Legend!' : 'Only Gold rank left!') :
+                                (isPrimary ? 'Keep going — Champion awaits!' : 'Keep pushing — Diamond awaits!')}
+            </p>
+          </div>
+        )}
+
         {/* Rank */}
         <div className="flex justify-center mb-5">
-          <ProgressBadge level={level} large />
+          <ProgressBadge level={level} large grade={user?.grade} />
         </div>
 
         <p className="text-[#8892B0] text-sm leading-relaxed mb-5 font-nunito">{summary}</p>

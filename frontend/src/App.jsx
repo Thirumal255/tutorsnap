@@ -58,7 +58,8 @@ export default function App() {
               <Route path="progress"     element={<StudentProgress />} />
               <Route path="study-time"   element={<StudentStudyTime />} />
               <Route path="achievements" element={<StudentAchievements />} />
-              <Route path="mistakes"     element={<StudentMistakes />} />
+              <Route path="strengthen"   element={<StudentMistakes />} />
+              <Route path="mistakes"     element={<Navigate to="/strengthen" replace />} />
             </Route>
 
             {/* Study Mode — full-screen, no sidebar */}

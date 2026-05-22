@@ -7,7 +7,7 @@ const NAV = [
   { to: '/home',         label: 'Home',        icon: '🏠', end: true },
   { to: '/practice',     label: 'Practice',     icon: '⚔️' },
   { to: '/progress',     label: 'My Progress',  icon: '📈' },
-  { to: '/mistakes',     label: 'Mistakes',     icon: '📝' },
+  { to: '/strengthen',   label: 'Strengthen',   icon: '💪' },
   { to: '/study-time',   label: 'Study Time',   icon: '⏱️' },
   { to: '/achievements', label: 'Achievements', icon: '🏆' },
 ]
@@ -17,7 +17,7 @@ const MOBILE_NAV = [
   { to: '/home',         label: 'Home',     icon: '🏠', end: true },
   { to: '/practice',     label: 'Practice', icon: '⚔️' },
   { to: '/progress',     label: 'Progress', icon: '📈' },
-  { to: '/mistakes',     label: 'Mistakes', icon: '📝' },
+  { to: '/strengthen',   label: 'Strengthen', icon: '💪' },
   { to: '/achievements', label: 'Awards',   icon: '🏆' },
 ]
 

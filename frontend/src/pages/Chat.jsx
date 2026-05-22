@@ -403,7 +403,7 @@ export default function Chat() {
           <p className="text-xs text-[#8892B0] text-center truncate">{session.topicTitle}</p>
         </div>
         <div className="flex items-center gap-2">
-          <ProgressBadge level={currentLevel} />
+          <ProgressBadge level={currentLevel} grade={user?.grade} />
           <button
             onClick={() => setShowEndModal(true)}
             className="text-xs px-3 py-1.5 rounded-full font-semibold border border-[#2D2B5A] text-[#8892B0] hover:border-[#FF3333] hover:text-[#FF3333] transition-all"
@@ -444,8 +444,12 @@ export default function Chat() {
               🎯 Placed at {levelUpBanner.label}!
             </div>
           ) : (
-            <div className="bg-gradient-to-r from-[#FFD700] to-[#FF6B9D] text-[#0F0F23] font-fredoka font-bold text-base px-6 py-3 rounded-2xl shadow-2xl animate-bounce-in flex items-center gap-2">
-              🚀 LEVEL UP! &nbsp;→&nbsp; {levelUpBanner.label}
+            <div className={`font-fredoka font-bold text-base px-6 py-3 rounded-2xl shadow-2xl animate-bounce-in flex items-center gap-2 ${
+              levelUpBanner.level === 'L5' ? 'bg-gradient-to-r from-[#FFD700] to-[#FF6B00] text-[#0F0F23]' :
+              levelUpBanner.level === 'L4' ? 'bg-gradient-to-r from-[#A78BFA] to-[#00A2FF] text-white' :
+              'bg-gradient-to-r from-[#FFD700] to-[#FF6B9D] text-[#0F0F23]'
+            }`}>
+              {levelUpBanner.level === 'L5' ? '👑' : levelUpBanner.level === 'L4' ? '💎' : '🚀'} LEVEL UP! &nbsp;→&nbsp; {levelUpBanner.label}
             </div>
           )}
         </div>

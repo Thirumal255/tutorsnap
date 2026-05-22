@@ -169,22 +169,22 @@ export default function StudentMistakes() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-fredoka font-bold text-white">📝 Mistake Journal</h1>
-        <p className="text-[#8892B0] text-sm mt-0.5">Learn from where you went wrong — every mistake is XP waiting to happen!</p>
+        <h1 className="text-2xl font-fredoka font-bold text-white">💪 Strengthen</h1>
+        <p className="text-[#8892B0] text-sm mt-0.5">These are your growth areas — revisiting them is how champions level up!</p>
       </div>
 
       {loading && (
         <div className="text-center py-16">
-          <div className="text-4xl animate-bounce mb-3">📝</div>
-          <p className="text-[#8892B0]">Loading your journal…</p>
+          <div className="text-4xl animate-bounce mb-3">💪</div>
+          <p className="text-[#8892B0]">Loading your growth areas…</p>
         </div>
       )}
 
       {!loading && mistakes.length === 0 && (
         <div className="blox-card p-10 text-center">
-          <div className="text-5xl mb-3">🎉</div>
-          <p className="text-white font-fredoka text-xl">No mistakes recorded yet!</p>
-          <p className="text-[#8892B0] text-sm mt-1">Keep practising and your weak spots will show up here.</p>
+          <div className="text-5xl mb-3">🌟</div>
+          <p className="text-white font-fredoka text-xl">Nothing to strengthen yet!</p>
+          <p className="text-[#8892B0] text-sm mt-1">Keep practising — topics that need a little extra love will appear here.</p>
         </div>
       )}
 
@@ -194,7 +194,7 @@ export default function StudentMistakes() {
           <div className="grid grid-cols-3 gap-3">
             <div className="blox-card p-3 text-center">
               <p className="text-2xl font-fredoka font-bold text-white">{mistakes.length}</p>
-              <p className="text-xs text-[#8892B0]">Total Mistakes</p>
+              <p className="text-xs text-[#8892B0]">To Strengthen</p>
             </div>
             <div className="blox-card p-3 text-center">
               <p className="text-2xl font-fredoka font-bold text-[#FF6B6B]">
@@ -247,7 +247,7 @@ export default function StudentMistakes() {
           <div className="space-y-2">
             {visible.length === 0 && (
               <div className="blox-card p-6 text-center">
-                <p className="text-[#8892B0]">No mistakes in this subject.</p>
+                <p className="text-[#8892B0]">Nothing to strengthen in this subject.</p>
               </div>
             )}
             {visible.map((m, i) => (
