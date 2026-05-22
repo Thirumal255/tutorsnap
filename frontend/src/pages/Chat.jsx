@@ -52,6 +52,11 @@ export default function Chat() {
   const [levelUpBanner, setLevelUpBanner] = useState(null)
   const [answerFormat, setAnswerFormat] = useState(null)
 
+  // Diagnostic pre-assessment state
+  const [diagnosticPhase, setDiagnosticPhase] = useState(false)
+  const [diagnosticTurn, setDiagnosticTurn] = useState(0)
+  const DIAGNOSTIC_TOTAL = 3
+
   // Give-up scaffolding
   const [giveUpStage, setGiveUpStage] = useState(0)  // 0-4
   const [subQLoading, setSubQLoading] = useState(false)
@@ -72,6 +77,10 @@ export default function Chat() {
     setCurrentLevel(data.currentLevel)
     setAnswerFormat(data.answerFormat || null)
     setMessages([{ sender: 'buddy', text: data.initialMessage }])
+    if (data.diagnostic) {
+      setDiagnosticPhase(true)
+      setDiagnosticTurn(1)
+    }
   }, [sessionId])
 
   useEffect(() => {
@@ -218,6 +227,23 @@ export default function Chat() {
           keyConcepts: [],
         }))
         setTimeout(() => navigate(`/summary/${sessionId}`), 2000)
+        return
+      }
+
+      // Diagnostic pre-assessment handling
+      if (d.action === 'diagnostic_next') {
+        setDiagnosticTurn(d.diagnostic_turn)
+        addMessage('buddy', d.next_question)
+        if (d.answer_format) setAnswerFormat(d.answer_format)
+        return
+      }
+      if (d.action === 'diagnostic_done') {
+        setDiagnosticPhase(false)
+        setDiagnosticTurn(0)
+        setLevelUpBanner({ level: d.placement_level, label: d.level_label, isDiag: true })
+        setTimeout(() => setLevelUpBanner(null), 3500)
+        addMessage('buddy', `${d.feedback}\n\nHere's your first question:\n\n${d.next_question}`)
+        if (d.answer_format) setAnswerFormat(d.answer_format)
         return
       }
 
@@ -394,12 +420,34 @@ export default function Chat() {
         </div>
       )}
 
-      {/* Level-up banner */}
+      {/* Diagnostic progress bar */}
+      {diagnosticPhase && (
+        <div className="bg-[#16213E] border-b border-[#2D2B5A] px-4 py-2 flex-shrink-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-[#8892B0] font-nunito">🔍 Quick check — finding your level</span>
+            <span className="text-xs text-[#00A2FF] font-semibold">{diagnosticTurn} / {DIAGNOSTIC_TOTAL}</span>
+          </div>
+          <div className="h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-[#00A2FF] to-[#00CC88] rounded-full transition-all duration-500"
+              style={{ width: `${(diagnosticTurn / DIAGNOSTIC_TOTAL) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Level-up / placement banner */}
       {levelUpBanner && (
         <div className="fixed inset-x-0 top-16 z-40 flex justify-center px-4 pointer-events-none">
-          <div className="bg-gradient-to-r from-[#FFD700] to-[#FF6B9D] text-[#0F0F23] font-fredoka font-bold text-base px-6 py-3 rounded-2xl shadow-2xl animate-bounce-in flex items-center gap-2">
-            🚀 LEVEL UP! &nbsp;→&nbsp; {levelUpBanner.label}
-          </div>
+          {levelUpBanner.isDiag ? (
+            <div className="bg-gradient-to-r from-[#00CC88] to-[#00A2FF] text-white font-fredoka font-bold text-base px-6 py-3 rounded-2xl shadow-2xl animate-bounce-in flex items-center gap-2">
+              🎯 Placed at {levelUpBanner.label}!
+            </div>
+          ) : (
+            <div className="bg-gradient-to-r from-[#FFD700] to-[#FF6B9D] text-[#0F0F23] font-fredoka font-bold text-base px-6 py-3 rounded-2xl shadow-2xl animate-bounce-in flex items-center gap-2">
+              🚀 LEVEL UP! &nbsp;→&nbsp; {levelUpBanner.label}
+            </div>
+          )}
         </div>
       )}
 

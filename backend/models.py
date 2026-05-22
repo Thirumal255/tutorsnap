@@ -159,6 +159,10 @@ class Session(Base):
     final_confidence = Column(String(20), nullable=True)
     level_question_count = Column(Integer, default=0)  # questions asked at current level; resets on level-up
 
+    # ── Diagnostic pre-assessment (first practice on a topic) ─────────────────
+    diagnostic_phase = Column(Boolean, default=False)   # True during the 3-question placement test
+    diagnostic_turn = Column(Integer, default=0)        # which diagnostic question we're on (1-3)
+
     topic = relationship("Topic", back_populates="sessions")
     turns = relationship("SessionTurn", back_populates="session")
     user = relationship("User", back_populates="sessions")

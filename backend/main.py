@@ -126,6 +126,13 @@ def run_migrations():
                 )
                 WHERE student_id IS NULL
             """))
+            # Diagnostic pre-assessment columns — added in task #9
+            conn.execute(text(
+                "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS diagnostic_phase BOOLEAN DEFAULT FALSE"
+            ))
+            conn.execute(text(
+                "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS diagnostic_turn INTEGER DEFAULT 0"
+            ))
             # Streak columns — added in task #7
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0"
@@ -1155,7 +1162,10 @@ def start_session(
         else:
             raise HTTPException(status_code=403, detail="study_required")
 
-    start_level = get_start_level(mastery.mastery_level)
+    # Trigger diagnostic pre-assessment on the very first practice session
+    # (mastery.total_sessions == 1 means study was done but no practice yet)
+    is_first_practice = (mastery.total_sessions == 1)
+    start_level = "L1" if is_first_practice else get_start_level(mastery.mastery_level)
 
     session = SessionModel(
         student_name=req.student_name,
@@ -1163,6 +1173,8 @@ def start_session(
         topic_id=req.topic_id,
         current_level=start_level,
         status="active",
+        diagnostic_phase=is_first_practice,
+        diagnostic_turn=1 if is_first_practice else 0,
     )
     db.add(session)
     db.commit()
@@ -1181,10 +1193,7 @@ def start_session(
         previous_questions = [t.question_text for t in prev_turns]
 
     # Try question bank first; fall back to live generation
-    from question_bank import draw_from_bank
-    q = draw_from_bank(db, req.topic_id, start_level, previous_questions) or \
-        generate_question(topic, start_level, previous_questions, recent_formats=[],
-                          study_summary=mastery.study_summary or "")
+    q = _next_question(db, topic, start_level, previous_questions, [], mastery.study_summary or "")
     db.add(SessionTurn(
         session_id=session.id, turn_number=1,
         question_text=q["question"], level=start_level,
@@ -1194,14 +1203,26 @@ def start_session(
     session.questions_asked = 1
     db.commit()
 
+    if is_first_practice:
+        intro = (
+            f"Before we start, I'll ask you **3 quick questions** to find the best level for you. "
+            f"Don't worry — there's no pressure! Just do your best. 😊\n\n"
+            f"**Question 1 of 3:** {q['question']}"
+        )
+    else:
+        intro = f"Hi {req.student_name}! Let's practise {topic.title}.\n\n{q['question']}"
+
     return {
         "session_id": session.id, "topic_title": topic.title,
         "chapter_title": chapter.title if chapter else "",
         "student_name": req.student_name, "current_level": start_level,
         "level_label": level_label(start_level),
-        "message": f"Hi {req.student_name}! Let's practise {topic.title}.\n\n{q['question']}",
+        "message": intro,
         "answer_format": q["answer_format"],
         "show_hint_button": False, "turn_number": 1,
+        "diagnostic": is_first_practice,
+        "diagnostic_turn": 1 if is_first_practice else 0,
+        "diagnostic_total": 3,
     }
 
 
@@ -1248,6 +1269,133 @@ def submit_answer(
     current_turn.hint_tier_used = session.hint_tier
     current_turn.missed_key_points = json.dumps(assessment.get("missed_key_points") or [])
     db.commit()
+
+    # ── Diagnostic pre-assessment branch ─────────────────────────────────────
+    if session.diagnostic_phase:
+        _DIAG_LEVELS = ["L1", "L2", "L3"]
+        scored_pass = assessment["score"] >= 60
+
+        if session.diagnostic_turn < 3:
+            # Move to next diagnostic level
+            next_diag_turn = session.diagnostic_turn + 1
+            next_diag_level = _DIAG_LEVELS[next_diag_turn - 1] if next_diag_turn <= 3 else "L3"
+            # Cap at topic difficulty ceiling
+            ceiling = getattr(topic, "difficulty_ceiling", None) or "L3"
+            try:
+                ceil_idx = LEVEL_ORDER.index(ceiling)
+                diag_level_idx = LEVEL_ORDER.index(next_diag_level)
+                next_diag_level = LEVEL_ORDER[min(diag_level_idx, ceil_idx)]
+            except ValueError:
+                pass
+
+            session.diagnostic_turn = next_diag_turn
+            session.current_level = next_diag_level
+
+            prev_qs = [t.question_text for t in
+                       db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
+            nq = _next_question(db, topic, next_diag_level, prev_qs, [], _study_summary)
+            new_turn_number = current_turn.turn_number + 1
+            db.add(SessionTurn(
+                session_id=session.id, turn_number=new_turn_number,
+                question_text=nq["question"], level=next_diag_level,
+                expected_key_points=json.dumps(nq["expected_key_points"]),
+                answer_format=nq["answer_format"],
+            ))
+            session.questions_asked += 1
+            db.commit()
+
+            brief = "✅ Got it!" if scored_pass else "Thanks for trying!"
+            next_q_msg = (
+                f"{brief}\n\n"
+                f"**Question {next_diag_turn} of 3:** {nq['question']}"
+            )
+            return {
+                "session_id": session.id,
+                "feedback": brief,
+                "score": assessment["score"],
+                "confidence_tag": assessment["confidence_tag"],
+                "action": "diagnostic_next",
+                "diagnostic": True,
+                "diagnostic_turn": next_diag_turn,
+                "diagnostic_total": 3,
+                "current_level": next_diag_level,
+                "level_label": level_label(next_diag_level),
+                "next_question": next_q_msg,
+                "answer_format": nq["answer_format"],
+                "show_hint_button": False,
+                "session_complete": False,
+                "xp_earned": 0,
+                "turn_number": new_turn_number,
+            }
+        else:
+            # All 3 diagnostic questions answered — compute placement
+            diag_turns = (db.query(SessionTurn)
+                          .filter(SessionTurn.session_id == session.id)
+                          .order_by(SessionTurn.turn_number)
+                          .limit(3).all())
+            scores = [t.assessment_score or 0 for t in diag_turns]
+            passed = [s >= 60 for s in scores]  # [L1_ok, L2_ok, L3_ok]
+
+            if passed[2]:   # all 3 or at least L3 passed
+                placement = "L3"
+            elif passed[1]: # L1 + L2 passed
+                placement = "L2"
+            else:           # only L1 (or none)
+                placement = "L1"
+
+            # Cap at topic ceiling
+            ceiling = getattr(topic, "difficulty_ceiling", None) or "L3"
+            try:
+                ceil_idx = LEVEL_ORDER.index(ceiling)
+                pl_idx = LEVEL_ORDER.index(placement)
+                placement = LEVEL_ORDER[min(pl_idx, ceil_idx)]
+            except ValueError:
+                pass
+
+            session.diagnostic_phase = False
+            session.diagnostic_turn = 0
+            session.current_level = placement
+            session.questions_asked += 1  # count this last diagnostic turn
+
+            # First real question at placement level
+            prev_qs = [t.question_text for t in
+                       db.query(SessionTurn).filter(SessionTurn.session_id == session.id).all()]
+            nq = _next_question(db, topic, placement, prev_qs, [], _study_summary)
+            new_turn_number = current_turn.turn_number + 1
+            db.add(SessionTurn(
+                session_id=session.id, turn_number=new_turn_number,
+                question_text=nq["question"], level=placement,
+                expected_key_points=json.dumps(nq["expected_key_points"]),
+                answer_format=nq["answer_format"],
+            ))
+            db.commit()
+
+            placement_msg = {
+                "L1": "I'll start you at **Level 1** — let's build a solid foundation! 💪",
+                "L2": "Great — I'll start you at **Level 2**! You've got a good base. 🚀",
+                "L3": "Impressive! I'll start you at **Level 3** — you clearly know your stuff! ⭐",
+            }.get(placement, f"Starting at **{level_label(placement)}**.")
+
+            return {
+                "session_id": session.id,
+                "feedback": placement_msg,
+                "score": assessment["score"],
+                "confidence_tag": assessment["confidence_tag"],
+                "action": "diagnostic_done",
+                "diagnostic": False,
+                "diagnostic_turn": 3,
+                "diagnostic_total": 3,
+                "placement_level": placement,
+                "current_level": placement,
+                "level_label": level_label(placement),
+                "next_question": nq["question"],
+                "answer_format": nq["answer_format"],
+                "show_hint_button": False,
+                "session_complete": False,
+                "xp_earned": 0,
+                "turn_number": new_turn_number,
+            }
+    # ── End diagnostic branch ─────────────────────────────────────────────────
 
     next_action = determine_next_action(
         session, assessment["confidence_tag"], topic,

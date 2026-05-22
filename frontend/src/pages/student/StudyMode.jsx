@@ -179,6 +179,7 @@ export default function StudyMode() {
           initialMessage: d.message, currentLevel: d.current_level,
           levelLabel: d.level_label, topicId: parseInt(topicId),
           answerFormat: d.answer_format || null,
+          diagnostic: d.diagnostic || false,
         })
       )
       navigate(`/session/${d.session_id}`)

@@ -272,6 +272,7 @@ export default function StudentHome() {
           initialMessage: d.message, currentLevel: d.current_level,
           levelLabel: d.level_label, topicId,
           answerFormat: d.answer_format || null,
+          diagnostic: d.diagnostic || false,
         })
       )
       navigate(`/session/${d.session_id}`)
