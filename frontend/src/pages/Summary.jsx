@@ -132,6 +132,8 @@ export default function Summary() {
     )
   }
 
+  const [reflection, setReflection] = useState(null)  // task #46
+
   const topicId = data?.topicId || data?.topic_id
   const studentName = data?.studentName || data?.student_name || ''
   const topicTitle = data?.topicTitle || data?.topic_title || ''
@@ -270,6 +272,42 @@ export default function Summary() {
                 </span>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ── Metacognitive reflection (task #46) ────────────────────────── */}
+        {!earlyExit && (
+          <div className="mb-5 animate-bounce-in">
+            {!reflection ? (
+              <div className="bg-[#1A1A3E] border border-[#2D2B5A] rounded-2xl p-4">
+                <p className="text-xs font-semibold text-[#8892B0] uppercase tracking-widest mb-3">
+                  🧠 Quick reflection
+                </p>
+                <p className="text-sm text-white font-nunito mb-3">
+                  What felt trickiest in this session?
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'concept',  label: '🤔 The concept itself',       reply: "Totally normal! Re-studying it will make it click. 💡" },
+                    { key: 'apply',    label: '🔧 Applying it to problems',  reply: "Practice is exactly what fixes that — you're already doing it! 💪" },
+                    { key: 'calc',     label: '🔢 Calculation mistakes',     reply: "Slow down on the arithmetic and double-check each step. You've got this! ✅" },
+                    { key: 'easy',     label: '✨ Actually felt easy!',      reply: "Love it! That means you're ready for a harder challenge. 🚀" },
+                  ].map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setReflection(opt.reply)}
+                      className="text-xs py-2.5 px-3 rounded-xl font-nunito font-semibold bg-[#0F0F23] text-[#8892B0] border border-[#2D2B5A] hover:border-[#00A2FF] hover:text-white transition-all text-left leading-snug"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-[#00CC88]/10 border border-[#00CC88]/30 rounded-2xl p-4 text-center animate-bounce-in">
+                <p className="text-sm text-[#00CC88] font-nunito font-semibold">{reflection}</p>
+              </div>
+            )}
           </div>
         )}
 

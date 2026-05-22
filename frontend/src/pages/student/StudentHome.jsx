@@ -470,6 +470,78 @@ export default function StudentHome() {
             </div>
           )}
 
+          {/* ── Smart "What's next" CTA (task #52) ───────────────────── */}
+          {(() => {
+            const dailyGoal = user?.daily_goal_sessions || data.daily_goal_sessions || 1
+            const sessionsDone = data.sessions_today || 0
+            const goalMet = sessionsDone >= dailyGoal
+
+            // Priority 1: overdue review topics already shown below — skip if present
+            if (reviewQueue.length > 0) return null
+
+            // Priority 2: goal not met yet and no "last practiced" CTA would show
+            if (!goalMet) {
+              return (
+                <div className="blox-card p-4 border-[#C084FC]/30 animate-bounce-in flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#C084FC] to-[#7E22CE] flex items-center justify-center text-xl flex-shrink-0">
+                    🎯
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-[#C084FC] font-semibold uppercase tracking-widest">Next up for you</p>
+                    <p className="font-fredoka font-bold text-white mt-0.5">
+                      {data.last_practiced
+                        ? `Keep going on ${data.last_practiced.topic_title}!`
+                        : "Pick a topic and start practising!"}
+                    </p>
+                    <p className="text-xs text-[#8892B0] mt-0.5">
+                      {sessionsDone === 0
+                        ? "You haven't practised today yet — let's fix that 💪"
+                        : `${dailyGoal - sessionsDone} session${dailyGoal - sessionsDone !== 1 ? 's' : ''} left to hit your goal`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => data.last_practiced
+                      ? handleContinue(data.last_practiced.topic_id)
+                      : navigate('/practice')
+                    }
+                    disabled={data.last_practiced && resuming === data.last_practiced.topic_id}
+                    className="btn-blox-primary flex-shrink-0 text-xs py-1.5 px-3 disabled:opacity-50"
+                  >
+                    {data.last_practiced && resuming === data.last_practiced.topic_id ? '⚡…' : '▶ Go'}
+                  </button>
+                </div>
+              )
+            }
+
+            // Priority 3: goal met — nudge towards going deeper
+            return (
+              <div className="blox-card p-4 border-[#00CC88]/30 animate-bounce-in flex items-center gap-4">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#00CC88] to-[#007755] flex items-center justify-center text-xl flex-shrink-0">
+                  🌟
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-[#00CC88] font-semibold uppercase tracking-widest">Goal crushed!</p>
+                  <p className="font-fredoka font-bold text-white mt-0.5">
+                    {data.flagged_topics > 0
+                      ? `Tackle a flagged topic for bonus XP 🚩`
+                      : "Challenge yourself with a harder topic!"}
+                  </p>
+                  <p className="text-xs text-[#8892B0] mt-0.5">
+                    {data.flagged_topics > 0
+                      ? `${data.flagged_topics} topic${data.flagged_topics !== 1 ? 's' : ''} need extra practice`
+                      : "Great students go beyond the daily goal 💪"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/strengthen')}
+                  className="btn-blox-primary flex-shrink-0 text-xs py-1.5 px-3 bg-gradient-to-r from-[#00CC88] to-[#007755]"
+                >
+                  {data.flagged_topics > 0 ? '🚩 Fix it' : '📚 More'}
+                </button>
+              </div>
+            )
+          })()}
+
           {/* ── Spaced repetition review queue ────────────────────────── */}
           {reviewQueue.length > 0 ? (
             <div className="blox-card p-4 border-[#FF6B9D]/30 animate-bounce-in">

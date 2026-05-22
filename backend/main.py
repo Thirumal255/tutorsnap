@@ -194,6 +194,22 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS session_memory TEXT"
             ))
+            # FK integrity (task #3): deduplicate then enforce unique (student_id, topic_id)
+            conn.execute(text("""
+                DELETE FROM topic_mastery
+                WHERE student_id IS NOT NULL
+                  AND id NOT IN (
+                    SELECT MIN(id)
+                    FROM topic_mastery
+                    WHERE student_id IS NOT NULL
+                    GROUP BY student_id, topic_id
+                  )
+            """))
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_mastery_student_topic
+                ON topic_mastery(student_id, topic_id)
+                WHERE student_id IS NOT NULL
+            """))
             conn.commit()
             print("Migration: schema up to date")
     except Exception as e:
@@ -1838,6 +1854,18 @@ def request_hint(
 
     session.hint_tier += 1
     max_hints = int(_get_setting("max_hint_tiers", os.getenv("MAX_HINT_TIERS", "5"), db))
+
+    # ── Task #45: throttle hints by mastery level ──────────────────────────────
+    # Higher mastery = fewer free hints (students should work harder before asking).
+    # L1 → 5 hints (full support), L2 → 4, L3 → 3, L4/L5 → 2.
+    _hint_mastery = db.query(TopicMastery).filter(
+        TopicMastery.student_id == session.user_id,
+        TopicMastery.topic_id == session.topic_id,
+    ).first() if session.user_id else None
+    if _hint_mastery and _hint_mastery.mastery_level:
+        _lvl_order = ["L1", "L2", "L3", "L4", "L5"]
+        _lvl_i = _lvl_order.index(_hint_mastery.mastery_level) if _hint_mastery.mastery_level in _lvl_order else 0
+        max_hints = max(2, max_hints - _lvl_i)  # L1=5,L2=4,L3=3,L4=2,L5=2
 
     # Collect recent formats for variety enforcement when generating the fresh question
     recent_hint_formats = [r[0] for r in (
