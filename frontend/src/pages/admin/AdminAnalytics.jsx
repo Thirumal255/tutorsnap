@@ -357,6 +357,51 @@ export default function AdminAnalytics() {
             ))}
           </div>
 
+          {/* ── A/B testing summary (#64) ────────────────────────────── */}
+          {data.ab_summary && Object.keys(data.ab_summary).length >= 2 && (
+            <div className="blox-card p-5 animate-bounce-in">
+              <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold mb-4">
+                🔬 A/B test — hint scaffolding (Variant B = +1 hint)
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {['A', 'B'].map(v => {
+                  const d = data.ab_summary[v]
+                  if (!d) return null
+                  const label = v === 'A' ? 'Standard hints' : '+1 extra hint'
+                  return (
+                    <div key={v} className={`rounded-xl p-4 border ${
+                      v === 'A' ? 'bg-[#00A2FF]/10 border-[#00A2FF]/30' : 'bg-[#A78BFA]/10 border-[#A78BFA]/30'
+                    }`}>
+                      <p className={`text-lg font-fredoka font-bold mb-0.5 ${v === 'A' ? 'text-[#00A2FF]' : 'text-[#A78BFA]'}`}>
+                        Variant {v}
+                      </p>
+                      <p className="text-xs text-[#8892B0] mb-3">{label}</p>
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[#8892B0]">Sessions</span>
+                          <span className="font-fredoka font-bold text-white">{d.sessions}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[#8892B0]">Avg score</span>
+                          <span className={`font-fredoka font-bold ${
+                            d.avg_score >= 60 ? 'text-[#00CC88]' : 'text-[#FFB347]'
+                          }`}>{d.avg_score}%</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[#8892B0]">Avg questions</span>
+                          <span className="font-fredoka font-bold text-white">{d.avg_questions}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[10px] text-[#4A5568] mt-3 text-center">
+                Accumulating data — results become significant with 30+ sessions per variant
+              </p>
+            </div>
+          )}
+
           {/* ── AI metadata (#65 prompt version, #66 confidence, cost) ─── */}
           <div className="blox-card p-4 animate-bounce-in flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">

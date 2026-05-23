@@ -141,6 +141,9 @@ export const getSessionInfo     = (id) => api.get(`/session/${id}/info`)
 // #27 Interleaved practice
 export const getInterleavedTopics = (limit = 6) => api.get('/student/interleaved-topics', { params: { limit } })
 
+// #60 Transfer tasks
+export const getTransferQuestion = () => api.get('/student/transfer-question')
+
 // #50 Parent encouragement
 export const encourageChild = (childId, message) =>
   api.post(`/parent/children/${childId}/encourage`, { message })

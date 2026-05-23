@@ -171,6 +171,9 @@ class Session(Base):
     # ── Practice mode (#58) — no mastery/XP updates ──────────────────────────
     is_practice = Column(Boolean, default=False)        # True → low-stakes; skips mastery & XP
 
+    # ── A/B testing (#64) ─────────────────────────────────────────────────────
+    ab_variant = Column(String(1), nullable=True)       # "A" | "B" — assigned at session start
+
     topic = relationship("Topic", back_populates="sessions")
     turns = relationship("SessionTurn", back_populates="session")
     user = relationship("User", back_populates="sessions")

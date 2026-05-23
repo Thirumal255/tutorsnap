@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { getBooks, getTopics, startSession, getActiveSessions } from '../../api/client'
+import { getBooks, getTopics, startSession, getActiveSessions, getTransferQuestion } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { useToast } from '../../context/ToastContext'
 
@@ -48,6 +48,11 @@ export default function StudentPractice() {
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [starting, setStarting] = useState(null)
   const [activeSessions, setActiveSessions] = useState([])  // #62
+  // #60: Transfer challenge
+  const [transfer, setTransfer] = useState(null)        // { question, topic_a, topic_b, key_points, answer_format }
+  const [transferLoading, setTransferLoading] = useState(false)
+  const [transferAnswer, setTransferAnswer] = useState('')
+  const [transferShown, setTransferShown] = useState(false)
 
   const bySubject = books.reduce((acc, b) => {
     const s = b.subject || 'Other'
@@ -228,6 +233,102 @@ export default function StudentPractice() {
           <p className="text-xs text-[#8892B0] mt-0.5">Multiple topics</p>
         </button>
       </div>
+
+      {/* #60 Transfer challenge card */}
+      {!transferShown ? (
+        <button
+          onClick={async () => {
+            setTransferLoading(true)
+            try {
+              const res = await getTransferQuestion()
+              setTransfer(res.data)
+              setTransferShown(true)
+            } catch {
+              // not enough topics yet — silently skip
+            } finally {
+              setTransferLoading(false)
+            }
+          }}
+          disabled={transferLoading}
+          className="w-full blox-card p-4 text-left flex items-center gap-3 hover:border-[#FFD700]/50 transition-all group disabled:opacity-60"
+        >
+          <div className="w-10 h-10 rounded-xl bg-[#FFD700]/20 flex items-center justify-center text-xl flex-shrink-0">
+            🔗
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-fredoka font-bold text-white text-sm">
+              {transferLoading ? 'Generating challenge…' : '🔗 Cross-Topic Challenge'}
+            </p>
+            <p className="text-xs text-[#8892B0] mt-0.5">Apply knowledge from two topics together</p>
+          </div>
+          <span className="text-[#FFD700] text-sm flex-shrink-0 group-hover:translate-x-1 transition-transform">▶</span>
+        </button>
+      ) : transfer && (
+        <div className="blox-card p-5 border-[#FFD700]/30 animate-bounce-in space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-[#FFD700] font-semibold uppercase tracking-widest">
+              🔗 Cross-Topic Challenge
+            </p>
+            <button
+              onClick={() => { setTransferShown(false); setTransfer(null); setTransferAnswer('') }}
+              className="text-[#8892B0] hover:text-white text-xs transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex gap-2 text-xs">
+            <span className="bg-[#00A2FF]/10 text-[#00A2FF] border border-[#00A2FF]/30 px-2 py-0.5 rounded-full">{transfer.topic_a}</span>
+            <span className="text-[#4A5568]">+</span>
+            <span className="bg-[#A78BFA]/10 text-[#A78BFA] border border-[#A78BFA]/30 px-2 py-0.5 rounded-full">{transfer.topic_b}</span>
+          </div>
+          <p className="text-white font-nunito text-sm leading-relaxed">{transfer.question}</p>
+
+          {transferAnswer ? (
+            <div className="space-y-3">
+              <div className="bg-[#1A1A3E] rounded-xl px-4 py-3">
+                <p className="text-xs text-[#00CC88] font-semibold mb-2">💡 Key points to include:</p>
+                <ul className="space-y-1">
+                  {(transfer.key_points || []).map((kp, i) => (
+                    <li key={i} className="text-xs text-[#8892B0] flex items-start gap-1.5">
+                      <span className="text-[#00CC88] mt-0.5">•</span>{kp}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                onClick={async () => {
+                  setTransferShown(false); setTransfer(null); setTransferAnswer('')
+                  setTransferLoading(true)
+                  try {
+                    const res = await getTransferQuestion()
+                    setTransfer(res.data); setTransferShown(true)
+                  } catch {} finally { setTransferLoading(false) }
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#FFD700]/10 border border-[#FFD700]/30 text-[#FFD700] font-nunito font-semibold text-sm hover:bg-[#FFD700]/20 transition-all"
+              >
+                🔀 New challenge
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <textarea
+                value={transferAnswer}
+                onChange={e => setTransferAnswer(e.target.value)}
+                placeholder="Think it through and write your answer…"
+                rows={3}
+                className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl px-4 py-3 text-white font-nunito text-sm resize-none focus:outline-none focus:border-[#FFD700]/50 placeholder-[#4A5568]"
+              />
+              <button
+                onClick={() => transferAnswer.trim() && setTransferAnswer(prev => prev + '\n\n✅ Submitted — check the key points below!')}
+                disabled={!transferAnswer.trim()}
+                className="w-full py-2.5 rounded-xl bg-[#FFD700]/20 border border-[#FFD700]/30 text-[#FFD700] font-fredoka font-bold text-sm hover:bg-[#FFD700]/30 transition-all disabled:opacity-40"
+              >
+                ✅ Check my answer
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {loading && (
         <div className="text-center py-16">

@@ -33,6 +33,7 @@ from session_engine import (
     generate_question, assess_answer, get_hint, get_concept_explanation,
     get_session_summary, determine_next_action, get_start_level,
     generate_sub_question, generate_worked_example, generate_parent_tip,
+    generate_transfer_question,
     LEVEL_GUIDE, LEVEL_ORDER, PROMPT_VERSION,
 )
 
@@ -44,6 +45,42 @@ _DEFAULT_SETTINGS = [
     {"key": "session_timeout_minutes", "value": "30"},
     {"key": "break_reminder_at_questions", "value": "10"},   # suggest a break after N questions
 ]
+
+# ── A/B summary helper (#64) ──────────────────────────────────────────────────
+def _compute_ab_summary(db):
+    """
+    Compare outcomes between hint-throttle variants A (standard) and B (+1 hint).
+    Returns per-variant session counts, avg final level score, avg questions answered.
+    Only counts completed non-practice sessions that have ab_variant set.
+    """
+    _LEVEL_SCORE = {"L1": 20, "L2": 40, "L3": 60, "L4": 80, "L5": 100}
+    rows = (
+        db.query(SessionModel.ab_variant, SessionModel.current_level, SessionModel.questions_asked)
+        .filter(
+            SessionModel.status == "completed",
+            SessionModel.is_practice == False,
+            SessionModel.ab_variant.isnot(None),
+        )
+        .all()
+    )
+    buckets: dict[str, dict] = {}
+    for variant, level, qs in rows:
+        v = variant or "A"
+        if v not in buckets:
+            buckets[v] = {"sessions": 0, "score_sum": 0, "qs_sum": 0}
+        buckets[v]["sessions"] += 1
+        buckets[v]["score_sum"] += _LEVEL_SCORE.get(level or "L1", 20)
+        buckets[v]["qs_sum"] += qs or 0
+    result = {}
+    for v, b in buckets.items():
+        n = b["sessions"]
+        result[v] = {
+            "sessions": n,
+            "avg_score": round(b["score_sum"] / n) if n else 0,
+            "avg_questions": round(b["qs_sum"] / n, 1) if n else 0,
+        }
+    return result
+
 
 # ── AI confidence helper (#66) ─────────────────────────────────────────────────
 def _compute_ai_confidence(questions_asked: int, current_level: str) -> int:
@@ -174,6 +211,10 @@ def run_migrations():
             # Practice mode (#58) — low-stakes sessions with no mastery/XP updates
             conn.execute(text(
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE"
+            ))
+            # A/B testing (#64) — variant assigned at session start
+            conn.execute(text(
+                "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ab_variant VARCHAR(1)"
             ))
             # Admin audit log — added in task #22
             conn.execute(text("""
@@ -1503,6 +1544,7 @@ def start_session(
         diagnostic_phase=is_first_practice,
         diagnostic_turn=1 if is_first_practice else 0,
         is_practice=bool(req.practice_mode),  # #58
+        ab_variant="A" if random.randint(0, 1) == 0 else "B",  # #64: random 50/50 split
     )
     db.add(session)
     db.commit()
@@ -1997,6 +2039,9 @@ def request_hint(
         _lvl_order = ["L1", "L2", "L3", "L4", "L5"]
         _lvl_i = _lvl_order.index(_hint_mastery.mastery_level) if _hint_mastery.mastery_level in _lvl_order else 0
         max_hints = max(2, max_hints - _lvl_i)  # L1=5,L2=4,L3=3,L4=2,L5=2
+    # #64 A/B: Variant B gets one extra hint — tests whether more scaffolding improves outcomes
+    if getattr(session, "ab_variant", None) == "B":
+        max_hints = min(max_hints + 1, 6)
 
     # Collect recent formats for variety enforcement when generating the fresh question
     recent_hint_formats = [r[0] for r in (
@@ -2708,6 +2753,7 @@ def admin_analytics(
         "hardest_topics": hardest_topics,    # #61
         "ai_cost_7d": round(ai_cost_7d, 4), # bonus: quick cost visibility on analytics page
         "prompt_version": PROMPT_VERSION,    # #65: which prompt version is live
+        "ab_summary": _compute_ab_summary(db),  # #64: A/B variant outcome comparison
     }
 
 
@@ -3470,6 +3516,73 @@ def get_interleaved_topics(
 
     candidates = (overdue + below_l3 + studied_rest)[:limit]
     return candidates
+
+
+@app.get("/api/student/transfer-question")
+def get_transfer_question(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """#60: Return an AI-generated cross-topic application question.
+
+    Picks 2 topics the student has mastered (L3+) from different subjects (or
+    same subject but different chapters). Falls back to any 2 studied topics if
+    fewer than 2 are mastered.
+    """
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+    if not current_user.grade:
+        raise HTTPException(status_code=400, detail="Grade not set")
+
+    # Collect mastered / studied topic records with subject info
+    rows = (
+        db.query(TopicMastery, Topic, Book.subject)
+        .join(Topic, Topic.id == TopicMastery.topic_id)
+        .join(Chapter, Chapter.id == Topic.chapter_id)
+        .join(Book, Book.id == Chapter.book_id)
+        .filter(
+            TopicMastery.student_id == current_user.id,
+            TopicMastery.studied == True,
+            Book.ingestion_status == "done",
+        )
+        .all()
+    )
+
+    if len(rows) < 2:
+        raise HTTPException(
+            status_code=404,
+            detail="not_enough_topics",
+        )
+
+    # Prefer mastered (L3+) topics; fall back to any studied
+    mastered = [(m, t, s) for m, t, s in rows if m.mastery_level in ("L3", "L4", "L5")]
+    pool = mastered if len(mastered) >= 2 else list(rows)
+
+    # Shuffle and pick 2 — try to pick different subjects first
+    random.shuffle(pool)
+    topic_a = pool[0]
+    # Find a second topic from a different subject if possible
+    topic_b = next(
+        (x for x in pool[1:] if x[2] != topic_a[2]),
+        pool[1],
+    )
+
+    ma, ta, subject_a = topic_a
+    mb, tb, subject_b = topic_b
+
+    result = generate_transfer_question(
+        topic_a_title=ta.title,
+        topic_a_concepts=ta.key_concepts or [],
+        topic_b_title=tb.title,
+        topic_b_concepts=tb.key_concepts or [],
+        grade=current_user.grade,
+        subject=subject_a if subject_a == subject_b else f"{subject_a} & {subject_b}",
+    )
+    result["topic_a_id"] = ta.id
+    result["topic_b_id"] = tb.id
+    result["topic_a_mastery"] = ma.mastery_level
+    result["topic_b_mastery"] = mb.mastery_level
+    return result
 
 
 # ─── Student Self-Service Routes ───────────────────────────────────────────────

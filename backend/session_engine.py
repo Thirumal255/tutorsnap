@@ -1043,6 +1043,69 @@ def generate_worked_example(topic, level: str, study_summary: str = "") -> str:
         return ""
 
 
+def generate_transfer_question(
+    topic_a_title: str,
+    topic_a_concepts: list,
+    topic_b_title: str,
+    topic_b_concepts: list,
+    grade: int,
+    subject: str,
+) -> dict:
+    """
+    #60: Generate a cross-topic application question requiring knowledge of both topics.
+    Returns {"question": str, "key_points": list[str], "answer_format": str,
+             "topic_a": str, "topic_b": str}
+    """
+    a_concepts = ", ".join(topic_a_concepts[:3]) if topic_a_concepts else topic_a_title
+    b_concepts = ", ".join(topic_b_concepts[:3]) if topic_b_concepts else topic_b_title
+    user_prompt = (
+        f"Create ONE application question for a Grade {grade} student that genuinely requires "
+        f"knowledge of BOTH of these topics:\n"
+        f"• Topic A — '{topic_a_title}' (key ideas: {a_concepts})\n"
+        f"• Topic B — '{topic_b_title}' (key ideas: {b_concepts})\n\n"
+        f"Subject area: {subject}. The question should be:\n"
+        f"- Clearly worded and age-appropriate for Grade {grade}\n"
+        f"- Solvable in 2–4 steps\n"
+        f"- Practical or relatable (real-world context preferred)\n\n"
+        f"Return ONLY valid JSON (no markdown) in this exact schema:\n"
+        f'{{"question":"<the question text>","key_points":["<point1>","<point2>","<point3>"],'
+        f'"answer_format":"working|explanation|number"}}'
+    )
+    system = (
+        "You are an expert curriculum designer who creates cross-topic challenge questions "
+        "for school students. Always return valid JSON only — no markdown fences, no prose."
+    )
+    try:
+        raw = call_claude(system, user_prompt, max_tokens=350, model=_HAIKU)
+        raw = raw.strip()
+        # strip any accidental markdown fences
+        raw = re.sub(r'^```[a-z]*\n?', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'\n?```$', '', raw, flags=re.MULTILINE)
+        data = json.loads(raw)
+        return {
+            "question": moderate_output(str(data.get("question", ""))),
+            "key_points": [str(p) for p in data.get("key_points", [])[:4]],
+            "answer_format": data.get("answer_format", "explanation"),
+            "topic_a": topic_a_title,
+            "topic_b": topic_b_title,
+        }
+    except Exception as exc:
+        return {
+            "question": (
+                f"Can you explain how the concepts from '{topic_a_title}' connect to "
+                f"'{topic_b_title}'? Give a practical example."
+            ),
+            "key_points": [
+                f"Understanding of {topic_a_title}",
+                f"Understanding of {topic_b_title}",
+                "Ability to connect the two ideas with an example",
+            ],
+            "answer_format": "explanation",
+            "topic_a": topic_a_title,
+            "topic_b": topic_b_title,
+        }
+
+
 def generate_parent_tip(
     topic_title: str,
     key_concepts: list,
