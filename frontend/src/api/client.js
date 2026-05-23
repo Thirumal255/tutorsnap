@@ -106,6 +106,7 @@ export const getChildWeeklyReport = (id) => api.get(`/parent/children/${id}/week
 export const setChildGoal = (id, sessions) =>
   api.post(`/parent/children/${id}/set-goal`, { daily_goal_sessions: sessions })
 export const getFamilyActivity = () => api.get('/parent/family-activity')
+export const getChildDigest = (id) => api.get(`/parent/children/${id}/digest`)
 
 // Onboarding & daily goal
 export const completeOnboarding = (buddyAvatar, buddyName, dailyGoalSessions) =>

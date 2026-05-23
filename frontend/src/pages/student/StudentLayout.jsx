@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { logout as apiLogout } from '../../api/client'
 import UserAvatar from '../../components/UserAvatar'
+import InstallPrompt from '../../components/InstallPrompt'
 
 const NAV = [
   { to: '/home',         label: 'Home',        icon: '🏠', end: true },
@@ -103,6 +104,9 @@ export default function StudentLayout() {
       <main className="flex-1 overflow-y-auto bg-[#0F0F23] pb-20 md:pb-0">
         <Outlet />
       </main>
+
+      {/* ── PWA install prompt (#28) ───────────────────────── */}
+      <InstallPrompt />
 
       {/* ── Mobile Bottom Nav (hidden on desktop) ──────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#16213E] border-t border-[#2D2B5A] z-50">

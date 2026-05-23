@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getChildDetail, getChildSessions, getChildWeeklyReport, setChildGoal, encourageChild } from '../../api/client'
+import { getChildDetail, getChildSessions, getChildWeeklyReport, setChildGoal, encourageChild, getChildDigest } from '../../api/client'
 
 // ── Support tips per subject (task #33) ─────────────────────────────────────
 const SUPPORT_TIPS = {
@@ -224,6 +224,10 @@ export default function ParentChildDetail() {
   const [cheerMsg, setCheerMsg]         = useState('')
   const [cheerSending, setCheerSending] = useState(false)
   const [cheerSent, setCheerSent]       = useState(false)
+  // #48 Weekly digest
+  const [digest, setDigest]             = useState(null)
+  const [digestLoading, setDigestLoading] = useState(false)
+  const [digestOpen, setDigestOpen]     = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -320,6 +324,23 @@ export default function ParentChildDetail() {
               🚩 {flagged.length} need{flagged.length === 1 ? 's' : ''} attention
             </span>
           )}
+          {/* #48: Weekly digest button */}
+          <button
+            onClick={async () => {
+              setDigestOpen(o => !o)
+              if (!digest && !digestLoading) {
+                setDigestLoading(true)
+                try {
+                  const r = await getChildDigest(id)
+                  setDigest(r.data)
+                } catch {}
+                setDigestLoading(false)
+              }
+            }}
+            className="text-xs bg-[#6C63FF]/20 text-[#A78BFA] border border-[#6C63FF]/30 hover:bg-[#6C63FF]/30 px-3 py-1 rounded-full font-semibold transition-all"
+          >
+            📧 Digest
+          </button>
           {/* #50: Cheer button */}
           <button
             onClick={() => setCheerOpen(o => !o)}
@@ -494,6 +515,81 @@ export default function ParentChildDetail() {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── #48 Weekly digest panel ─────────────────────────── */}
+      {digestOpen && (
+        <div className="blox-card p-4 space-y-4 animate-bounce-in border-[#6C63FF]/30 bg-gradient-to-br from-[#16213E] to-[#1A1A3E]">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📧</span>
+            <p className="text-xs text-[#A78BFA] font-semibold uppercase tracking-widest">Weekly Digest</p>
+          </div>
+          {digestLoading ? (
+            <p className="text-center text-[#8892B0] text-sm py-4">Loading digest…</p>
+          ) : digest ? (
+            <div className="space-y-4">
+              {/* Headline */}
+              <p className="text-sm text-white font-fredoka leading-snug">{digest.headline}</p>
+
+              {/* Key metrics row */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Sessions', value: digest.metrics.sessions_this_week, icon: '⚔️' },
+                  { label: 'XP Earned', value: `${digest.metrics.xp_earned_this_week} ⭐`, icon: '🌟' },
+                  { label: 'Streak', value: `${digest.metrics.streak_days}d 🔥`, icon: '🔥' },
+                ].map(({ label, value, icon }) => (
+                  <div key={label} className="bg-[#0F0F23] rounded-xl p-2.5 text-center">
+                    <p className="text-lg">{icon}</p>
+                    <p className="font-fredoka font-bold text-white text-sm">{value}</p>
+                    <p className="text-[10px] text-[#8892B0]">{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Subject breakdown */}
+              {digest.subjects.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-[#8892B0] uppercase tracking-widest">Subjects this week</p>
+                  {digest.subjects.map(({ subject, sessions }) => (
+                    <div key={subject} className="flex items-center gap-2">
+                      <div className="flex-1 bg-[#0F0F23] rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full bg-gradient-to-r from-[#6C63FF] to-[#00A2FF]"
+                          style={{ width: `${Math.min((sessions / (digest.metrics.sessions_this_week || 1)) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-white w-24 text-right">{subject}</span>
+                      <span className="text-xs text-[#8892B0] w-8 text-right">{sessions}×</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* New masteries */}
+              {digest.mastered_topics.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs text-[#8892B0] uppercase tracking-widest">New masteries 🏆</p>
+                  {digest.mastered_topics.map(({ title, level }) => (
+                    <div key={title} className="flex items-center gap-2">
+                      <span className="text-xs bg-[#00CC88]/20 text-[#00CC88] border border-[#00CC88]/30 px-2 py-0.5 rounded-full">{level}</span>
+                      <span className="text-xs text-white truncate">{title}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Action tip */}
+              <div className="bg-[#0F0F23] rounded-xl p-3 border-l-2 border-[#A78BFA]">
+                <p className="text-xs text-[#8892B0] uppercase tracking-widest mb-1">💡 What to ask today</p>
+                <p className="text-sm text-white leading-relaxed">{digest.action_tip}</p>
+              </div>
+
+              <p className="text-[10px] text-[#4A5568] text-right">{digest.week_label}</p>
+            </div>
+          ) : (
+            <p className="text-center text-[#8892B0] text-sm py-2">Unable to load digest. Please try again.</p>
+          )}
         </div>
       )}
 

@@ -3138,6 +3138,111 @@ def child_weekly_report(
     }
 
 
+@app.get("/api/parent/children/{student_id}/digest")
+def child_weekly_digest(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_parent),
+):
+    """#48: Weekly digest payload — structured snapshot a parent reads in-app (or receives by email)."""
+    if current_user.role != "admin":
+        link = db.query(ParentStudentLink).filter(
+            ParentStudentLink.parent_id == current_user.id,
+            ParentStudentLink.student_id == student_id,
+        ).first()
+        if not link:
+            raise HTTPException(status_code=403, detail="Not your child")
+
+    student = db.query(User).filter(User.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    now = datetime.utcnow()
+    days_since_monday = now.weekday()
+    week_start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+    last_week_start = week_start - timedelta(days=7)
+
+    this_week_sessions = db.query(SessionModel).filter(
+        SessionModel.user_id == student_id,
+        SessionModel.started_at >= week_start,
+        SessionModel.status == "completed",
+        SessionModel.is_practice == False,
+    ).all()
+
+    # Per-subject breakdown
+    subject_counts: dict = {}
+    for s in this_week_sessions:
+        topic = db.query(Topic).filter(Topic.id == s.topic_id).first()
+        chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
+        book = db.query(Book).filter(Book.id == chapter.book_id).first() if chapter else None
+        subj = (book.subject if book else "Other") or "Other"
+        subject_counts[subj] = subject_counts.get(subj, 0) + 1
+
+    subjects_sorted = sorted(subject_counts.items(), key=lambda x: -x[1])
+
+    # New masteries this week
+    new_masteries = db.query(TopicMastery).filter(
+        TopicMastery.student_id == student_id,
+        TopicMastery.last_practiced_at >= week_start,
+        TopicMastery.mastery_level.in_(["L3", "L4", "L5"]),
+        TopicMastery.mastery_confirmed == True,
+    ).order_by(TopicMastery.last_practiced_at.desc()).limit(3).all()
+
+    # Flagged topics for action item
+    flagged = db.query(TopicMastery).filter(
+        TopicMastery.student_id == student_id,
+        TopicMastery.flagged_for_review == True,
+    ).limit(1).first()
+    flagged_topic_title = flagged.topic.title if flagged and flagged.topic else None
+
+    # Last week comparison
+    last_week_count = db.query(func.count(SessionModel.id)).filter(
+        SessionModel.user_id == student_id,
+        SessionModel.started_at >= last_week_start,
+        SessionModel.started_at < week_start,
+        SessionModel.status == "completed",
+        SessionModel.is_practice == False,
+    ).scalar() or 0
+
+    sessions_this_week = len(this_week_sessions)
+    trend = "up" if sessions_this_week > last_week_count else ("down" if sessions_this_week < last_week_count else "same")
+
+    # Personalised headline
+    if sessions_this_week == 0:
+        headline = f"{student.name} hasn't started any sessions yet this week. A little encouragement could go a long way!"
+    elif sessions_this_week >= student.daily_goal_sessions * 5:
+        headline = f"What a week! {student.name} is on fire 🔥 — {sessions_this_week} sessions completed and counting."
+    elif new_masteries:
+        headline = f"{student.name} mastered {len(new_masteries)} new topic{'s' if len(new_masteries) > 1 else ''} this week. Great progress!"
+    else:
+        headline = f"{student.name} completed {sessions_this_week} session{'s' if sessions_this_week != 1 else ''} this week. Keep up the momentum!"
+
+    return {
+        "student_name": student.name,
+        "grade": student.grade,
+        "week_label": week_start.strftime("Week of %d %b %Y"),
+        "headline": headline,
+        "metrics": {
+            "sessions_this_week": sessions_this_week,
+            "sessions_last_week": last_week_count,
+            "trend": trend,
+            "xp_earned_this_week": student.weekly_xp or 0,
+            "streak_days": student.streak_days or 0,
+            "new_masteries": len(new_masteries),
+        },
+        "subjects": [{"subject": s, "sessions": c} for s, c in subjects_sorted],
+        "mastered_topics": [
+            {"title": m.topic.title if m.topic else "Unknown", "level": m.mastery_level}
+            for m in new_masteries
+        ],
+        "action_tip": (
+            f"Ask {student.name} to explain «{flagged_topic_title}» — it's marked for review."
+            if flagged_topic_title else
+            f"Ask {student.name} what their favourite topic was this week and why!"
+        ),
+    }
+
+
 @app.get("/api/parent/family-activity")
 def parent_family_activity(
     db: Session = Depends(get_db),
@@ -4135,6 +4240,16 @@ def get_weekly_challenge(
     chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
     book = db.query(Book).filter(Book.id == chapter.book_id).first() if chapter else None
 
+    # #63 Collaborative class challenge — grade-wide participation counts
+    class_attempts = db.query(WeeklyChallengeCompletion).filter(
+        WeeklyChallengeCompletion.challenge_id == challenge.id,
+    ).count()
+    class_total = db.query(User).filter(
+        User.grade == current_user.grade,
+        User.role == "student",
+        User.is_active == True,
+    ).count()
+
     return {
         "available": True,
         "challenge": {
@@ -4152,6 +4267,8 @@ def get_weekly_challenge(
             "xp_earned": completion.xp_earned,
             "feedback": completion.feedback,
         } if completion else None,
+        "class_attempts": class_attempts,
+        "class_total": class_total,
     }
 
 

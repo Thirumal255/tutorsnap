@@ -338,3 +338,79 @@ class TestWeeklyChallenge:
         assert data.get("available") is True
         challenge = data.get("challenge", {})
         assert "question" in challenge or "question_text" in challenge
+
+    def test_weekly_challenge_includes_class_attempts(self, client, db):
+        """#63: Response should include class_attempts and class_total fields."""
+        from models import WeeklyChallenge
+
+        book = make_book(db, grade=7)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        week_start = datetime.utcnow().date()
+        week_start = week_start - timedelta(days=week_start.weekday())
+        wc = WeeklyChallenge(
+            grade=7,
+            week_start=datetime(week_start.year, week_start.month, week_start.day),
+            topic_id=topic.id,
+            question_text="What is photosynthesis?",
+            expected_key_points=json.dumps(["light", "chlorophyll"]),
+            answer_format="explanation",
+        )
+        db.add(wc)
+        db.commit()
+
+        user = make_user(db, email="wcc63@test.com", google_id="g-wcc63", grade=7)
+        resp = client.get("/api/student/weekly-challenge", headers=auth_headers(user))
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "class_attempts" in data
+        assert "class_total" in data
+        assert isinstance(data["class_attempts"], int)
+        assert isinstance(data["class_total"], int)
+        assert data["class_attempts"] >= 0
+        assert data["class_total"] >= 1   # at least the student themselves
+
+
+# ── Parent weekly digest (#48) ────────────────────────────────────────────────
+
+class TestParentWeeklyDigest:
+    def test_digest_requires_parent_auth(self, client, db):
+        student = make_user(db, email="dgs@test.com", google_id="g-dgs")
+        resp = client.get(f"/api/parent/children/{student.id}/digest", headers=auth_headers(student))
+        assert resp.status_code == 403
+
+    def test_digest_rejects_wrong_parent(self, client, db):
+        from models import ParentStudentLink
+        child = make_user(db, email="dgc2@test.com", google_id="g-dgc2", grade=5)
+        other_parent = make_user(db, email="dgo2@test.com", google_id="g-dgo2", role="parent")
+        # No link created
+        resp = client.get(
+            f"/api/parent/children/{child.id}/digest",
+            headers=auth_headers(other_parent),
+        )
+        assert resp.status_code == 403
+
+    def test_digest_returns_expected_fields(self, client, db):
+        from models import ParentStudentLink
+        parent = make_user(db, email="dgp@test.com", google_id="g-dgp", role="parent")
+        child = make_user(db, email="dgch@test.com", google_id="g-dgch", grade=6)
+        link = ParentStudentLink(parent_id=parent.id, student_id=child.id)
+        db.add(link)
+        db.commit()
+
+        resp = client.get(
+            f"/api/parent/children/{child.id}/digest",
+            headers=auth_headers(parent),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "headline" in data
+        assert "metrics" in data
+        assert "action_tip" in data
+        assert "week_label" in data
+        metrics = data["metrics"]
+        assert "sessions_this_week" in metrics
+        assert "xp_earned_this_week" in metrics
+        assert "streak_days" in metrics

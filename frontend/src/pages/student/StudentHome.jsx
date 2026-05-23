@@ -135,7 +135,7 @@ function WeeklyChallengeCard({ userId }) {
   if (loading) return null
   if (!wc?.available) return null
 
-  const { challenge, completed, completion } = wc
+  const { challenge, completed, completion, class_attempts = 0, class_total = 0 } = wc
 
   return (
     <div className="blox-card border border-[#FFD700]/30 bg-gradient-to-br from-[#1A1A3E] to-[#16213E] p-4 animate-bounce-in">
@@ -145,7 +145,7 @@ function WeeklyChallengeCard({ userId }) {
           🏆
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <p className="text-xs text-[#FFD700] font-semibold uppercase tracking-widest">Weekly Challenge</p>
             {completed && (
               <span className="text-xs bg-[#00CC88]/20 text-[#00CC88] border border-[#00CC88]/30 px-2 py-0.5 rounded-full">✓ Done</span>
@@ -154,7 +154,15 @@ function WeeklyChallengeCard({ userId }) {
           <p className="font-fredoka font-bold text-white mt-0.5 text-sm">
             {challenge.subject} · {challenge.topic_title}
           </p>
-          <p className="text-xs text-[#8892B0] mt-0.5">Up to 200 XP ⭐ · Resets Monday</p>
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+            <p className="text-xs text-[#8892B0]">Up to 200 XP ⭐ · Resets Monday</p>
+            {/* #63 Collaborative class challenge participation counter */}
+            {class_total > 0 && (
+              <p className="text-xs text-[#6C63FF] font-semibold">
+                👥 {class_attempts}/{class_total} classmates attempted
+              </p>
+            )}
+          </div>
         </div>
         {!completed && (
           <button
