@@ -10,13 +10,18 @@ Covers:
 - LEVEL_GUIDE           — all levels documented
 """
 
+import json
 import pytest
+from unittest.mock import patch, MagicMock
 from session_engine import (
     strip_latex,
     get_next_level,
     get_start_level,
     LEVEL_ORDER,
     LEVEL_GUIDE,
+    PROMPT_VERSION,
+    generate_transfer_question,
+    generate_parent_tip,
 )
 
 
@@ -143,3 +148,115 @@ class TestLevelConstants:
     def test_all_level_order_entries_in_guide(self):
         for lvl in LEVEL_ORDER:
             assert lvl in LEVEL_GUIDE
+
+
+# ── PROMPT_VERSION (#65) ──────────────────────────────────────────────────────
+
+class TestPromptVersion:
+    def test_prompt_version_is_string(self):
+        assert isinstance(PROMPT_VERSION, str)
+
+    def test_prompt_version_non_empty(self):
+        assert len(PROMPT_VERSION) > 0
+
+    def test_prompt_version_format(self):
+        """Version should be in semver-like format e.g. '2.1'."""
+        parts = PROMPT_VERSION.split(".")
+        assert len(parts) >= 2
+        for part in parts:
+            assert part.isdigit(), f"Version part '{part}' should be numeric"
+
+
+# ── generate_transfer_question (#60) ──────────────────────────────────────────
+
+class TestGenerateTransferQuestion:
+    @patch("session_engine._client")
+    def test_returns_expected_keys(self, mock_client):
+        """Return dict must have question, key_points, answer_format, topic_a, topic_b."""
+        mock_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text=json.dumps({
+                "question": "How do ratios relate to fractions?",
+                "key_points": ["Both compare quantities", "Fractions are ratios"],
+                "answer_format": "explanation",
+            }))]
+        )
+        result = generate_transfer_question(
+            topic_a_title="Fractions",
+            topic_a_concepts=["numerator", "denominator"],
+            topic_b_title="Ratios",
+            topic_b_concepts=["comparison", "proportion"],
+            grade=6,
+            subject="Mathematics",
+        )
+        assert "question" in result
+        assert "key_points" in result
+        assert "answer_format" in result
+        assert result["topic_a"] == "Fractions"
+        assert result["topic_b"] == "Ratios"
+        assert isinstance(result["key_points"], list)
+
+    @patch("session_engine._client")
+    def test_returns_fallback_on_invalid_json(self, mock_client):
+        """When Claude returns invalid JSON, a meaningful fallback question is returned."""
+        mock_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text="Not valid JSON at all")]
+        )
+        result = generate_transfer_question(
+            topic_a_title="Gravity",
+            topic_a_concepts=["force", "mass"],
+            topic_b_title="Acceleration",
+            topic_b_concepts=["velocity", "time"],
+            grade=8,
+            subject="Physics",
+        )
+        assert "question" in result
+        assert len(result["question"]) > 0
+        assert "Gravity" in result["question"] or "Acceleration" in result["question"]
+        assert result["topic_a"] == "Gravity"
+        assert result["topic_b"] == "Acceleration"
+
+    @patch("session_engine._client")
+    def test_key_points_capped_at_four(self, mock_client):
+        """key_points should contain at most 4 entries."""
+        mock_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text=json.dumps({
+                "question": "Combined question",
+                "key_points": ["p1", "p2", "p3", "p4", "p5", "p6"],
+                "answer_format": "working",
+            }))]
+        )
+        result = generate_transfer_question(
+            "TopicA", ["c1"], "TopicB", ["c2"], 7, "Science"
+        )
+        assert len(result["key_points"]) <= 4
+
+
+# ── generate_parent_tip (#49) ─────────────────────────────────────────────────
+
+class TestGenerateParentTip:
+    @patch("session_engine._client")
+    def test_returns_string(self, mock_client):
+        mock_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text="Ask your child to explain fractions using pizza slices.")]
+        )
+        result = generate_parent_tip(
+            topic_title="Fractions",
+            key_concepts=["numerator", "denominator", "equivalent fractions"],
+            mastery_level="L2",
+            session_summary="Student improved on equivalent fractions.",
+        )
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    @patch("session_engine._client")
+    def test_fallback_on_error(self, mock_client):
+        """If Claude call fails, a safe default tip should be returned."""
+        mock_client.messages.create.side_effect = Exception("API error")
+        result = generate_parent_tip(
+            topic_title="Geometry",
+            key_concepts=["angles", "triangles"],
+            mastery_level="L1",
+            session_summary="Student struggled with angle types.",
+        )
+        # Should not raise, should return a string
+        assert isinstance(result, str)

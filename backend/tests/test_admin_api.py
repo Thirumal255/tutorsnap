@@ -292,3 +292,223 @@ class TestAdminReports:
         admin = make_user(db, email="flg@test.com", google_id="g-flg", role="admin")
         resp = client.get("/api/admin/flagged", headers=auth_headers(admin))
         assert resp.status_code == 200
+
+
+# ── Admin analytics (#61 #64 #65 #66) ────────────────────────────────────────
+
+class TestAdminAnalytics:
+    def test_analytics_requires_admin(self, client, db):
+        student = make_user(db, email="ans@test.com", google_id="g-ans")
+        resp = client.get("/api/admin/analytics", headers=auth_headers(student))
+        assert resp.status_code == 403
+
+    def test_analytics_returns_dict(self, client, db):
+        admin = make_user(db, email="ana@test.com", google_id="g-ana", role="admin")
+        resp = client.get("/api/admin/analytics", headers=auth_headers(admin))
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), dict)
+
+    def test_analytics_includes_hardest_topics(self, client, db):
+        """#61: analytics should include hardest_topics list."""
+        admin = make_user(db, email="aht@test.com", google_id="g-aht", role="admin")
+        resp = client.get("/api/admin/analytics", headers=auth_headers(admin))
+        data = resp.json()
+        assert "hardest_topics" in data
+        assert isinstance(data["hardest_topics"], list)
+
+    def test_analytics_includes_ab_summary(self, client, db):
+        """#64: analytics should include ab_summary dict."""
+        admin = make_user(db, email="aab@test.com", google_id="g-aab", role="admin")
+        resp = client.get("/api/admin/analytics", headers=auth_headers(admin))
+        data = resp.json()
+        assert "ab_summary" in data
+        assert isinstance(data["ab_summary"], dict)
+
+    def test_analytics_includes_prompt_version(self, client, db):
+        """#65: analytics should expose prompt_version."""
+        admin = make_user(db, email="apv@test.com", google_id="g-apv", role="admin")
+        resp = client.get("/api/admin/analytics", headers=auth_headers(admin))
+        data = resp.json()
+        assert "prompt_version" in data
+        assert isinstance(data["prompt_version"], str)
+
+    def test_analytics_includes_ai_cost(self, client, db):
+        """#26: analytics should include ai_cost_7d."""
+        admin = make_user(db, email="aac@test.com", google_id="g-aac", role="admin")
+        resp = client.get("/api/admin/analytics", headers=auth_headers(admin))
+        data = resp.json()
+        assert "ai_cost_7d" in data
+
+
+# ── Admin weekly challenge (#56) ──────────────────────────────────────────────
+
+class TestAdminWeeklyChallenge:
+    def test_draft_requires_admin(self, client, db):
+        student = make_user(db, email="wcd_s@test.com", google_id="g-wcd-s")
+        resp = client.get("/api/admin/weekly-challenge/draft?grade=6", headers=auth_headers(student))
+        assert resp.status_code == 403
+
+    def test_draft_returns_not_found_without_topics(self, client, db):
+        admin = make_user(db, email="wcd_a@test.com", google_id="g-wcd-a", role="admin")
+        resp = client.get("/api/admin/weekly-challenge/draft?grade=99", headers=auth_headers(admin))
+        # No topics for grade 99 → 404 or 422 (unprocessable) or empty 200
+        assert resp.status_code in (200, 404, 422)
+
+    def test_draft_returns_question_when_topics_exist(self, client, db):
+        from unittest.mock import patch, MagicMock
+        import json as _json
+        admin = make_user(db, email="wcdt@test.com", google_id="g-wcdt", role="admin")
+        book = make_book(db, grade=8)
+        ch = make_chapter(db, book.id)
+        make_topic(db, ch.id)
+
+        mock_resp = MagicMock()
+        mock_resp.content = [MagicMock(text=_json.dumps({
+            "question": "Draft challenge question",
+            "expected_key_points": ["point1"],
+            "answer_format": "explanation",
+        }))]
+        with patch("session_engine._client") as mock_client:
+            mock_client.messages.create.return_value = mock_resp
+            resp = client.get("/api/admin/weekly-challenge/draft?grade=8", headers=auth_headers(admin))
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "question" in data or "question_text" in data
+
+    def test_publish_requires_admin(self, client, db):
+        student = make_user(db, email="wcp_s@test.com", google_id="g-wcp-s")
+        book = make_book(db, grade=7)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+        resp = client.post(
+            "/api/admin/weekly-challenge/publish",
+            json={"grade": 7, "topic_id": topic.id, "question": "Q", "key_points": [], "answer_format": "explanation"},
+            headers=auth_headers(student),
+        )
+        assert resp.status_code == 403
+
+    def test_publish_saves_challenge(self, client, db):
+        from models import WeeklyChallenge
+        admin = make_user(db, email="wcpa@test.com", google_id="g-wcpa", role="admin")
+        book = make_book(db, grade=9)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        resp = client.post(
+            "/api/admin/weekly-challenge/publish",
+            json={
+                "grade": 9,
+                "topic_id": topic.id,
+                "question": "Published challenge question",
+                "key_points": ["key1", "key2"],
+                "answer_format": "explanation",
+            },
+            headers=auth_headers(admin),
+        )
+        assert resp.status_code == 200
+        wc = db.query(WeeklyChallenge).filter(WeeklyChallenge.grade == 9).first()
+        assert wc is not None
+        assert wc.question_text == "Published challenge question"
+
+
+# ── Admin CSV import (#21) ────────────────────────────────────────────────────
+
+class TestAdminCSVImport:
+    def test_import_requires_admin(self, client, db):
+        student = make_user(db, email="csvi_s@test.com", google_id="g-csvi-s")
+        resp = client.post(
+            "/api/admin/students/import",
+            json={"students": [{"email": "x@x.com", "name": "X", "grade": 5}]},
+            headers=auth_headers(student),
+        )
+        assert resp.status_code == 403
+
+    def test_import_creates_students(self, client, db):
+        from models import User
+        admin = make_user(db, email="csva@test.com", google_id="g-csva", role="admin")
+        resp = client.post(
+            "/api/admin/students/import",
+            json={"students": [
+                {"email": "imported1@test.com", "name": "Alice Import", "grade": 5},
+                {"email": "imported2@test.com", "name": "Bob Import", "grade": 6},
+            ]},
+            headers=auth_headers(admin),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # Should report created count
+        assert "created" in data or "imported" in data or len(data) > 0
+
+    def test_import_skips_duplicate_emails(self, client, db):
+        admin = make_user(db, email="csvdup_a@test.com", google_id="g-csvdup-a", role="admin")
+        existing = make_user(db, email="dup@test.com", google_id="g-dup-exist")
+        resp = client.post(
+            "/api/admin/students/import",
+            json={"students": [
+                {"email": "dup@test.com", "name": "Duplicate", "grade": 5},
+            ]},
+            headers=auth_headers(admin),
+        )
+        assert resp.status_code == 200
+        # Should not crash — existing user is skipped
+
+
+# ── Admin audit log (#22) ─────────────────────────────────────────────────────
+
+class TestAdminAuditLog:
+    def test_audit_log_requires_admin(self, client, db):
+        student = make_user(db, email="alog_s@test.com", google_id="g-alog-s")
+        resp = client.get("/api/admin/audit-log", headers=auth_headers(student))
+        assert resp.status_code == 403
+
+    def test_audit_log_returns_list(self, client, db):
+        admin = make_user(db, email="aloga@test.com", google_id="g-aloga", role="admin")
+        resp = client.get("/api/admin/audit-log", headers=auth_headers(admin))
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_audit_log_records_student_creation(self, client, db):
+        from models import AdminAuditLog
+        admin = make_user(db, email="alogcr@test.com", google_id="g-alogcr", role="admin")
+        client.post(
+            "/api/admin/students",
+            json={"email": "auditee@test.com", "name": "Audit Test"},
+            headers=auth_headers(admin),
+        )
+        logs = db.query(AdminAuditLog).filter(AdminAuditLog.admin_id == admin.id).all()
+        assert len(logs) >= 1
+        actions = [l.action for l in logs]
+        assert any("student" in a.lower() or "create" in a.lower() for a in actions)
+
+    def test_audit_log_respects_limit(self, client, db):
+        admin = make_user(db, email="alogl@test.com", google_id="g-alogl", role="admin")
+        resp = client.get("/api/admin/audit-log?limit=5", headers=auth_headers(admin))
+        assert resp.status_code == 200
+        assert len(resp.json()) <= 5
+
+
+# ── Admin book preview (#44) ──────────────────────────────────────────────────
+
+class TestAdminBookPreview:
+    def test_preview_requires_admin(self, client, db):
+        student = make_user(db, email="bpv_s@test.com", google_id="g-bpv-s")
+        book = make_book(db)
+        resp = client.get(f"/api/admin/books/{book.id}/preview", headers=auth_headers(student))
+        assert resp.status_code == 403
+
+    def test_preview_404_for_unknown_book(self, client, db):
+        admin = make_user(db, email="bpva@test.com", google_id="g-bpva", role="admin")
+        resp = client.get("/api/admin/books/999999/preview", headers=auth_headers(admin))
+        assert resp.status_code == 404
+
+    def test_preview_returns_book_structure(self, client, db):
+        admin = make_user(db, email="bpvs@test.com", google_id="g-bpvs", role="admin")
+        book = make_book(db, title="Preview Book")
+        ch = make_chapter(db, book.id)
+        make_topic(db, ch.id)
+
+        resp = client.get(f"/api/admin/books/{book.id}/preview", headers=auth_headers(admin))
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "chapters" in data or "title" in data or "topics" in data

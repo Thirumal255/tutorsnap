@@ -412,3 +412,148 @@ class TestExamSessionModel:
         assert es.id is not None
         assert es.status == "active"
         assert es.question_count == 5
+
+
+# ── Session new columns (#58 #64) ─────────────────────────────────────────────
+
+class TestSessionNewColumns:
+    def test_is_practice_defaults_false(self, db):
+        """#58: is_practice should default to False."""
+        from models import Session as SessionModel
+        user = make_user(db, email="isp@test.com", google_id="g-isp")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        s = SessionModel(student_name=user.name, user_id=user.id, topic_id=topic.id)
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+        assert s.is_practice is False
+
+    def test_is_practice_can_be_set_true(self, db):
+        from models import Session as SessionModel
+        user = make_user(db, email="ispt@test.com", google_id="g-ispt")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        s = SessionModel(student_name=user.name, user_id=user.id,
+                         topic_id=topic.id, is_practice=True)
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+        assert s.is_practice is True
+
+    def test_ab_variant_defaults_null(self, db):
+        """#64: ab_variant should be null unless explicitly assigned."""
+        from models import Session as SessionModel
+        user = make_user(db, email="abv@test.com", google_id="g-abv")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        s = SessionModel(student_name=user.name, user_id=user.id, topic_id=topic.id)
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+        assert s.ab_variant is None
+
+    def test_ab_variant_stores_a_or_b(self, db):
+        from models import Session as SessionModel
+        user = make_user(db, email="abvab@test.com", google_id="g-abvab")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        for variant in ("A", "B"):
+            s = SessionModel(
+                student_name=user.name, user_id=user.id,
+                topic_id=topic.id, ab_variant=variant,
+            )
+            db.add(s)
+            db.commit()
+            db.refresh(s)
+            assert s.ab_variant == variant
+
+
+# ── TopicMastery new columns (#24 #38 #40) ────────────────────────────────────
+
+class TestTopicMasteryNewColumns:
+    def test_mastery_confirmed_defaults_false(self, db):
+        """#38: mastery_confirmed should be False by default."""
+        from models import TopicMastery
+        user = make_user(db, email="mcd@test.com", google_id="g-mcd")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        m = TopicMastery(student_id=user.id, student_name=user.name, topic_id=topic.id)
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+        assert m.mastery_confirmed is False
+
+    def test_mastery_confirmed_can_be_set(self, db):
+        from models import TopicMastery
+        user = make_user(db, email="mcs@test.com", google_id="g-mcs")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        m = TopicMastery(student_id=user.id, student_name=user.name,
+                         topic_id=topic.id, mastery_level="L3",
+                         mastery_confirmed=True, total_sessions=3)
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+        assert m.mastery_confirmed is True
+
+    def test_session_memory_stores_json(self, db):
+        """#40: session_memory should persist a JSON string."""
+        from models import TopicMastery
+        user = make_user(db, email="smj@test.com", google_id="g-smj")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        memory = json.dumps([{"summary": "Good session", "level": "L2", "date": "2025-01-01"}])
+        m = TopicMastery(student_id=user.id, student_name=user.name,
+                         topic_id=topic.id, session_memory=memory)
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+
+        loaded = json.loads(m.session_memory)
+        assert len(loaded) == 1
+        assert loaded[0]["level"] == "L2"
+
+    def test_sm2_fields_have_defaults(self, db):
+        """#24: SM-2 fields should have correct defaults."""
+        from models import TopicMastery
+        user = make_user(db, email="sm2d@test.com", google_id="g-sm2d")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        m = TopicMastery(student_id=user.id, student_name=user.name, topic_id=topic.id)
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+
+        assert abs(m.ease_factor - 2.5) < 0.01
+        assert m.review_interval_days == 1
+        assert m.next_review_at is None
+
+    def test_studied_flag_defaults_false(self, db):
+        from models import TopicMastery
+        user = make_user(db, email="sfd@test.com", google_id="g-sfd")
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+
+        m = TopicMastery(student_id=user.id, student_name=user.name, topic_id=topic.id)
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+        assert m.studied is False

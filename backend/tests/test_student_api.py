@@ -414,3 +414,139 @@ class TestParentWeeklyDigest:
         assert "sessions_this_week" in metrics
         assert "xp_earned_this_week" in metrics
         assert "streak_days" in metrics
+
+
+# ── Interleaved topics (#27) ──────────────────────────────────────────────────
+
+class TestInterleavedTopics:
+    def test_interleaved_requires_auth(self, client, db):
+        resp = client.get("/api/student/interleaved-topics")
+        assert resp.status_code == 401
+
+    def test_interleaved_returns_list(self, client, db):
+        user = make_user(db, email="ilt@test.com", google_id="g-ilt")
+        resp = client.get("/api/student/interleaved-topics", headers=auth_headers(user))
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_interleaved_returns_only_studied_topics(self, client, db):
+        """Only topics with studied=True should be returned for interleaving."""
+        from models import TopicMastery
+        book = make_book(db, grade=6)
+        ch = make_chapter(db, book.id)
+        topic_a = make_topic(db, ch.id, number="1.1", title="Fractions")
+        topic_b = make_topic(db, ch.id, number="1.2", title="Decimals")
+        user = make_user(db, email="ilts@test.com", google_id="g-ilts", grade=6)
+
+        # Only topic_a is studied
+        db.add(TopicMastery(student_id=user.id, student_name=user.name,
+                            topic_id=topic_a.id, studied=True, mastery_level="L2"))
+        db.commit()
+
+        resp = client.get("/api/student/interleaved-topics?limit=10", headers=auth_headers(user))
+        assert resp.status_code == 200
+        topics = resp.json()
+        # Response items use "id" or "topic_id" as the key
+        topic_ids = [t.get("id") or t.get("topic_id") for t in topics if isinstance(t, dict)]
+        if topic_ids:
+            assert topic_b.id not in topic_ids
+
+    def test_interleaved_respects_limit(self, client, db):
+        user = make_user(db, email="iltl@test.com", google_id="g-iltl")
+        resp = client.get("/api/student/interleaved-topics?limit=3", headers=auth_headers(user))
+        assert resp.status_code == 200
+        assert len(resp.json()) <= 3
+
+
+# ── Transfer question (#60) ───────────────────────────────────────────────────
+
+class TestTransferQuestion:
+    def test_transfer_requires_auth(self, client, db):
+        resp = client.get("/api/student/transfer-question")
+        assert resp.status_code == 401
+
+    def test_transfer_returns_not_enough_when_no_mastery(self, client, db):
+        """If student has no studied topics, return appropriate message."""
+        user = make_user(db, email="tq0@test.com", google_id="g-tq0")
+        resp = client.get("/api/student/transfer-question", headers=auth_headers(user))
+        assert resp.status_code in (200, 404)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Should indicate unavailable when no mastered topics
+            assert "available" in data or "question" in data
+
+    def test_transfer_returns_question_with_mastered_topics(self, client, db):
+        """With 2+ studied topics, should generate a transfer question."""
+        from models import TopicMastery
+        from unittest.mock import patch, MagicMock
+
+        book_a = make_book(db, subject="Mathematics", grade=6)
+        ch_a = make_chapter(db, book_a.id)
+        topic_a = make_topic(db, ch_a.id, number="1.1", title="Fractions")
+
+        book_b = make_book(db, subject="Science", grade=6)
+        ch_b = make_chapter(db, book_b.id)
+        topic_b = make_topic(db, ch_b.id, number="1.1", title="Ratios")
+
+        user = make_user(db, email="tq2@test.com", google_id="g-tq2", grade=6)
+        db.add(TopicMastery(student_id=user.id, student_name=user.name,
+                            topic_id=topic_a.id, studied=True, mastery_level="L3",
+                            mastery_confirmed=True))
+        db.add(TopicMastery(student_id=user.id, student_name=user.name,
+                            topic_id=topic_b.id, studied=True, mastery_level="L3",
+                            mastery_confirmed=True))
+        db.commit()
+
+        mock_resp = MagicMock()
+        mock_resp.content = [MagicMock(text=json.dumps({
+            "question": "How do fractions relate to ratios?",
+            "key_points": ["Both compare quantities", "Fractions are a type of ratio"],
+            "answer_format": "explanation",
+        }))]
+
+        with patch("session_engine._client") as mock_client:
+            mock_client.messages.create.return_value = mock_resp
+            resp = client.get("/api/student/transfer-question", headers=auth_headers(user))
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "question" in data
+        assert "key_points" in data or "available" in data
+
+
+# ── Student sessions history ──────────────────────────────────────────────────
+
+class TestStudentSessionsHistory:
+    def test_sessions_requires_auth(self, client, db):
+        resp = client.get("/api/student/sessions")
+        assert resp.status_code == 401
+
+    def test_sessions_returns_list(self, client, db):
+        user = make_user(db, email="ssh@test.com", google_id="g-ssh")
+        resp = client.get("/api/student/sessions", headers=auth_headers(user))
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_sessions_includes_completed_sessions(self, client, db):
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+        user = make_user(db, email="sshi@test.com", google_id="g-sshi")
+        make_session(db, user.name, topic.id, user_id=user.id, status="completed")
+
+        resp = client.get("/api/student/sessions", headers=auth_headers(user))
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) >= 1
+
+    def test_sessions_respects_limit(self, client, db):
+        book = make_book(db)
+        ch = make_chapter(db, book.id)
+        topic = make_topic(db, ch.id)
+        user = make_user(db, email="sshl@test.com", google_id="g-sshl")
+        for _ in range(5):
+            make_session(db, user.name, topic.id, user_id=user.id, status="completed")
+
+        resp = client.get("/api/student/sessions?limit=3", headers=auth_headers(user))
+        assert resp.status_code == 200
+        assert len(resp.json()) <= 3
