@@ -35,33 +35,31 @@ def upgrade() -> None:
     op.add_column('users', sa.Column('buddy_avatar', sa.String(50), nullable=True))
 
     # ── Weekly challenges table ────────────────────────────────────────────
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_challenges (
-            id          SERIAL PRIMARY KEY,
-            grade       INTEGER NOT NULL,
-            week_start  TIMESTAMP NOT NULL,
-            topic_id    INTEGER REFERENCES topics(id),
-            question_text        TEXT NOT NULL,
-            expected_key_points  TEXT,
-            answer_format        VARCHAR(30),
-            created_at  TIMESTAMP DEFAULT NOW(),
-            UNIQUE(grade, week_start)
-        )
-    """)
+    op.create_table(
+        'weekly_challenges',
+        sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
+        sa.Column('grade', sa.Integer(), nullable=False),
+        sa.Column('week_start', sa.DateTime(), nullable=False),
+        sa.Column('topic_id', sa.Integer(), sa.ForeignKey('topics.id'), nullable=True),
+        sa.Column('question_text', sa.Text(), nullable=False),
+        sa.Column('expected_key_points', sa.Text(), nullable=True),
+        sa.Column('answer_format', sa.String(30), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.UniqueConstraint('grade', 'week_start'),
+    )
 
     # ── Weekly challenge completions table ─────────────────────────────────
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_challenge_completions (
-            id           SERIAL PRIMARY KEY,
-            user_id      INTEGER REFERENCES users(id),
-            challenge_id INTEGER REFERENCES weekly_challenges(id),
-            score        INTEGER NOT NULL,
-            xp_earned    INTEGER NOT NULL,
-            feedback     TEXT,
-            completed_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(user_id, challenge_id)
-        )
-    """)
+    op.create_table(
+        'weekly_challenge_completions',
+        sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
+        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+        sa.Column('challenge_id', sa.Integer(), sa.ForeignKey('weekly_challenges.id'), nullable=True),
+        sa.Column('score', sa.Integer(), nullable=False),
+        sa.Column('xp_earned', sa.Integer(), nullable=False),
+        sa.Column('feedback', sa.Text(), nullable=True),
+        sa.Column('completed_at', sa.DateTime(), nullable=True),
+        sa.UniqueConstraint('user_id', 'challenge_id'),
+    )
 
 
 def downgrade() -> None:

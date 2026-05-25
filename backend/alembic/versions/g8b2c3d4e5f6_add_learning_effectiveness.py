@@ -25,25 +25,24 @@ def upgrade() -> None:
     op.add_column('topic_mastery', sa.Column('review_interval_days', sa.Integer(), server_default='1', nullable=True))
 
     # ── Exam sessions table ────────────────────────────────────────────────
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS exam_sessions (
-            id                  SERIAL PRIMARY KEY,
-            user_id             INTEGER REFERENCES users(id),
-            grade               INTEGER NOT NULL,
-            subjects_json       TEXT,
-            questions_json      TEXT NOT NULL,
-            answers_json        TEXT,
-            scores_json         TEXT,
-            feedbacks_json      TEXT,
-            time_limit_seconds  INTEGER DEFAULT 900,
-            question_count      INTEGER DEFAULT 10,
-            started_at          TIMESTAMP DEFAULT NOW(),
-            ended_at            TIMESTAMP,
-            status              VARCHAR(20) DEFAULT 'active',
-            total_score         INTEGER,
-            xp_earned           INTEGER
-        )
-    """)
+    op.create_table(
+        'exam_sessions',
+        sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
+        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+        sa.Column('grade', sa.Integer(), nullable=False),
+        sa.Column('subjects_json', sa.Text(), nullable=True),
+        sa.Column('questions_json', sa.Text(), nullable=False),
+        sa.Column('answers_json', sa.Text(), nullable=True),
+        sa.Column('scores_json', sa.Text(), nullable=True),
+        sa.Column('feedbacks_json', sa.Text(), nullable=True),
+        sa.Column('time_limit_seconds', sa.Integer(), server_default='900', nullable=True),
+        sa.Column('question_count', sa.Integer(), server_default='10', nullable=True),
+        sa.Column('started_at', sa.DateTime(), nullable=True),
+        sa.Column('ended_at', sa.DateTime(), nullable=True),
+        sa.Column('status', sa.String(20), server_default='active', nullable=True),
+        sa.Column('total_score', sa.Integer(), nullable=True),
+        sa.Column('xp_earned', sa.Integer(), nullable=True),
+    )
 
 
 def downgrade() -> None:
