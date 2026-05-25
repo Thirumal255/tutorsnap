@@ -2191,6 +2191,10 @@ def end_session(
             "total_sessions": total_sessions_now,
             "total_xp": current_user.total_xp or 0,
             "topics_mastered": topics_mastered_now,
+            "total_questions_answered": db.query(func.sum(SessionModel.questions_asked)).filter(
+                SessionModel.user_id == current_user.id,
+                SessionModel.status == "completed",
+            ).scalar() or 0,  # #47 effort badge track
             # #65 prompt versioning / #66 confidence
             "prompt_version": PROMPT_VERSION,
             "ai_confidence": _compute_ai_confidence(session.questions_asked, session.current_level)}

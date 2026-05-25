@@ -312,10 +312,11 @@ export default function StudentHome() {
       // Persist stats snapshot for achievement detection (task #29)
       if (user?.id) {
         localStorage.setItem(`tutorsnap_stats_${user.id}`, JSON.stringify({
-          total_sessions:  dash.total_sessions  || 0,
-          total_xp:        dash.total_xp        || 0,
-          streak_days:     dash.streak_days      || 0,
-          topics_mastered: dash.topics_mastered  || 0,
+          total_sessions:           dash.total_sessions           || 0,
+          total_xp:                 dash.total_xp                 || 0,
+          streak_days:              dash.streak_days               || 0,
+          topics_mastered:          dash.topics_mastered           || 0,
+          total_questions_answered: dash.total_questions_answered  || 0,  // #47
           saved_at: Date.now(),
         }))
       }

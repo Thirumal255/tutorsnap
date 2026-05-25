@@ -17,6 +17,10 @@ const BADGE_CHECKS = [
   { id: 'xp_2000',     icon: '🌠', title: 'XP Legend',       check: (c, p) => c.total_xp >= 2000 && (p?.total_xp ?? 0) < 2000 },
   { id: 'streak_3',    icon: '🔥', title: 'On Fire',         check: (c, p) => c.streak_days >= 3  && (p?.streak_days ?? 0) < 3  },
   { id: 'streak_7',    icon: '🌟', title: 'Week Warrior',    check: (c, p) => c.streak_days >= 7  && (p?.streak_days ?? 0) < 7  },
+  // Effort badges (#47) — rewarding persistence regardless of score
+  { id: 'effort_25',  icon: '💪', title: 'Persistent',   check: (c, p) => c.total_questions_answered >= 25  && (p?.total_questions_answered ?? 0) < 25  },
+  { id: 'effort_100', icon: '🔬', title: 'Gritty',        check: (c, p) => c.total_questions_answered >= 100 && (p?.total_questions_answered ?? 0) < 100 },
+  { id: 'effort_500', icon: '🎖️', title: 'Iron Will',     check: (c, p) => c.total_questions_answered >= 500 && (p?.total_questions_answered ?? 0) < 500 },
 ]
 
 const CONFETTI_COLORS = ['#FF3333','#00A2FF','#FFD700','#00D68F','#FF6B9D','#A78BFA']
@@ -75,10 +79,11 @@ export default function Summary() {
           // Update snapshot with new stats so next session starts fresh
           if (user?.id && res.data.total_sessions !== undefined) {
             localStorage.setItem(`tutorsnap_stats_${user.id}`, JSON.stringify({
-              total_sessions:  res.data.total_sessions  || 0,
-              total_xp:        res.data.total_xp        || 0,
-              streak_days:     res.data.streak_days      || 0,
-              topics_mastered: res.data.topics_mastered  || 0,
+              total_sessions:           res.data.total_sessions           || 0,
+              total_xp:                 res.data.total_xp                 || 0,
+              streak_days:              res.data.streak_days               || 0,
+              topics_mastered:          res.data.topics_mastered           || 0,
+              total_questions_answered: res.data.total_questions_answered  || 0,  // #47
               saved_at: Date.now(),
             }))
           }
@@ -113,10 +118,11 @@ export default function Summary() {
   const newBadges = useMemo(() => {
     if (!data) return []
     const curr = {
-      total_sessions:  data.total_sessions  || 0,
-      total_xp:        data.total_xp        || 0,
-      streak_days:     data.streak_days      || 0,
-      topics_mastered: data.topics_mastered  || 0,
+      total_sessions:           data.total_sessions           || 0,
+      total_xp:                 data.total_xp                 || 0,
+      streak_days:              data.streak_days               || 0,
+      topics_mastered:          data.topics_mastered           || 0,
+      total_questions_answered: data.total_questions_answered  || 0,  // #47
     }
     return BADGE_CHECKS.filter(b => b.check(curr, prevStats))
   }, [data, prevStats])
