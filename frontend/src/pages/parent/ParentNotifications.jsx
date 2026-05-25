@@ -18,13 +18,17 @@ function groupByDate(notifications) {
 }
 
 const TYPE_STYLE = {
-  flagged:  { border: 'border-l-[#FF3333]', icon: '🚩', unreadBg: 'bg-[#FF3333]/10' },
-  progress: { border: 'border-l-[#00CC88]', icon: '📈', unreadBg: 'bg-[#00CC88]/10' },
-  default:  { border: 'border-l-[#00A2FF]', icon: '🔔', unreadBg: 'bg-[#00A2FF]/10' },
+  flagged:      { border: 'border-l-[#FF3333]', icon: '🚩', unreadBg: 'bg-[#FF3333]/10' },
+  progress:     { border: 'border-l-[#00CC88]', icon: '📈', unreadBg: 'bg-[#00CC88]/10' },
+  session_tip:  { border: 'border-l-[#FFD700]', icon: '💡', unreadBg: 'bg-[#FFD700]/10' },  // #49 AI parent tip
+  parent_cheer: { border: 'border-l-[#FF6B9D]', icon: '💌', unreadBg: 'bg-[#FF6B9D]/10' },
+  default:      { border: 'border-l-[#00A2FF]', icon: '🔔', unreadBg: 'bg-[#00A2FF]/10' },
 }
 
 function getStyle(n) {
   if (n.type === 'flagged' || n.title?.toLowerCase().includes('flag')) return TYPE_STYLE.flagged
+  if (n.type === 'session_tip')  return TYPE_STYLE.session_tip
+  if (n.type === 'parent_cheer') return TYPE_STYLE.parent_cheer
   if (n.type === 'progress') return TYPE_STYLE.progress
   return TYPE_STYLE.default
 }

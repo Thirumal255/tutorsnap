@@ -711,6 +711,11 @@ export default function ParentChildDetail() {
                     </p>
                     <p className="text-[10px] text-[#8892B0]">{timeAgo(s.started_at)}</p>
                   </div>
+                  {s.is_practice && (
+                    <span className="text-xs bg-[#A78BFA]/20 text-[#A78BFA] border border-[#A78BFA]/30 px-2 py-0.5 rounded-full flex-shrink-0">
+                      🎮 Practice
+                    </span>
+                  )}
                   <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
                     s.status === 'completed'
                       ? 'bg-[#00CC88]/20 text-[#00CC88]'
