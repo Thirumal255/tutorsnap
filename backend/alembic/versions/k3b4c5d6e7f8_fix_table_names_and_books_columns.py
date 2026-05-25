@@ -33,9 +33,23 @@ def upgrade() -> None:
     op.execute("DROP TABLE IF EXISTS admin_audit_logs")
 
     # ── books: ingestion-control columns ─────────────────────────────────────
-    op.add_column('books', sa.Column('toc_pages', sa.String(20), nullable=True))
-    op.add_column('books', sa.Column('chapter_structure', sa.Text(), nullable=True))
-    op.add_column('books', sa.Column('chapter_limit', sa.Integer(), nullable=True))
+    # Use IF NOT EXISTS — columns may already exist on production from startup code
+    bind = op.get_bind()
+    if bind.dialect.name == 'sqlite':
+        # SQLite does not support IF NOT EXISTS on ADD COLUMN; check manually
+        inspector = sa.inspect(bind)
+        existing_cols = {c['name'] for c in inspector.get_columns('books')}
+        if 'toc_pages' not in existing_cols:
+            op.add_column('books', sa.Column('toc_pages', sa.String(20), nullable=True))
+        if 'chapter_structure' not in existing_cols:
+            op.add_column('books', sa.Column('chapter_structure', sa.Text(), nullable=True))
+        if 'chapter_limit' not in existing_cols:
+            op.add_column('books', sa.Column('chapter_limit', sa.Integer(), nullable=True))
+    else:
+        # PostgreSQL 9.6+ supports ADD COLUMN IF NOT EXISTS
+        op.execute("ALTER TABLE books ADD COLUMN IF NOT EXISTS toc_pages VARCHAR(20)")
+        op.execute("ALTER TABLE books ADD COLUMN IF NOT EXISTS chapter_structure TEXT")
+        op.execute("ALTER TABLE books ADD COLUMN IF NOT EXISTS chapter_limit INTEGER")
 
 
 def downgrade() -> None:
