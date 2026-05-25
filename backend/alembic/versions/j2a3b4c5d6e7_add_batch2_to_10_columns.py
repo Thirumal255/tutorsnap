@@ -47,79 +47,76 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── users: streak columns (Batch 7) ───────────────────────────────────────
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_freeze_available BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_freeze_used_at TIMESTAMP")
+    op.add_column('users', sa.Column('streak_days', sa.Integer(), server_default='0', nullable=True))
+    op.add_column('users', sa.Column('streak_freeze_available', sa.Boolean(), server_default='0', nullable=True))
+    op.add_column('users', sa.Column('streak_freeze_used_at', sa.DateTime(), nullable=True))
 
     # ── users: onboarding + daily goal (Batch 13/17/59) ──────────────────────
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS has_onboarded BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_goal_sessions INTEGER DEFAULT 1")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_mastery_goal INTEGER DEFAULT 0")
+    op.add_column('users', sa.Column('has_onboarded', sa.Boolean(), server_default='0', nullable=True))
+    op.add_column('users', sa.Column('daily_goal_sessions', sa.Integer(), server_default='1', nullable=True))
+    op.add_column('users', sa.Column('weekly_mastery_goal', sa.Integer(), server_default='0', nullable=True))
 
     # ── sessions: diagnostic columns (Batch 9) ────────────────────────────────
-    op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS diagnostic_phase BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS diagnostic_turn INTEGER DEFAULT 0")
+    op.add_column('sessions', sa.Column('diagnostic_phase', sa.Boolean(), server_default='0', nullable=True))
+    op.add_column('sessions', sa.Column('diagnostic_turn', sa.Integer(), server_default='0', nullable=True))
 
     # ── sessions: practice mode + A/B variant (Batches 9/10) ─────────────────
-    op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ab_variant VARCHAR(1)")
+    op.add_column('sessions', sa.Column('is_practice', sa.Boolean(), server_default='0', nullable=True))
+    op.add_column('sessions', sa.Column('ab_variant', sa.String(1), nullable=True))
 
     # ── sessions: prompt_version + confidence_score (Batch 10) ───────────────
-    op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS prompt_version VARCHAR(20)")
-    op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS confidence_score FLOAT")
+    op.add_column('sessions', sa.Column('prompt_version', sa.String(20), nullable=True))
+    op.add_column('sessions', sa.Column('confidence_score', sa.Float(), nullable=True))
 
     # ── topic_mastery: SM-2 ease factor (Batch 24) ───────────────────────────
-    op.execute("ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS ease_factor FLOAT DEFAULT 2.5")
+    op.add_column('topic_mastery', sa.Column('ease_factor', sa.Float(), server_default='2.5', nullable=True))
 
     # ── topic_mastery: study mode columns (Batches 5/40) ─────────────────────
-    op.execute("ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS studied BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS study_summary TEXT")
+    op.add_column('topic_mastery', sa.Column('studied', sa.Boolean(), server_default='0', nullable=True))
+    op.add_column('topic_mastery', sa.Column('study_summary', sa.Text(), nullable=True))
 
     # ── topic_mastery: mastery confirmed + session memory (Batches 38/40) ────
-    op.execute("ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS mastery_confirmed BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS session_memory TEXT")
+    op.add_column('topic_mastery', sa.Column('mastery_confirmed', sa.Boolean(), server_default='0', nullable=True))
+    op.add_column('topic_mastery', sa.Column('session_memory', sa.Text(), nullable=True))
 
     # ── ai_usage_logs table (Batch 26) ────────────────────────────────────────
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS ai_usage_logs (
-            id           SERIAL PRIMARY KEY,
-            student_id   INTEGER REFERENCES users(id),
-            endpoint     VARCHAR(80) NOT NULL,
-            model        VARCHAR(80),
-            input_tokens  INTEGER DEFAULT 0,
-            output_tokens INTEGER DEFAULT 0,
-            cost_usd     FLOAT DEFAULT 0.0,
-            called_at    TIMESTAMP DEFAULT NOW()
-        )
-    """)
+    op.create_table(
+        'ai_usage_logs',
+        sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
+        sa.Column('student_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+        sa.Column('endpoint', sa.String(80), nullable=False),
+        sa.Column('model', sa.String(80), nullable=True),
+        sa.Column('input_tokens', sa.Integer(), server_default='0', nullable=True),
+        sa.Column('output_tokens', sa.Integer(), server_default='0', nullable=True),
+        sa.Column('cost_usd', sa.Float(), server_default='0.0', nullable=True),
+        sa.Column('called_at', sa.DateTime(), nullable=True),
+    )
 
     # ── admin_audit_logs table (Batch 22) ─────────────────────────────────────
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS admin_audit_logs (
-            id           SERIAL PRIMARY KEY,
-            admin_id     INTEGER REFERENCES users(id),
-            admin_name   VARCHAR(200),
-            action       VARCHAR(100) NOT NULL,
-            target_type  VARCHAR(50),
-            target_id    INTEGER,
-            target_name  VARCHAR(200),
-            details      TEXT,
-            created_at   TIMESTAMP DEFAULT NOW()
-        )
-    """)
+    op.create_table(
+        'admin_audit_logs',
+        sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
+        sa.Column('admin_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+        sa.Column('admin_name', sa.String(200), nullable=True),
+        sa.Column('action', sa.String(100), nullable=False),
+        sa.Column('target_type', sa.String(50), nullable=True),
+        sa.Column('target_id', sa.Integer(), nullable=True),
+        sa.Column('target_name', sa.String(200), nullable=True),
+        sa.Column('details', sa.Text(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+    )
 
     # ── question_bank table (Batch 6) ─────────────────────────────────────────
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS question_bank (
-            id                   SERIAL PRIMARY KEY,
-            topic_id             INTEGER REFERENCES topics(id),
-            level                VARCHAR(5) NOT NULL,
-            question_text        TEXT NOT NULL,
-            expected_key_points  TEXT,
-            answer_format        VARCHAR(30),
-            created_at           TIMESTAMP DEFAULT NOW()
-        )
-    """)
+    op.create_table(
+        'question_bank',
+        sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
+        sa.Column('topic_id', sa.Integer(), sa.ForeignKey('topics.id'), nullable=True),
+        sa.Column('level', sa.String(5), nullable=False),
+        sa.Column('question_text', sa.Text(), nullable=False),
+        sa.Column('expected_key_points', sa.Text(), nullable=True),
+        sa.Column('answer_format', sa.String(30), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+    )
 
 
 def downgrade() -> None:

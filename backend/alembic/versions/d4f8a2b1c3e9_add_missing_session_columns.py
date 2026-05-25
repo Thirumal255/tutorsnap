@@ -23,11 +23,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Use IF NOT EXISTS so this is safe to run even if columns were added outside Alembic
-    op.execute("ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS expected_key_points TEXT")
-    op.execute("ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS answer_format VARCHAR(30)")
-    op.execute("ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS missed_key_points TEXT")
-    op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS level_question_count INTEGER DEFAULT 0")
+    op.add_column('session_turns', sa.Column('expected_key_points', sa.Text(), nullable=True))
+    op.add_column('session_turns', sa.Column('answer_format', sa.String(30), nullable=True))
+    op.add_column('session_turns', sa.Column('missed_key_points', sa.Text(), nullable=True))
+    op.add_column('sessions', sa.Column('level_question_count', sa.Integer(), server_default='0', nullable=True))
 
 
 def downgrade() -> None:

@@ -21,8 +21,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── TopicMastery spaced-rep columns ────────────────────────────────────
-    op.execute("ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS next_review_at TIMESTAMP")
-    op.execute("ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS review_interval_days INTEGER DEFAULT 1")
+    op.add_column('topic_mastery', sa.Column('next_review_at', sa.DateTime(), nullable=True))
+    op.add_column('topic_mastery', sa.Column('review_interval_days', sa.Integer(), server_default='1', nullable=True))
 
     # ── Exam sessions table ────────────────────────────────────────────────
     op.execute("""

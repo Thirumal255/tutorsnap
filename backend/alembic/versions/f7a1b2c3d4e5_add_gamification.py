@@ -27,12 +27,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── Users gamification columns ─────────────────────────────────────────
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS total_xp INTEGER DEFAULT 0")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_xp INTEGER DEFAULT 0")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_xp_reset_at TIMESTAMP")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS show_on_leaderboard BOOLEAN DEFAULT TRUE")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS buddy_name VARCHAR(50)")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS buddy_avatar VARCHAR(50)")
+    op.add_column('users', sa.Column('total_xp', sa.Integer(), server_default='0', nullable=True))
+    op.add_column('users', sa.Column('weekly_xp', sa.Integer(), server_default='0', nullable=True))
+    op.add_column('users', sa.Column('weekly_xp_reset_at', sa.DateTime(), nullable=True))
+    op.add_column('users', sa.Column('show_on_leaderboard', sa.Boolean(), server_default='1', nullable=True))
+    op.add_column('users', sa.Column('buddy_name', sa.String(50), nullable=True))
+    op.add_column('users', sa.Column('buddy_avatar', sa.String(50), nullable=True))
 
     # ── Weekly challenges table ────────────────────────────────────────────
     op.execute("""
