@@ -40,21 +40,26 @@ def upgrade():
     """)
 
     # 3. Drop old unique constraint on (student_name, topic_id)
-    op.drop_constraint('topic_mastery_student_name_topic_id_key', 'topic_mastery', type_='unique')
+    # SQLite does not support DROP/ADD CONSTRAINT via ALTER TABLE — skip on SQLite
+    bind = op.get_bind()
+    if bind.dialect.name != 'sqlite':
+        op.drop_constraint('topic_mastery_student_name_topic_id_key', 'topic_mastery', type_='unique')
 
-    # 4. Add new unique constraint on (student_id, topic_id)
-    op.create_unique_constraint(
-        'topic_mastery_student_id_topic_id_key',
-        'topic_mastery',
-        ['student_id', 'topic_id']
-    )
+        # 4. Add new unique constraint on (student_id, topic_id)
+        op.create_unique_constraint(
+            'topic_mastery_student_id_topic_id_key',
+            'topic_mastery',
+            ['student_id', 'topic_id']
+        )
 
 
 def downgrade():
-    op.drop_constraint('topic_mastery_student_id_topic_id_key', 'topic_mastery', type_='unique')
-    op.create_unique_constraint(
-        'topic_mastery_student_name_topic_id_key',
-        'topic_mastery',
-        ['student_name', 'topic_id']
-    )
+    bind = op.get_bind()
+    if bind.dialect.name != 'sqlite':
+        op.drop_constraint('topic_mastery_student_id_topic_id_key', 'topic_mastery', type_='unique')
+        op.create_unique_constraint(
+            'topic_mastery_student_name_topic_id_key',
+            'topic_mastery',
+            ['student_name', 'topic_id']
+        )
     op.drop_column('topic_mastery', 'student_id')
