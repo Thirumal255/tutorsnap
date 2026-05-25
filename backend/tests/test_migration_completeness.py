@@ -37,10 +37,12 @@ def _run_migrations_on_engine(engine):
     cfg = Config(ALEMBIC_INI)
     cfg.set_main_option("sqlalchemy.url", str(engine.url))
 
-    # Hand our connection to Alembic so it uses the same in-memory DB
-    with engine.begin() as conn:
+    # Inject the connection so env.py reuses our in-memory SQLite engine
+    # (must stay open for the duration — inspecting the same engine after works)
+    with engine.connect() as conn:
         cfg.attributes["connection"] = conn
         command.upgrade(cfg, "head")
+        conn.commit()          # flush WAL so the inspector can see the tables
 
 
 def _get_migrated_schema(engine):

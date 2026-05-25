@@ -42,19 +42,34 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # When running from tests, a pre-built connection is injected via
+    # cfg.attributes["connection"] so we share the in-memory SQLite engine.
+    pre_conn = config.attributes.get("connection", None)
 
-    with connectable.connect() as connection:
+    if pre_conn is not None:
+        # Use the caller-supplied connection (test mode)
+        is_sqlite = pre_conn.dialect.name == "sqlite"
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=pre_conn,
+            target_metadata=target_metadata,
+            render_as_batch=is_sqlite,   # batch mode required for SQLite ALTER ops
         )
-
         with context.begin_transaction():
             context.run_migrations()
+    else:
+        # Normal production path — create connection from alembic.ini / env
+        connectable = engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+            )
+            with context.begin_transaction():
+                context.run_migrations()
 
 
 if context.is_offline_mode():
