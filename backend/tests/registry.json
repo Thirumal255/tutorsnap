@@ -203,7 +203,15 @@
 
     { "id": "FLASH-004", "name": "Flashcard mark-unknown returns 200",
       "file": "test_exam_flashcard.py", "class": "TestFlashcard", "function": "test_flashcard_mark_unknown",
-      "marker": "exam", "feature": "flashcard-mode", "added_in": "exam-flashcard", "status": "active" }
+      "marker": "exam", "feature": "flashcard-mode", "added_in": "exam-flashcard", "status": "active" },
+
+    { "id": "MIG-001", "name": "All model columns have Alembic migrations",
+      "file": "test_migration_completeness.py", "class": null, "function": "test_migrations_cover_all_model_columns",
+      "marker": "other", "feature": "schema-integrity", "added_in": "migration-drift-fix", "status": "active" },
+
+    { "id": "MIG-002", "name": "Alembic migration history is linear (single head)",
+      "file": "test_migration_completeness.py", "class": null, "function": "test_migrations_are_linearly_ordered",
+      "marker": "other", "feature": "schema-integrity", "added_in": "migration-drift-fix", "status": "active" }
 
   ]
 }
