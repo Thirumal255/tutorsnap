@@ -22,11 +22,18 @@ depends_on = None
 
 
 def upgrade():
-    # 1. Add nullable student_id column
+    # 1. Add nullable student_id column (no inline FK — added separately below)
     op.add_column(
         'topic_mastery',
-        sa.Column('student_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True)
+        sa.Column('student_id', sa.Integer(), nullable=True)
     )
+
+    # Add FK constraint (SQLite does not support ALTER TABLE for constraints)
+    bind = op.get_bind()
+    if bind.dialect.name != 'sqlite':
+        op.create_foreign_key(
+            None, 'topic_mastery', 'users', ['student_id'], ['id']
+        )
 
     # 2. Backfill student_id by matching student_name to users.name
     op.execute("""

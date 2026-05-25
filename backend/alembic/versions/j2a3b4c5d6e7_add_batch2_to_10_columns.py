@@ -79,9 +79,9 @@ def upgrade() -> None:
     op.add_column('topic_mastery', sa.Column('mastery_confirmed', sa.Boolean(), server_default='0', nullable=True))
     op.add_column('topic_mastery', sa.Column('session_memory', sa.Text(), nullable=True))
 
-    # ── ai_usage_logs table (Batch 26) ────────────────────────────────────────
+    # ── ai_usage_log table (Batch 26) ─────────────────────────────────────────
     op.create_table(
-        'ai_usage_logs',
+        'ai_usage_log',
         sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
         sa.Column('student_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
         sa.Column('endpoint', sa.String(80), nullable=False),
@@ -92,9 +92,9 @@ def upgrade() -> None:
         sa.Column('called_at', sa.DateTime(), nullable=True),
     )
 
-    # ── admin_audit_logs table (Batch 22) ─────────────────────────────────────
+    # ── admin_audit_log table (Batch 22) ──────────────────────────────────────
     op.create_table(
-        'admin_audit_logs',
+        'admin_audit_log',
         sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
         sa.Column('admin_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
         sa.Column('admin_name', sa.String(200), nullable=True),
@@ -121,8 +121,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS question_bank")
-    op.execute("DROP TABLE IF EXISTS admin_audit_logs")
-    op.execute("DROP TABLE IF EXISTS ai_usage_logs")
+    op.execute("DROP TABLE IF EXISTS admin_audit_log")
+    op.execute("DROP TABLE IF EXISTS ai_usage_log")
 
     for col in ('session_memory', 'mastery_confirmed', 'study_summary', 'studied', 'ease_factor'):
         op.execute(f"ALTER TABLE topic_mastery DROP COLUMN IF EXISTS {col}")
