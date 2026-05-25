@@ -1143,6 +1143,35 @@ def admin_preview_book(
     }
 
 
+@app.post("/api/admin/books/{book_id}/publish")
+def publish_book(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Approve and publish a book that has finished ingestion (status 'review').
+    After this call the book is visible to students."""
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if book.ingestion_status not in ("review", "done"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Book is not ready for review (status: {book.ingestion_status})"
+        )
+    book.ingestion_status = "done"
+    _audit_log(
+        db, current_user,
+        action="publish_book",
+        target_type="book",
+        target_id=book.id,
+        target_name=book.title or book.filename,
+        details=f"Approved and published book: {book.chapter_count} chapters, {book.topic_count} topics",
+    )
+    db.commit()
+    return {"ok": True, "book_id": book.id, "title": book.title or book.filename}
+
+
 @app.delete("/api/books/{book_id}")
 def delete_book(
     book_id: int,

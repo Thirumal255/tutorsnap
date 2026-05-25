@@ -767,13 +767,14 @@ def run_ingestion(book_id: int, filepath: str, db=None):
             print("  Ingestion cancelled — partial data preserved in DB")
             return
 
-        book.ingestion_status = "done"
+        # Set to "review" so admin must approve before students see the book
+        book.ingestion_status = "review"
         book.chapter_count = len(chapter_map)
         book.topic_count = topic_count
         book.upload_stage = "done"
         book.upload_progress = 100
         db.commit()
-        print(f"\nIngestion complete: {len(chapter_map)} chapters, {topic_count} topics")
+        print(f"\nIngestion complete: {len(chapter_map)} chapters, {topic_count} topics — awaiting admin review")
 
         # Auto-trigger question bank generation in a background thread
         import threading

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   initUpload, completeUpload, uploadPDF, getTopics, getBooks,
-  deleteBook, cancelIngestion, retryIngestion, previewBook,
+  deleteBook, cancelIngestion, retryIngestion, previewBook, publishBook,
 } from '../../api/client'
 import { useUpload } from '../../context/UploadContext'
 
@@ -142,9 +142,12 @@ function IngestionProgressCard({ job, onCancel, onRetry, onDismiss }) {
 
           {/* Result / error messages */}
           {isDone && (
-            <div className="bg-[#00D68F]/10 border border-[#00D68F]/30 rounded-xl px-3 py-2 text-center">
+            <div className="bg-[#00D68F]/10 border border-[#00D68F]/30 rounded-xl px-3 py-2 text-center space-y-1">
               <p className="text-[#00D68F] text-sm font-bold font-fredoka">
-                🎉 {job.chapterCount} chapters · {job.topicCount} topics ready!
+                🎉 {job.chapterCount} chapters · {job.topicCount} topics extracted!
+              </p>
+              <p className="text-[#FFD700] text-xs">
+                👁 Preview the content below, then click <strong>Approve &amp; Publish</strong> to make it visible to students.
               </p>
             </div>
           )}
@@ -218,6 +221,7 @@ export default function AdminBooks() {
   const [confirmModal, setConfirmModal] = useState(null) // { type: 'delete'|'cancel', bookId, bookTitle }
   const [bookPreview, setBookPreview] = useState(null)   // #44: rich preview panel data
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [publishing, setPublishing] = useState(false)
 
   useEffect(() => { loadBooks() }, [])
 
@@ -389,6 +393,21 @@ export default function AdminBooks() {
       setError(e.response?.data?.detail || 'Preview failed.')
     } finally {
       setPreviewLoading(false)
+    }
+  }
+
+  // #44: Approve & publish book (review → done)
+  async function handlePublish(bookId) {
+    setPublishing(true)
+    try {
+      await publishBook(bookId)
+      // Update local preview state so button disappears
+      setBookPreview(prev => prev ? { ...prev, ingestion_status: 'done' } : prev)
+      await loadBooks()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Publish failed.')
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -608,7 +627,7 @@ export default function AdminBooks() {
             {[
               { label: 'Chapters', value: bookPreview.chapter_count, color: 'text-[#00A2FF]' },
               { label: 'Topics',   value: bookPreview.topic_count,   color: 'text-[#00D68F]' },
-              { label: 'Status',   value: bookPreview.ingestion_status === 'done' ? '✅ Ready' : bookPreview.upload_stage || bookPreview.ingestion_status, color: bookPreview.ingestion_status === 'done' ? 'text-[#00D68F]' : 'text-[#FFD700]' },
+              { label: 'Status',   value: bookPreview.ingestion_status === 'done' ? '✅ Live' : bookPreview.ingestion_status === 'review' ? '🔍 Awaiting Approval' : bookPreview.upload_stage || bookPreview.ingestion_status, color: bookPreview.ingestion_status === 'done' ? 'text-[#00D68F]' : bookPreview.ingestion_status === 'review' ? 'text-[#FFD700]' : 'text-[#8892B0]' },
             ].map(s => (
               <div key={s.label} className="blox-card p-3 text-center">
                 <p className={`text-lg font-fredoka font-bold ${s.color}`}>{s.value}</p>
@@ -616,6 +635,25 @@ export default function AdminBooks() {
               </div>
             ))}
           </div>
+
+          {/* Approve & publish banner — shown only while status is "review" */}
+          {bookPreview.ingestion_status === 'review' && (
+            <div className="flex items-center justify-between bg-[#FFD700]/10 border border-[#FFD700]/30 rounded-2xl px-4 py-3">
+              <div>
+                <p className="text-[#FFD700] text-sm font-bold font-fredoka">🔍 Ready for review</p>
+                <p className="text-[#8892B0] text-xs mt-0.5">
+                  Students cannot see this book yet. Check the chapters below, then approve to publish.
+                </p>
+              </div>
+              <button
+                onClick={() => handlePublish(bookPreview.book_id)}
+                disabled={publishing}
+                className="ml-4 flex-shrink-0 px-5 py-2 rounded-xl text-sm font-bold font-nunito bg-[#00D68F]/20 text-[#00D68F] border border-[#00D68F]/40 hover:bg-[#00D68F]/30 transition-all disabled:opacity-40"
+              >
+                {publishing ? 'Publishing…' : '✅ Approve & Publish'}
+              </button>
+            </div>
+          )}
 
           {/* Sample concepts & vocab */}
           {(bookPreview.sample_concepts.length > 0 || bookPreview.sample_vocab.length > 0) && (
@@ -765,10 +803,13 @@ export default function AdminBooks() {
                     </td>
                     <td className="px-4 py-3">
                       {b.status === 'done' && (
-                        <span className="text-xs bg-[#00D68F]/20 text-[#00D68F] border border-[#00D68F]/30 px-2 py-0.5 rounded-full">✓ Ready</span>
+                        <span className="text-xs bg-[#00D68F]/20 text-[#00D68F] border border-[#00D68F]/30 px-2 py-0.5 rounded-full">✓ Live</span>
+                      )}
+                      {b.status === 'review' && (
+                        <span className="text-xs bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/30 px-2 py-0.5 rounded-full">🔍 Review</span>
                       )}
                       {b.status === 'processing' && (
-                        <span className="text-xs bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/30 px-2 py-0.5 rounded-full animate-pulse">⚡ Processing</span>
+                        <span className="text-xs bg-[#00A2FF]/20 text-[#00A2FF] border border-[#00A2FF]/30 px-2 py-0.5 rounded-full animate-pulse">⚡ Processing</span>
                       )}
                       {b.status === 'failed' && (
                         <span className="text-xs bg-[#FF3333]/20 text-[#FF3333] border border-[#FF3333]/30 px-2 py-0.5 rounded-full">✕ Failed</span>
@@ -786,6 +827,15 @@ export default function AdminBooks() {
                         >
                           {previewLoading === b.book_id ? '…' : bookPreview?.book_id === b.book_id ? '✕ Preview' : '👁 Preview'}
                         </button>
+                        {b.status === 'review' && (
+                          <button
+                            onClick={() => handlePublish(b.book_id)}
+                            disabled={publishing}
+                            className="text-xs text-[#00D68F] hover:underline font-semibold disabled:opacity-40"
+                          >
+                            {publishing ? '…' : '✅ Approve'}
+                          </button>
+                        )}
                         {b.status === 'done' && (
                           <button onClick={() => loadTopicsForBook(b.book_id)}
                             className="text-xs text-[#00A2FF] hover:underline font-semibold">
