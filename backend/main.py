@@ -216,36 +216,10 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ab_variant VARCHAR(1)"
             ))
-            # Admin audit log — added in task #22
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS admin_audit_log (
-                    id SERIAL PRIMARY KEY,
-                    admin_id INTEGER REFERENCES users(id),
-                    admin_name VARCHAR(200),
-                    action VARCHAR(100) NOT NULL,
-                    target_type VARCHAR(50),
-                    target_id INTEGER,
-                    target_name VARCHAR(200),
-                    details TEXT,
-                    created_at TIMESTAMP DEFAULT NOW()
-                )
-            """))
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_audit_created_at ON admin_audit_log(created_at DESC)"
-            ))
-            # AI usage log table — added in task #26
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_usage_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    student_id INTEGER REFERENCES users(id),
-                    endpoint TEXT NOT NULL,
-                    model TEXT,
-                    input_tokens INTEGER DEFAULT 0,
-                    output_tokens INTEGER DEFAULT 0,
-                    cost_usd REAL DEFAULT 0.0,
-                    called_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
+            # admin_audit_log and ai_usage_log are now created by Alembic migrations
+            # (j2a3b4c5d6e7 / l4c5d6e7f8g9).  The old inline CREATE TABLE blocks
+            # are removed because the ai_usage_log one used AUTOINCREMENT (SQLite-
+            # only) which silently failed on PostgreSQL every time the app started.
             # Mastery quality gate (task #38)
             conn.execute(text(
                 "ALTER TABLE topic_mastery ADD COLUMN IF NOT EXISTS mastery_confirmed BOOLEAN DEFAULT FALSE"
