@@ -3693,6 +3693,75 @@ def get_active_sessions(
     return result
 
 
+@app.get("/api/session/{session_id}/replay")
+def get_session_replay(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all answered turns for a completed session so the student can review."""
+    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.user_id and session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your session")
+
+    topic = db.query(Topic).filter(Topic.id == session.topic_id).first()
+    chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
+
+    turns = (
+        db.query(SessionTurn)
+        .filter(
+            SessionTurn.session_id == session_id,
+            SessionTurn.student_answer.isnot(None),
+        )
+        .order_by(SessionTurn.turn_number)
+        .all()
+    )
+
+    import json as _json
+
+    turn_list = []
+    for t in turns:
+        key_points = []
+        if t.expected_key_points:
+            try:
+                key_points = _json.loads(t.expected_key_points)
+            except Exception:
+                key_points = [t.expected_key_points]
+
+        missed = []
+        if t.missed_key_points:
+            try:
+                missed = _json.loads(t.missed_key_points)
+            except Exception:
+                missed = []
+
+        turn_list.append({
+            "turn_number": t.turn_number,
+            "level": t.level,
+            "question_text": t.question_text,
+            "answer_format": t.answer_format,
+            "student_answer": t.student_answer,
+            "score": t.assessment_score,
+            "confidence_tag": t.confidence_tag,
+            "hint_tier_used": t.hint_tier_used,
+            "expected_key_points": key_points,
+            "missed_key_points": missed,
+        })
+
+    return {
+        "session_id": session_id,
+        "topic_title": topic.title if topic else "",
+        "chapter_title": chapter.title if chapter else "",
+        "status": session.status,
+        "current_level": session.current_level,
+        "questions_asked": session.questions_asked or 0,
+        "is_practice": bool(session.is_practice),
+        "turns": turn_list,
+    }
+
+
 @app.get("/api/session/{session_id}/info")
 def get_session_info(
     session_id: int,

@@ -16,6 +16,7 @@ import StudentStudyTime from './pages/student/StudentStudyTime'
 import StudentAchievements from './pages/student/StudentAchievements'
 import StudentMistakes from './pages/student/StudentMistakes'
 import TeachBack from './pages/student/TeachBack'
+import SessionReplay from './pages/SessionReplay'
 import ExamMode from './pages/ExamMode'
 import FlashcardMode from './pages/FlashcardMode'
 import InterleavedMode from './pages/InterleavedMode'
@@ -92,6 +93,12 @@ export default function App() {
             <Route path="/teach/:topicId" element={
               <ProtectedRoute roles={['student']}>
                 <TeachBack />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/session/:id/replay" element={
+              <ProtectedRoute roles={['student']}>
+                <SessionReplay />
               </ProtectedRoute>
             } />
 

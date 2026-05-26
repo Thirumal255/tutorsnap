@@ -350,6 +350,12 @@ export default function Summary() {
             🔄 Play Again
           </button>
           <button
+            onClick={() => navigate(`/session/${sessionId}/replay`)}
+            className="flex-1 py-3 rounded-full font-fredoka font-semibold text-[#A78BFA] border border-[#6C63FF]/40 hover:border-[#6C63FF] hover:bg-[#6C63FF]/10 transition-all"
+          >
+            📋 Review Answers
+          </button>
+          <button
             onClick={() => navigate('/home')}
             className="flex-1 py-3 rounded-full font-fredoka font-semibold text-[#8892B0] border border-[#2D2B5A] hover:border-[#00A2FF] hover:text-white transition-all"
           >

@@ -139,6 +139,7 @@ export const markAllNotificationsRead = () => api.post('/parent/notifications/ma
 // #62 Session recovery
 export const getActiveSessions  = () => api.get('/student/active-sessions')
 export const getSessionInfo     = (id) => api.get(`/session/${id}/info`)
+export const getSessionReplay   = (id) => api.get(`/session/${id}/replay`)
 
 // #27 Interleaved practice
 export const getInterleavedTopics = (limit = 6) => api.get('/student/interleaved-topics', { params: { limit } })
