@@ -665,7 +665,7 @@ def assess_answer(
         f"Apply the FORMAT RULE strictly.\n"
         f"Be GENEROUS — recognise correct answers even if brief or informally worded.\n\n"
         f"Return ONLY valid JSON — no markdown, no code fences, no text outside the JSON:\n"
-        f'{{"score": 85, "feedback": "...", "off_topic": false, "missed_key_points": []}}\n\n'
+        f'{{"score": 85, "feedback": "...", "off_topic": false, "missed_key_points": [], "misconception": null}}\n\n'
         f"IMPORTANT — score must reflect ONLY the correctness of the answer (0-100).\n"
         f"Do NOT apply any hint tier adjustment to the score — that is handled elsewhere.\n\n"
         f"If off_topic is TRUE:\n"
@@ -673,7 +673,8 @@ def assess_answer(
         f"  - feedback: warm, playful redirect. Use humour. Make them smile and want to try again.\n"
         f"  - Examples: 'Haha, I like the creativity! But maths hat on now — '\n"
         f"    'Oops, brain wandered! Let\\'s bring it back — '\n"
-        f"  - End by briefly restating what the question asks. Do NOT hint at the answer.\n\n"
+        f"  - End by briefly restating what the question asks. Do NOT hint at the answer.\n"
+        f"  - misconception: null\n\n"
         f"If off_topic is FALSE:\n"
         f"  - feedback: 1-2 sentences max, warm and encouraging, never condescending\n"
         f"  - CORRECT answers (score 80+): celebrate clearly — 'Spot on!', 'Exactly!', 'Perfect!', 'Brilliant!'\n"
@@ -688,7 +689,16 @@ def assess_answer(
         f"  - NEVER say 'Good effort' or 'I can see you tried' for clearly wrong answers — be honest but kind\n\n"
         f"Also return missed_key_points: list the reference key points the student's answer did NOT address.\n"
         f"  - Leave as [] if all points covered, or if off_topic is true, or if there are no reference points.\n"
-        f"  - Example: reference=[\"digits add to 9\",\"last digit 0 or 5\"], student said only last digit rule → missed=[\"digits add to 9\"]"
+        f"  - Example: reference=[\"digits add to 9\",\"last digit 0 or 5\"], student said only last digit rule → missed=[\"digits add to 9\"]\n\n"
+        f"Also return misconception: identify the specific wrong mental model or conceptual error (not just 'wrong answer').\n"
+        f"  - Only for wrong/partial answers (score < 80) where off_topic is FALSE\n"
+        f"  - 1 short phrase (max 10 words), diagnostic not prescriptive — name the confusion, not the fix\n"
+        f"  - Examples: 'Confused area formula with perimeter formula'\n"
+        f"              'Applied addition instead of multiplication'\n"
+        f"              'Thinks respiration and breathing are the same process'\n"
+        f"              'Used present tense instead of past tense'\n"
+        f"              'Calculated simple interest instead of compound interest'\n"
+        f"  - Set to null for correct answers (score 80+), off_topic answers, or when no clear misconception is identifiable"
     )
     transcription: str | None = None
     try:
@@ -715,22 +725,26 @@ def assess_answer(
         feedback = str(data.get("feedback", "Let's try again!"))
         off_topic = bool(data.get("off_topic", False))
         missed_key_points = list(data.get("missed_key_points") or [])
+        misconception = data.get("misconception") or None  # short diagnostic phrase or None
         if image_data:
             transcription = data.get("transcription") or None
     except Exception:
         return {"score": 0, "feedback": "Let's try again!", "confidence_tag": "struggling",
-                "off_topic": False, "missed_key_points": [], "transcription": None}
+                "off_topic": False, "missed_key_points": [], "transcription": None,
+                "misconception": None}
 
     if off_topic:
         # Off-topic answers: don't penalise, just ask them to try the same question again.
         return {"score": 0, "feedback": feedback, "confidence_tag": "off_topic",
-                "off_topic": True, "missed_key_points": [], "transcription": transcription}
+                "off_topic": True, "missed_key_points": [], "transcription": transcription,
+                "misconception": None}
 
     # Confidence tag is derived from RAW score BEFORE hint_tier penalty.
     # Critical: a student who nails the answer after hints must still be marked "confident"
     # so the session progresses. The penalty only affects the stored score quality metric.
     if raw_score >= 80:
         confidence_tag = "confident"
+        misconception = None  # suppress misconception on correct answers regardless
     elif raw_score >= 50:
         confidence_tag = "shaky"
     else:
@@ -748,7 +762,7 @@ def assess_answer(
 
     return {"score": score, "feedback": feedback, "confidence_tag": confidence_tag,
             "off_topic": False, "missed_key_points": missed_key_points,
-            "transcription": transcription}
+            "transcription": transcription, "misconception": misconception}
 
 
 def get_hint(topic, question: str, student_answer: str, hint_tier: int,

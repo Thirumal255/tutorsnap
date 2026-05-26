@@ -1976,7 +1976,8 @@ def submit_answer(
             "answer_format": next_answer_format,
             "turn_number": new_turn_number,
             "suggest_break": suggest_break,
-            "transcription": assessment.get("transcription")}
+            "transcription": assessment.get("transcription"),
+            "misconception": assessment.get("misconception")}
 
 
 @app.post("/api/session/sub-question")

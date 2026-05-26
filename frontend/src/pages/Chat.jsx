@@ -72,6 +72,7 @@ export default function Chat() {
   const [showWorkedExample, setShowWorkedExample] = useState(false)
   const [transcription, setTranscription] = useState(null)
   const [suggestBreak, setSuggestBreak] = useState(false)
+  const [misconception, setMisconception] = useState(null)  // misconception detection
 
   // Frustration detection (task #41) — 3 consecutive non-confident answers
   const [consecutiveWrong, setConsecutiveWrong] = useState(0)
@@ -266,6 +267,9 @@ export default function Chat() {
         setTimeout(() => setTranscription(null), 8000)
       }
 
+      // Misconception detection — show diagnostic tag for wrong/partial answers
+      setMisconception(d.misconception || null)
+
       // Break reminder (#12)
       if (d.suggest_break) {
         setSuggestBreak(true)
@@ -315,6 +319,7 @@ export default function Chat() {
         addMessage('buddy', `🚀 You levelled up to **${d.level_label}**! Here's your next challenge:\n\n${d.next_question}`)
         setHintTier(0)
         setShowHintButton(false)
+        setMisconception(null)
         if (d.answer_format) setAnswerFormat(d.answer_format)
       } else if (d.action === 'level_cap_reset') {
         if (d.concept_explanation) {
@@ -341,6 +346,7 @@ export default function Chat() {
         addMessage('buddy', d.next_question)
         setHintTier(0)
         setShowHintButton(false)
+        setMisconception(null)
         if (d.answer_format) setAnswerFormat(d.answer_format)
       }
 
@@ -630,6 +636,17 @@ export default function Chat() {
           <p className="text-[10px] text-[#00A2FF] font-semibold uppercase tracking-wide mb-0.5">We read your handwriting as:</p>
           <p className="text-xs text-white font-nunito italic">"{transcription}"</p>
           <p className="text-[10px] text-[#8892B0] mt-0.5">If this looks wrong, try typing your answer instead.</p>
+        </div>
+      )}
+
+      {/* Misconception detection callout */}
+      {misconception && (
+        <div className="flex-shrink-0 mx-4 mb-2 animate-bounce-in bg-[#FFB347]/10 border border-[#FFB347]/30 rounded-xl px-3 py-2 flex items-start gap-2">
+          <span className="text-sm flex-shrink-0 mt-0.5">🔍</span>
+          <div>
+            <p className="text-[10px] text-[#FFB347] font-semibold uppercase tracking-wide mb-0.5">Looks like</p>
+            <p className="text-xs text-white font-nunito">{misconception}</p>
+          </div>
         </div>
       )}
 
