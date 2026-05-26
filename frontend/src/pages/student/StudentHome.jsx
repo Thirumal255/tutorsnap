@@ -5,6 +5,7 @@ import {
   getStudentDashboard, startSession,
   getWeeklyChallenge, submitWeeklyChallenge,
   getReviewQueue, getDailyChallenge, submitDailyChallenge,
+  getCurrentGoal, setWeeklyGoal,
 } from '../../api/client'
 import { SUBJECT_COLOR } from './StudentLayout'
 import BuddyCustomizer from '../../components/BuddyCustomizer'
@@ -85,6 +86,153 @@ function GoalRing({ done, goal, color = null, label = 'today' }) {
         {label}
       </text>
     </svg>
+  )
+}
+
+// ── Goal Journal sub-component ───────────────────────────────────────────────
+const PHASE_CFG = {
+  early:   { icon: '🌱', label: 'This week\'s goal', color: 'text-[#00CC88]',  border: 'border-[#00CC88]/30',  bg: 'from-[#0D1B2A] to-[#0F2018]' },
+  midweek: { icon: '⚡', label: 'Halfway there!',    color: 'text-[#FFD700]',  border: 'border-[#FFD700]/30',  bg: 'from-[#0D1B2A] to-[#1A1600]' },
+  endweek: { icon: '🏁', label: 'Week wrap-up',      color: 'text-[#A78BFA]',  border: 'border-[#A78BFA]/30',  bg: 'from-[#0D1B2A] to-[#1A1640]' },
+}
+const STATUS_COLOR = { achieved: 'text-[#00CC88]', partial: 'text-[#FFD700]', missed: 'text-[#FF6B6B]', active: 'text-[#8892B0]' }
+
+function GoalJournalCard({ buddyEmoji = '🤖', buddyName = 'Buddy' }) {
+  const [goal, setGoal]         = useState(null)   // null = loading
+  const [inputMode, setInputMode] = useState(false)
+  const [text, setText]         = useState('')
+  const [saving, setSaving]     = useState(false)
+
+  useEffect(() => {
+    getCurrentGoal()
+      .then(r => setGoal(r.data))
+      .catch(() => setGoal({ has_goal: false }))
+  }, [])
+
+  async function handleSave() {
+    if (!text.trim() || saving) return
+    setSaving(true)
+    try {
+      await setWeeklyGoal({ goal_text: text.trim() })
+      const r = await getCurrentGoal()
+      setGoal(r.data)
+      setInputMode(false)
+      setText('')
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
+
+  if (!goal) return null   // loading
+
+  // ── No goal set yet ──────────────────────────────────────────────────────
+  if (!goal.has_goal) {
+    return (
+      <div className="blox-card border border-[#2D2B5A] p-4 animate-bounce-in">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#2D2B5A] flex items-center justify-center text-xl flex-shrink-0">🎯</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-[#8892B0] font-semibold uppercase tracking-widest">Goal Journal</p>
+            <p className="font-fredoka font-bold text-white mt-0.5 text-sm">What's your goal this week?</p>
+            <p className="text-xs text-[#8892B0] mt-0.5">Set a learning intention — {buddyName} will check in on you 💬</p>
+          </div>
+        </div>
+        {!inputMode ? (
+          <button
+            onClick={() => setInputMode(true)}
+            className="mt-3 w-full py-2 rounded-xl border border-[#6C63FF]/40 text-[#A78BFA] text-sm font-nunito font-semibold hover:bg-[#6C63FF]/10 transition-all"
+          >
+            + Set this week's goal
+          </button>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder={`e.g. "Master fractions" or "Do 3 sessions this week"`}
+              rows={2}
+              autoFocus
+              className="w-full bg-[#0D1B2A] border border-[#6C63FF]/30 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8892B0] focus:outline-none focus:border-[#6C63FF]/70 resize-none font-nunito"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setInputMode(false)} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs font-nunito">Cancel</button>
+              <button onClick={handleSave} disabled={saving || !text.trim()} className="flex-1 py-2 rounded-xl bg-[#6C63FF] text-white text-xs font-fredoka font-bold disabled:opacity-40">
+                {saving ? 'Saving…' : 'Set Goal 🎯'}
+              </button>
+            </div>
+          </div>
+        )}
+        {goal.last_goal && (
+          <div className="mt-3 pt-3 border-t border-[#2D2B5A]">
+            <p className="text-[10px] text-[#8892B0] mb-1">Last week: <span className="text-white">{goal.last_goal.goal_text}</span></p>
+            {goal.last_goal.result_note && (
+              <p className="text-xs text-[#CCD6F6] font-nunito italic">"{goal.last_goal.result_note}"</p>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Active goal ──────────────────────────────────────────────────────────
+  const cfg = PHASE_CFG[goal.phase] || PHASE_CFG.early
+  const sessions = goal.sessions_this_week || 0
+
+  return (
+    <div className={`blox-card border ${cfg.border} bg-gradient-to-br ${cfg.bg} p-4 animate-bounce-in`}>
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-2xl bg-[#0F0F23] flex items-center justify-center text-xl flex-shrink-0">{cfg.icon}</div>
+        <div className="flex-1 min-w-0">
+          <p className={`text-xs font-semibold uppercase tracking-widest ${cfg.color}`}>{cfg.label}</p>
+          <p className="font-fredoka font-bold text-white mt-0.5 text-sm leading-snug">"{goal.goal_text}"</p>
+          <p className="text-xs text-[#8892B0] mt-0.5">{sessions} session{sessions !== 1 ? 's' : ''} completed this week</p>
+        </div>
+        <button
+          onClick={() => setInputMode(i => !i)}
+          className="text-[10px] text-[#8892B0] hover:text-white flex-shrink-0 mt-1"
+        >
+          ✎
+        </button>
+      </div>
+
+      {/* Edit form */}
+      {inputMode && (
+        <div className="mt-3 space-y-2">
+          <textarea
+            value={text || goal.goal_text}
+            onChange={e => setText(e.target.value)}
+            rows={2}
+            autoFocus
+            className="w-full bg-[#0D1B2A] border border-[#6C63FF]/30 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8892B0] focus:outline-none focus:border-[#6C63FF]/70 resize-none font-nunito"
+          />
+          <div className="flex gap-2">
+            <button onClick={() => setInputMode(false)} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs font-nunito">Cancel</button>
+            <button onClick={handleSave} disabled={saving || !(text || goal.goal_text).trim()} className="flex-1 py-2 rounded-xl bg-[#6C63FF] text-white text-xs font-fredoka font-bold disabled:opacity-40">
+              {saving ? 'Saving…' : 'Update 🎯'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* End-of-week result note from Buddy */}
+      {goal.result_note && (
+        <div className="mt-3 bg-[#0F0F23] rounded-xl p-3 border border-[#2D2B5A] flex items-start gap-2">
+          <span className="text-base flex-shrink-0">{buddyEmoji}</span>
+          <div>
+            <p className="text-[10px] text-[#A78BFA] font-semibold uppercase tracking-wide mb-0.5">{buddyName} says</p>
+            <p className="text-xs text-[#CCD6F6] font-nunito leading-relaxed">{goal.result_note}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Status badge for evaluated goals */}
+      {goal.status !== 'active' && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className={`text-xs font-semibold ${STATUS_COLOR[goal.status]}`}>
+            {goal.status === 'achieved' ? '🏆 Goal achieved!' : goal.status === 'partial' ? '⚡ Partial progress' : '📚 Keep going next week'}
+          </span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -569,6 +717,9 @@ export default function StudentHome() {
 
       {!loading && data && (
         <>
+          {/* ── Goal Journal ──────────────────────────────────────────── */}
+          <GoalJournalCard buddyEmoji={buddyEmoji} buddyName={user?.buddy_name || 'Buddy'} />
+
           {/* ── Daily 3-minute challenge ──────────────────────────────── */}
           <DailyChallengeCard />
 

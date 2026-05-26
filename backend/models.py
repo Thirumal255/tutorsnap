@@ -332,3 +332,22 @@ class ExamSession(Base):
     status = Column(String(20), default="active")  # active / completed
     total_score = Column(Integer, nullable=True)   # 0-100 average
     xp_earned = Column(Integer, nullable=True)
+
+
+class StudentGoal(Base):
+    """Weekly learning goal set by the student."""
+    __tablename__ = "student_goals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    goal_text = Column(String(300), nullable=False)
+    topic_id = Column(Integer, ForeignKey("topics.id"), nullable=True)   # optional focus topic
+    week_start = Column(Date, nullable=False)                             # Monday of the goal week
+    created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(20), default="active")   # active | achieved | partial | missed
+    result_note = Column(Text, nullable=True)        # AI-generated end-of-week evaluation
+
+    __table_args__ = (UniqueConstraint("user_id", "week_start"),)
+
+    user  = relationship("User", foreign_keys=[user_id])
+    topic = relationship("Topic", foreign_keys=[topic_id])

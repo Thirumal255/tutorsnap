@@ -165,3 +165,7 @@ export const explainTopicForParent = (topicId) => api.get(`/parent/topics/${topi
 // Teach-it-back (Feynman mode)
 export const teachChat = (topicId, messages, turnNumber) =>
   api.post(`/topics/${topicId}/teach-chat`, { messages, turn_number: turnNumber })
+
+// Student Goal Journal
+export const getCurrentGoal = ()     => api.get('/student/goals/current')
+export const setWeeklyGoal  = (data) => api.post('/student/goals', data)

@@ -25,7 +25,7 @@ from models import (
     Book, Chapter, Topic, Session as SessionModel, SessionTurn, TopicMastery,
     AppSettings, User, ParentStudentLink, Notification,
     WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
-    AIUsageLog, AdminAuditLog,
+    AIUsageLog, AdminAuditLog, StudentGoal,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -211,6 +211,20 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_challenge_date DATE"
             ))
+            # Student Goal Journal
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS student_goals (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    goal_text VARCHAR(300) NOT NULL,
+                    topic_id INTEGER REFERENCES topics(id),
+                    week_start DATE NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    status VARCHAR(20) DEFAULT 'active',
+                    result_note TEXT,
+                    UNIQUE(user_id, week_start)
+                )
+            """))
             # Practice mode (#58) — low-stakes sessions with no mastery/XP updates
             conn.execute(text(
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE"
@@ -4085,6 +4099,169 @@ def submit_daily_challenge(
         "correct": correct,
         "misconception": assessment.get("misconception"),
         "xp_earned": xp_earned,
+    }
+
+
+# ─── Student Goal Journal ──────────────────────────────────────────────────────
+
+class GoalCreateRequest(BaseModel):
+    goal_text: str
+    topic_id: Optional[int] = None
+
+
+def _week_start(dt=None):
+    """Return the Monday of the current (or given) week as a date."""
+    d = (dt or datetime.utcnow()).date()
+    return d - timedelta(days=d.weekday())
+
+
+@app.post("/api/student/goals")
+def set_weekly_goal(
+    req: GoalCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create or replace this week's learning goal."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    text_clean = req.goal_text.strip()
+    if not text_clean:
+        raise HTTPException(status_code=422, detail="Goal text cannot be empty")
+
+    ws = _week_start()
+    existing = (
+        db.query(StudentGoal)
+        .filter(StudentGoal.user_id == current_user.id, StudentGoal.week_start == ws)
+        .first()
+    )
+    if existing:
+        existing.goal_text = text_clean
+        existing.topic_id = req.topic_id
+        existing.status = "active"
+        existing.result_note = None
+        db.commit()
+        goal = existing
+    else:
+        goal = StudentGoal(
+            user_id=current_user.id,
+            goal_text=text_clean,
+            topic_id=req.topic_id,
+            week_start=ws,
+        )
+        db.add(goal)
+        db.commit()
+        db.refresh(goal)
+
+    return {"id": goal.id, "goal_text": goal.goal_text, "week_start": goal.week_start.isoformat()}
+
+
+@app.get("/api/student/goals/current")
+def get_current_goal(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return this week's goal plus a phase-aware status card.
+    Phase logic (UTC):
+      Mon–Wed  → early:   motivational nudge
+      Thu–Fri  → midweek: progress check-in
+      Sat–Sun  → endweek: AI evaluation (lazy, cached in result_note)
+    """
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    ws = _week_start()
+    goal = (
+        db.query(StudentGoal)
+        .filter(StudentGoal.user_id == current_user.id, StudentGoal.week_start == ws)
+        .first()
+    )
+
+    if not goal:
+        # Also surface last week's goal for context
+        last_ws = ws - timedelta(days=7)
+        last_goal = (
+            db.query(StudentGoal)
+            .filter(StudentGoal.user_id == current_user.id, StudentGoal.week_start == last_ws)
+            .first()
+        )
+        return {
+            "has_goal": False,
+            "last_goal": {
+                "goal_text": last_goal.goal_text,
+                "status": last_goal.status,
+                "result_note": last_goal.result_note,
+            } if last_goal else None,
+        }
+
+    today = datetime.utcnow().date()
+    weekday = today.weekday()   # 0=Mon … 6=Sun
+
+    # Count sessions completed this week
+    week_start_dt = datetime.utcnow().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(days=weekday)
+    sessions_this_week = (
+        db.query(func.count(SessionModel.id))
+        .filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "completed",
+            SessionModel.started_at >= week_start_dt,
+        )
+        .scalar() or 0
+    )
+
+    # Determine phase
+    if weekday <= 2:
+        phase = "early"
+    elif weekday <= 4:
+        phase = "midweek"
+    else:
+        phase = "endweek"
+
+    # Lazy AI evaluation on Sat/Sun
+    if phase == "endweek" and not goal.result_note:
+        from session_engine import call_claude, _SONNET
+
+        topic = db.query(Topic).filter(Topic.id == goal.topic_id).first() if goal.topic_id else None
+        mastery_note = ""
+        if topic:
+            m = (
+                db.query(TopicMastery)
+                .filter(TopicMastery.student_id == current_user.id, TopicMastery.topic_id == goal.topic_id)
+                .first()
+            )
+            if m:
+                mastery_note = f"Their mastery level for this topic is now {m.mastery_level}."
+
+        prompt = (
+            f"A student set this weekly learning goal: \"{goal.goal_text}\"\n"
+            f"They completed {sessions_this_week} practice session(s) this week. {mastery_note}\n\n"
+            f"Write a warm, personal 2-sentence end-of-week message to the student. "
+            f"If they did well (3+ sessions or strong mastery), celebrate. "
+            f"If they fell short, be encouraging without being harsh. "
+            f"End with one specific suggestion for next week. "
+            f"Address them directly (use 'you'). Keep it under 60 words."
+        )
+        result_note = call_claude(
+            "You are Buddy, a warm and encouraging AI tutor.", prompt,
+            max_tokens=150, model=_SONNET,
+        )
+        goal.result_note = result_note
+        goal.status = "achieved" if sessions_this_week >= 3 else ("partial" if sessions_this_week >= 1 else "missed")
+        db.commit()
+
+    return {
+        "has_goal": True,
+        "id": goal.id,
+        "goal_text": goal.goal_text,
+        "week_start": goal.week_start.isoformat(),
+        "status": goal.status,
+        "phase": phase,
+        "sessions_this_week": sessions_this_week,
+        "result_note": goal.result_note,
+        "topic_id": goal.topic_id,
     }
 
 
