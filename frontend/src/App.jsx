@@ -15,6 +15,7 @@ import StudentProgress from './pages/student/StudentProgress'
 import StudentStudyTime from './pages/student/StudentStudyTime'
 import StudentAchievements from './pages/student/StudentAchievements'
 import StudentMistakes from './pages/student/StudentMistakes'
+import TeachBack from './pages/student/TeachBack'
 import ExamMode from './pages/ExamMode'
 import FlashcardMode from './pages/FlashcardMode'
 import InterleavedMode from './pages/InterleavedMode'
@@ -85,6 +86,12 @@ export default function App() {
             <Route path="/interleaved" element={
               <ProtectedRoute roles={['student']}>
                 <InterleavedMode />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/teach/:topicId" element={
+              <ProtectedRoute roles={['student']}>
+                <TeachBack />
               </ProtectedRoute>
             } />
 

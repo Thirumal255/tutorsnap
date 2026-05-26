@@ -1465,6 +1465,123 @@ def study_chat(
     return {"reply": reply, "show_nudge": nudge}
 
 
+class TeachChatRequest(BaseModel):
+    messages: list   # [{role: "user"|"assistant", content: str}]
+    turn_number: int = 1   # how many student turns so far (1-indexed)
+
+
+@app.post("/api/topics/{topic_id}/teach-chat")
+def teach_chat(
+    topic_id: int,
+    req: TeachChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Teach-it-back (Feynman) mode.
+    Buddy plays a curious student who knows nothing — the real student must explain
+    the topic. After 3 student turns Buddy switches to assessment mode and returns
+    a score, gap list, and XP reward.
+    """
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    topic = db.query(Topic).filter(Topic.id == topic_id).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
+
+    from session_engine import build_topic_context, call_claude, get_subject_label, _SONNET
+    import anthropic as _anthropic
+    subject_label = get_subject_label(topic)
+    book = getattr(topic.chapter, "book", None) if topic.chapter else None
+    grade = getattr(book, "grade", None) or 7
+
+    MAX_STUDENT_TURNS = 3
+    is_assessment_turn = req.turn_number > MAX_STUDENT_TURNS
+
+    if not is_assessment_turn:
+        # ── Probing phase: Buddy is a curious student ──────────────────────
+        questions_left = MAX_STUDENT_TURNS - req.turn_number + 1
+        system = (
+            f"You are playing the role of a curious {subject_label} student in Grade {grade} "
+            f"who knows NOTHING about '{topic.title}'. "
+            f"A fellow student is teaching you this topic. Your job:\n"
+            f"1. Listen to their explanation carefully.\n"
+            f"2. Ask ONE short, genuine follow-up question about something they said OR "
+            f"   something important about the topic they haven't explained yet.\n"
+            f"3. Keep your reply SHORT — one sentence of acknowledgement + one question only.\n"
+            f"4. Do NOT reveal that you already know the answer. Stay in character.\n"
+            f"5. Do NOT explain the topic yourself — only ask questions.\n\n"
+            f"You have {questions_left} question(s) left before the session ends.\n\n"
+            f"Topic reference (for you to know what to probe, NOT to share with the student):\n"
+            f"{build_topic_context(topic)}"
+        )
+        client = _anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+        resp = client.messages.create(
+            model=_SONNET,
+            max_tokens=200,
+            system=system,
+            messages=req.messages[-8:],
+        )
+        reply = resp.content[0].text.strip()
+        return {"reply": reply, "is_done": False}
+
+    else:
+        # ── Assessment phase: Buddy evaluates the full explanation ──────────
+        # Build a transcript of only the student's turns for assessment
+        student_turns = [m["content"] for m in req.messages if m.get("role") == "user"]
+        student_explanation = "\n\n".join(
+            f"[Turn {i+1}] {t}" for i, t in enumerate(student_turns)
+        )
+
+        assessment_prompt = (
+            f"A student has just finished teaching the topic '{topic.title}' "
+            f"({subject_label}, Grade {grade}). Below is everything they said:\n\n"
+            f"--- STUDENT EXPLANATION ---\n{student_explanation}\n---\n\n"
+            f"Topic reference (ground truth):\n{build_topic_context(topic)}\n\n"
+            f"Evaluate their explanation. Respond ONLY with valid JSON — no markdown, no commentary:\n"
+            f'{{"score": 75, "summary": "One warm sentence praising what they got right.", '
+            f'"gaps": ["gap 1 (max 8 words)", "gap 2"], "xp_earned": 20}}\n\n'
+            f"Rules:\n"
+            f"- score: 0-100 integer. 80+ = excellent, 60-79 = good, 40-59 = partial, <40 = needs work.\n"
+            f"- summary: 1-2 warm encouraging sentences highlighting what they did well.\n"
+            f"- gaps: list of 0-3 KEY concepts they missed or got wrong (short phrases, max 8 words each). "
+            f"  Empty list [] if score >= 85.\n"
+            f"- xp_earned: 20 base if score >= 40; 30 if score >= 70; 40 if score >= 90. else 10."
+        )
+
+        assessment_json = call_claude(
+            "You are a strict but fair examiner. Return ONLY valid JSON, nothing else.",
+            assessment_prompt,
+            max_tokens=400,
+            model=_SONNET,
+        )
+
+        import json as _json
+        try:
+            data = _json.loads(assessment_json)
+        except Exception:
+            # Fallback
+            data = {"score": 60, "summary": "Good effort explaining the topic!", "gaps": [], "xp_earned": 20}
+
+        score = int(data.get("score", 60))
+        xp = int(data.get("xp_earned", 20))
+
+        # Award XP to the student
+        current_user.total_xp = (current_user.total_xp or 0) + xp
+        current_user.weekly_xp = (current_user.weekly_xp or 0) + xp
+        db.commit()
+
+        return {
+            "is_done": True,
+            "score": score,
+            "summary": data.get("summary", ""),
+            "gaps": data.get("gaps", []),
+            "xp_earned": xp,
+        }
+
+
 @app.post("/api/topics/{topic_id}/study-complete")
 def complete_study(
     topic_id: int,

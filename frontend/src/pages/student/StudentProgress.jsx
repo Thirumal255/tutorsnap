@@ -29,7 +29,7 @@ function MasteryBadge({ level, flagged }) {
   return <span className={`text-xs font-semibold ${cfg.color}`}>{cfg.icon} {cfg.label}</span>
 }
 
-function ChapterAccordion({ chapter, onPlay, onStudy, starting }) {
+function ChapterAccordion({ chapter, onPlay, onStudy, onTeach, starting }) {
   const [open, setOpen] = useState(false)
   const pctMastered = chapter.total_topics
     ? Math.round((chapter.mastered / chapter.total_topics) * 100) : 0
@@ -73,6 +73,12 @@ function ChapterAccordion({ chapter, onPlay, onStudy, starting }) {
                   <button onClick={() => onStudy(t.id)}
                     className="flex-shrink-0 text-xs py-1.5 px-3 rounded-xl font-nunito font-bold bg-[#C77DFF]/20 text-[#C77DFF] border border-[#C77DFF]/40 hover:bg-[#C77DFF]/30 transition-all">
                     📖 Study
+                  </button>
+                )}
+                {t.studied && (
+                  <button onClick={() => onTeach(t.id, t.title)}
+                    className="flex-shrink-0 text-xs py-1.5 px-3 rounded-xl font-nunito font-bold bg-[#6C63FF]/20 text-[#A78BFA] border border-[#6C63FF]/40 hover:bg-[#6C63FF]/30 transition-all">
+                    🎤 Teach
                   </button>
                 )}
                 <button onClick={() => onPlay(t.id)} disabled={starting === t.id || !t.studied}
@@ -238,6 +244,11 @@ export default function StudentProgress() {
     navigate(`/study/${topicId}`)
   }
 
+  function handleTeach(topicId, topicTitle) {
+    sessionStorage.setItem(`teach_topic_${topicId}`, topicTitle)
+    navigate(`/teach/${topicId}`)
+  }
+
   async function handlePlay(topicId) {
     setStarting(topicId)
     try {
@@ -384,7 +395,7 @@ export default function StudentProgress() {
                 <p className="text-xs text-[#8892B0] uppercase tracking-widest font-semibold px-1">📖 {book.title}</p>
               )}
               {book.chapters.map(ch => (
-                <ChapterAccordion key={ch.id} chapter={ch} onPlay={handlePlay} onStudy={handleStudy} starting={starting} />
+                <ChapterAccordion key={ch.id} chapter={ch} onPlay={handlePlay} onStudy={handleStudy} onTeach={handleTeach} starting={starting} />
               ))}
             </div>
           ))}

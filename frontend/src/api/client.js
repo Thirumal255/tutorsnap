@@ -160,3 +160,7 @@ export const submitDailyChallenge = (data) => api.post('/student/daily-challenge
 
 // Parent topic explainer
 export const explainTopicForParent = (topicId) => api.get(`/parent/topics/${topicId}/explain`)
+
+// Teach-it-back (Feynman mode)
+export const teachChat = (topicId, messages, turnNumber) =>
+  api.post(`/topics/${topicId}/teach-chat`, { messages, turn_number: turnNumber })
