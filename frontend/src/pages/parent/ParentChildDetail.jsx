@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getChildDetail, getChildSessions, getChildWeeklyReport, setChildGoal, encourageChild, getChildDigest } from '../../api/client'
+import { getChildDetail, getChildSessions, getChildWeeklyReport, setChildGoal, encourageChild, getChildDigest, explainTopicForParent } from '../../api/client'
 
 // ── Support tips per subject (task #33) ─────────────────────────────────────
 const SUPPORT_TIPS = {
@@ -205,6 +205,85 @@ function WeeklyReportCard({ report }) {
   )
 }
 
+// ── Markdown renderer (bold + bullet handling) ───────────────────────────────
+function SimpleMarkdown({ text }) {
+  if (!text) return null
+  return (
+    <div className="space-y-1.5">
+      {text.split('\n').map((line, i) => {
+        // Bold headings like **What is this?**
+        const boldLine = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        const isBullet = /^[-•]\s/.test(line.trim())
+        return (
+          <p
+            key={i}
+            className={`text-xs font-nunito leading-relaxed ${isBullet ? 'pl-3 text-[#CCD6F6]' : 'text-white'}`}
+            dangerouslySetInnerHTML={{ __html: boldLine }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Topic Explainer Drawer ────────────────────────────────────────────────────
+function TopicExplainerDrawer({ topicId, topicTitle, onClose }) {
+  const [loading, setLoading] = useState(true)
+  const [data, setData]       = useState(null)
+  const [error, setError]     = useState(false)
+
+  useEffect(() => {
+    explainTopicForParent(topicId)
+      .then(r => setData(r.data))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [topicId])
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 z-40"
+        onClick={onClose}
+      />
+      {/* Drawer */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 max-h-[80vh] overflow-y-auto bg-[#0F0F23] border-t border-[#2D2B5A] rounded-t-2xl p-5 space-y-4">
+        {/* Handle */}
+        <div className="w-10 h-1 bg-[#2D2B5A] rounded-full mx-auto" />
+
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6C63FF] to-[#00A2FF] flex items-center justify-center text-lg flex-shrink-0">
+            📘
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] text-[#A78BFA] font-semibold uppercase tracking-widest">Parent Guide</p>
+            <p className="text-sm font-fredoka font-bold text-white leading-tight mt-0.5">{topicTitle}</p>
+          </div>
+          <button onClick={onClose} className="text-[#8892B0] hover:text-white text-lg leading-none flex-shrink-0">✕</button>
+        </div>
+
+        {loading && (
+          <div className="text-center py-8">
+            <div className="text-3xl animate-bounce mb-2">📘</div>
+            <p className="text-[#8892B0] text-sm">Generating your parent guide…</p>
+          </div>
+        )}
+
+        {error && (
+          <p className="text-sm text-[#FF6B6B] text-center py-4">Couldn't load the guide — try again later.</p>
+        )}
+
+        {data && (
+          <div className="bg-[#16213E] rounded-xl p-4 border border-[#2D2B5A]">
+            <SimpleMarkdown text={data.explanation} />
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 export default function ParentChildDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -228,6 +307,8 @@ export default function ParentChildDetail() {
   const [digest, setDigest]             = useState(null)
   const [digestLoading, setDigestLoading] = useState(false)
   const [digestOpen, setDigestOpen]     = useState(false)
+  // Topic explainer drawer
+  const [explainTopic, setExplainTopic] = useState(null)  // {id, title}
 
   useEffect(() => {
     Promise.all([
@@ -505,6 +586,12 @@ export default function ParentChildDetail() {
                       <p className="text-sm font-semibold text-white truncate">{m.topic_title}</p>
                       <p className="text-xs text-[#8892B0]">{m.chapter_title}</p>
                     </div>
+                    <button
+                      onClick={() => setExplainTopic({ id: m.topic_id, title: m.topic_title })}
+                      className="flex-shrink-0 text-[10px] text-[#A78BFA] border border-[#A78BFA]/30 bg-[#A78BFA]/10 rounded-lg px-2 py-1 hover:bg-[#A78BFA]/20 transition-all font-semibold"
+                    >
+                      📘 Explain
+                    </button>
                   </div>
                   {/* Support tip (task #33) */}
                   <div className="mt-2 bg-[#00A2FF]/5 border border-[#00A2FF]/20 rounded-xl px-3 py-2 flex items-start gap-2">
@@ -678,6 +765,12 @@ export default function ParentChildDetail() {
                 {m.flagged_for_review && (
                   <span className="text-[#FF6B6B] text-sm flex-shrink-0">🚩</span>
                 )}
+                <button
+                  onClick={() => setExplainTopic({ id: m.topic_id, title: m.topic_title })}
+                  className="flex-shrink-0 text-[10px] text-[#A78BFA] border border-[#A78BFA]/30 bg-[#A78BFA]/10 rounded-lg px-2 py-1 hover:bg-[#A78BFA]/20 transition-all font-semibold"
+                >
+                  📘
+                </button>
               </div>
             ))
           )}
@@ -737,6 +830,15 @@ export default function ParentChildDetail() {
             </>
           )}
         </div>
+      )}
+
+      {/* ── Topic Explainer Drawer ─────────────────────────── */}
+      {explainTopic && (
+        <TopicExplainerDrawer
+          topicId={explainTopic.id}
+          topicTitle={explainTopic.title}
+          onClose={() => setExplainTopic(null)}
+        />
       )}
     </div>
   )

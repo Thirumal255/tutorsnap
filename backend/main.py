@@ -1342,6 +1342,63 @@ def explain_topic(
     return {"topic_id": topic_id, "topic_title": topic.title, "explanation": explanation}
 
 
+@app.get("/api/parent/topics/{topic_id}/explain")
+def explain_topic_for_parent(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Parent-facing topic explainer: plain-English overview of what the topic covers
+    and concrete at-home support tips — no jargon, no student-level detail.
+    """
+    if current_user.role not in ("parent", "admin"):
+        raise HTTPException(status_code=403, detail="Parents only")
+
+    topic = db.query(Topic).filter(Topic.id == topic_id).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    topic.chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
+
+    from session_engine import build_topic_context, call_claude, get_subject_label, _SONNET
+    subject_label = get_subject_label(topic)
+    book = getattr(topic.chapter, "book", None) if topic.chapter else None
+    grade = getattr(book, "grade", None) or 7
+
+    system = (
+        f"You are a helpful education assistant writing for a parent, not a student. "
+        f"Your job is to explain what their child is learning in {subject_label} (Grade {grade}) "
+        f"in plain everyday language — no jargon, no formulas unless unavoidable. "
+        f"You must stay strictly within the topic content provided below.\n\n"
+        f"{build_topic_context(topic)}"
+    )
+
+    user_prompt = (
+        "A parent wants to understand what their child is studying. "
+        "Write a parent guide with this exact structure:\n\n"
+        "📘 **What is this topic about?** — 2-3 sentences in everyday language. "
+        "Imagine explaining to someone with no subject background.\n\n"
+        "🎯 **What will my child be able to do?** — 3 bullet points describing the skills "
+        "or knowledge their child should gain (start each with an action verb).\n\n"
+        "🏠 **How can I help at home?** — 3 specific, practical suggestions a parent can do "
+        "today or this week to support their child. Be concrete and activity-based.\n\n"
+        "❓ **Good questions to ask your child** — 3 conversation-starter questions "
+        "that naturally check understanding without feeling like a test.\n\n"
+        "Keep the tone warm, supportive, and brief. "
+        "Do not use technical terms without a simple explanation in brackets. "
+        "Do not include anything outside the topic content above."
+    )
+
+    explanation = call_claude(system, user_prompt, max_tokens=800, model=_SONNET)
+    return {
+        "topic_id": topic_id,
+        "topic_title": topic.title,
+        "subject": subject_label,
+        "grade": grade,
+        "explanation": explanation,
+    }
+
+
 _PRACTICE_NUDGE = (
     "\n\n---\n"
     "🎯 **Feeling confident?** You've been studying for a while — that's great! "
@@ -2933,6 +2990,7 @@ def parent_get_child_detail(
         if m.mastery_level in ("L3", "L4", "L5"):
             subject_map[subj]["mastered"] += 1
         topic_mastery_list.append({
+            "topic_id": m.topic_id,
             "topic_title": topic.title if topic else "", "chapter_title": chapter.title if chapter else "",
             "subject": subj,
             "mastery_level": m.mastery_level, "level_label": level_label(m.mastery_level),
@@ -2958,9 +3016,11 @@ def parent_get_child_detail(
             chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first() if topic else None
             book = db.query(Book).filter(Book.id == chapter.book_id).first() if chapter else None
             flagged_topics.append({
+                "topic_id": m.topic_id,
                 "topic_title": topic.title if topic else "",
                 "chapter_title": chapter.title if chapter else "",
                 "subject": book.subject if book else "Other",
+                "mastery_level": m.mastery_level,
                 "message": (f"{child.name} needed extra help with {topic.title if topic else 'this topic'}. "
                             "Consider reviewing it together."),
             })

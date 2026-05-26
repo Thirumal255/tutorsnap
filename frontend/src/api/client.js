@@ -157,3 +157,6 @@ export const publishWeeklyChallenge = (data) => api.post('/admin/weekly-challeng
 // Daily 3-minute challenge
 export const getDailyChallenge    = ()     => api.get('/student/daily-challenge')
 export const submitDailyChallenge = (data) => api.post('/student/daily-challenge/submit', data)
+
+// Parent topic explainer
+export const explainTopicForParent = (topicId) => api.get(`/parent/topics/${topicId}/explain`)
