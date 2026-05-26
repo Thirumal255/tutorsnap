@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as _date
 import os
 import shutil
 from dotenv import load_dotenv
@@ -208,6 +208,9 @@ def run_migrations():
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_mastery_goal INTEGER DEFAULT 0"
             ))
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_challenge_date DATE"
+            ))
             # Practice mode (#58) — low-stakes sessions with no mastery/XP updates
             conn.execute(text(
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE"
@@ -339,7 +342,6 @@ def _compute_streak(db: Session, user: User, today: "date | None" = None) -> int
     - Returns the new streak count and mutates user.streak_days /
       user.streak_freeze_available in place (caller must commit).
     """
-    from datetime import date as _date
     _today = today or datetime.utcnow().date()
 
     # Fetch all distinct session dates in the last 365 days (generous window)
@@ -3696,6 +3698,148 @@ def get_transfer_question(
     result["topic_a_mastery"] = ma.mastery_level
     result["topic_b_mastery"] = mb.mastery_level
     return result
+
+
+# ─── Daily Challenge Routes ────────────────────────────────────────────────────
+
+@app.get("/api/student/daily-challenge")
+def get_daily_challenge(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return today's challenge question for the student, or status if already done."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    today = datetime.utcnow().date()
+
+    # Already completed today?
+    if current_user.daily_challenge_date == today:
+        return {"completed": True}
+
+    grade = current_user.grade or 1
+    student_id = current_user.id
+
+    # ── Candidate topics: ones the student has a TopicMastery record for ──────
+    masteries = (
+        db.query(TopicMastery)
+        .filter(TopicMastery.student_id == student_id)
+        .all()
+    )
+
+    if not masteries:
+        return {"available": False}
+
+    # Priority 1: SM-2 due (next_review_at <= today)
+    due = [m for m in masteries if m.next_review_at and m.next_review_at.date() <= today]
+
+    if due:
+        chosen_mastery = sorted(due, key=lambda m: m.next_review_at)[0]
+    else:
+        # Priority 2: L1/L2 topics not practiced in ≥ 3 days
+        cutoff = datetime.utcnow() - timedelta(days=3)
+        weak = [
+            m for m in masteries
+            if m.mastery_level in ("L1", "L2")
+            and (m.last_practiced_at is None or m.last_practiced_at < cutoff)
+        ]
+        if weak:
+            chosen_mastery = sorted(weak, key=lambda m: m.last_practiced_at or datetime.min)[0]
+        else:
+            # Priority 3: any topic, least recently practiced
+            chosen_mastery = sorted(
+                masteries,
+                key=lambda m: m.last_practiced_at or datetime.min
+            )[0]
+
+    topic = db.query(Topic).filter(Topic.id == chosen_mastery.topic_id).first()
+    if not topic:
+        return {"available": False}
+
+    chapter = db.query(Chapter).filter(Chapter.id == topic.chapter_id).first()
+    book = db.query(Book).filter(Book.id == chapter.book_id).first() if chapter else None
+
+    # Generate a question at the student's current mastery level (or L1 if fresh)
+    level = chosen_mastery.mastery_level or "L1"
+    q = generate_question(topic, level, [])
+
+    # Base XP reward: 15 pts + 5 bonus if answered correctly
+    return {
+        "completed": False,
+        "available": True,
+        "topic_id": topic.id,
+        "topic_title": topic.title,
+        "subject": book.subject if book else "General",
+        "level": level,
+        "question": q["question"],
+        "answer_format": q.get("answer_format", "explanation"),
+        "expected_key_points": q.get("expected_key_points", []),
+        "xp_reward": 15,
+    }
+
+
+class DailyChallengeSubmitRequest(BaseModel):
+    topic_id: int
+    answer: str
+    expected_key_points: Optional[list] = None
+    answer_format: Optional[str] = "explanation"
+    level: Optional[str] = "L1"
+    question_text: Optional[str] = ""
+
+
+@app.post("/api/student/daily-challenge/submit")
+def submit_daily_challenge(
+    req: DailyChallengeSubmitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Score the student's daily challenge answer and award XP."""
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Students only")
+
+    today = datetime.utcnow().date()
+
+    # Guard against double-submit
+    if current_user.daily_challenge_date == today:
+        raise HTTPException(status_code=400, detail="Daily challenge already completed today")
+
+    topic = db.query(Topic).filter(Topic.id == req.topic_id).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    # Score the answer
+    assessment = assess_answer(
+        topic=topic,
+        question=req.question_text,
+        answer=req.answer,
+        level=req.level or "L1",
+        hint_tier=0,
+        expected_key_points=req.expected_key_points or [],
+        answer_format=req.answer_format or "explanation",
+    )
+
+    score = assessment.get("score", 0)
+    correct = score >= 70
+
+    # XP: 15 base + 5 bonus if correct
+    xp_earned = 15 + (5 if correct else 0)
+
+    # Mark challenge as done for today
+    current_user.daily_challenge_date = today
+
+    # Award XP
+    current_user.total_xp = (current_user.total_xp or 0) + xp_earned
+    current_user.weekly_xp = (current_user.weekly_xp or 0) + xp_earned
+
+    db.commit()
+
+    return {
+        "feedback": assessment.get("feedback", ""),
+        "score": score,
+        "correct": correct,
+        "misconception": assessment.get("misconception"),
+        "xp_earned": xp_earned,
+    }
 
 
 # ─── Student Self-Service Routes ───────────────────────────────────────────────

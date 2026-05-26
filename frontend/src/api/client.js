@@ -153,3 +153,7 @@ export const encourageChild = (childId, message) =>
 // #56 Admin weekly challenge draft
 export const draftWeeklyChallenge = (grade) => api.get('/admin/weekly-challenge/draft', { params: { grade } })
 export const publishWeeklyChallenge = (data) => api.post('/admin/weekly-challenge/publish', data)
+
+// Daily 3-minute challenge
+export const getDailyChallenge    = ()     => api.get('/student/daily-challenge')
+export const submitDailyChallenge = (data) => api.post('/student/daily-challenge/submit', data)

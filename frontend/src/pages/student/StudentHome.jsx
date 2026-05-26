@@ -4,7 +4,7 @@ import { useAuth } from '../../auth/AuthContext'
 import {
   getStudentDashboard, startSession,
   getWeeklyChallenge, submitWeeklyChallenge,
-  getReviewQueue,
+  getReviewQueue, getDailyChallenge, submitDailyChallenge,
 } from '../../api/client'
 import { SUBJECT_COLOR } from './StudentLayout'
 import BuddyCustomizer from '../../components/BuddyCustomizer'
@@ -85,6 +85,127 @@ function GoalRing({ done, goal, color = null, label = 'today' }) {
         {label}
       </text>
     </svg>
+  )
+}
+
+// ── Daily 3-minute Challenge sub-component ───────────────────────────────────
+function DailyChallengeCard() {
+  const [dc, setDc]               = useState(null)   // null = loading
+  const [expanded, setExpanded]   = useState(false)
+  const [answer, setAnswer]       = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult]       = useState(null)
+
+  useEffect(() => {
+    getDailyChallenge()
+      .then(r => setDc(r.data))
+      .catch(() => setDc({ available: false }))
+  }, [])
+
+  async function handleSubmit() {
+    if (submitting || !answer.trim() || !dc) return
+    setSubmitting(true)
+    try {
+      const res = await submitDailyChallenge({
+        topic_id: dc.topic_id,
+        answer: answer.trim(),
+        expected_key_points: dc.expected_key_points,
+        answer_format: dc.answer_format,
+        level: dc.level,
+        question_text: dc.question,
+      })
+      setResult(res.data)
+      setDc(prev => ({ ...prev, completed: true }))
+    } catch {
+      setResult({ error: true })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Hide while loading or if no topics / not available
+  if (!dc) return null
+  if (!dc.available && !dc.completed) return null
+
+  const done = dc.completed
+
+  return (
+    <div className="blox-card border border-[#00CFFF]/30 bg-gradient-to-br from-[#0D1B2A] to-[#1A1A3E] p-4 animate-bounce-in">
+      {/* Header row */}
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#00CFFF] to-[#6C63FF] flex items-center justify-center text-xl flex-shrink-0">
+          ⚡
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs text-[#00CFFF] font-semibold uppercase tracking-widest">Daily Challenge</p>
+            {done && (
+              <span className="text-xs bg-[#00CC88]/20 text-[#00CC88] border border-[#00CC88]/30 px-2 py-0.5 rounded-full">✓ Done today</span>
+            )}
+          </div>
+          <p className="font-fredoka font-bold text-white mt-0.5 text-sm">
+            {dc.subject} · {dc.topic_title}
+          </p>
+          <p className="text-xs text-[#8892B0] mt-0.5">One quick question · Resets daily · +{dc.xp_reward || 15} XP ⭐</p>
+        </div>
+        {!done && !result && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-xs text-[#00CFFF] font-semibold hover:text-white transition-colors flex-shrink-0 mt-1"
+          >
+            {expanded ? 'Hide ▲' : 'Try it ▼'}
+          </button>
+        )}
+      </div>
+
+      {/* Expanded question area */}
+      {!done && expanded && !result && (
+        <div className="mt-3 space-y-3">
+          <div className="bg-[#0A0A1B] rounded-xl p-3 border border-[#00CFFF]/15">
+            <p className="text-sm text-white font-nunito leading-relaxed">{dc.question}</p>
+            {dc.answer_format && (
+              <p className="text-[10px] text-[#8892B0] mt-1">
+                Answer format: {ANSWER_FORMAT_LABEL[dc.answer_format] || dc.answer_format}
+              </p>
+            )}
+          </div>
+          <textarea
+            value={answer}
+            onChange={e => setAnswer(e.target.value)}
+            placeholder="Type your answer…"
+            rows={3}
+            className="w-full bg-[#0D1B2A] border border-[#00CFFF]/20 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8892B0] focus:outline-none focus:border-[#00CFFF]/60 resize-none font-nunito"
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !answer.trim()}
+            className="w-full py-2 rounded-xl bg-gradient-to-r from-[#00CFFF] to-[#6C63FF] text-white font-fredoka font-bold text-sm disabled:opacity-40 transition-all hover:opacity-90"
+          >
+            {submitting ? 'Checking…' : 'Submit Answer ⚡'}
+          </button>
+        </div>
+      )}
+
+      {/* Result panel */}
+      {result && !result.error && (
+        <div className={`mt-3 rounded-xl p-3 border ${result.correct ? 'bg-[#00CC88]/10 border-[#00CC88]/30' : 'bg-[#FF6B6B]/10 border-[#FF6B6B]/30'}`}>
+          <p className="text-xs font-semibold mb-1 text-white">
+            {result.correct ? '🎉 Correct!' : '📚 Good try!'} +{result.xp_earned} XP
+          </p>
+          <p className="text-xs text-[#CCD6F6] font-nunito leading-relaxed">{result.feedback}</p>
+          {result.misconception && (
+            <div className="mt-2 bg-[#FFB347]/10 border border-[#FFB347]/30 rounded-lg px-2 py-1.5 flex items-start gap-1.5">
+              <span className="text-xs flex-shrink-0">🔍</span>
+              <p className="text-xs text-white font-nunito">{result.misconception}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {result?.error && (
+        <p className="mt-3 text-xs text-[#FF6B6B]">Something went wrong — try again later.</p>
+      )}
+    </div>
   )
 }
 
@@ -448,6 +569,9 @@ export default function StudentHome() {
 
       {!loading && data && (
         <>
+          {/* ── Daily 3-minute challenge ──────────────────────────────── */}
+          <DailyChallengeCard />
+
           {/* ── Weekly challenge ───────────────────────────────────────── */}
           <WeeklyChallengeCard userId={user?.id} />
 

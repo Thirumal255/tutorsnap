@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Boolean, JSON, Float,
-    ForeignKey, UniqueConstraint
+    ForeignKey, UniqueConstraint, Date
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -39,6 +39,7 @@ class User(Base):
     has_onboarded = Column(Boolean, default=False)           # True after first-login flow complete
     daily_goal_sessions = Column(Integer, default=1)         # target sessions per day
     weekly_mastery_goal = Column(Integer, default=0)         # #59: topics to master per week (0 = no goal)
+    daily_challenge_date = Column(Date, nullable=True)       # date of last completed daily challenge
 
     parent_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.parent_id", back_populates="parent")
     student_links = relationship("ParentStudentLink", foreign_keys="ParentStudentLink.student_id", back_populates="student")
