@@ -719,41 +719,404 @@ function OverviewTab({ tasks, summary, onTaskClick }) {
 
 // ── Tasks Tab ──────────────────────────────────────────────────────────────────
 
+// ── Calendar View ─────────────────────────────────────────────────────────────
+
+function CalendarView({ tasks, onTaskClick }) {
+  const [cur, setCur] = useState(new Date())
+  const [selDay, setSelDay] = useState(null)
+  const yr = cur.getFullYear(), mo = cur.getMonth()
+  const firstDay = new Date(yr, mo, 1)
+  const lastDate = new Date(yr, mo+1, 0).getDate()
+  const pad = firstDay.getDay() // 0=Sun
+  const todayD = new Date(new Date().toDateString())
+
+  const tasksByDay = {}
+  tasks.filter(t=>!t.parent_id).forEach(t=>{
+    if (!t.end_date) return
+    const d = new Date(t.end_date+'T00:00:00')
+    if (d.getFullYear()===yr && d.getMonth()===mo) {
+      const k = d.getDate()
+      if (!tasksByDay[k]) tasksByDay[k]=[]
+      tasksByDay[k].push(t)
+    }
+  })
+
+  const monthLabel = cur.toLocaleDateString('en-IN',{month:'long',year:'numeric'})
+  const selTasks = selDay ? tasksByDay[selDay]||[] : []
+
+  const STATUS_COLOR = { completed:'bg-[#00CC88]', in_progress:'bg-[#00A2FF]', on_hold:'bg-[#FFB347]', not_started:'bg-[#8892B0]' }
+
+  return (
+    <div className="pb-6">
+      {/* Month nav */}
+      <div className="flex items-center justify-between px-4 py-3">
+        <button onClick={()=>{setCur(new Date(yr,mo-1,1));setSelDay(null)}}
+          className="w-9 h-9 flex items-center justify-center bg-[#16213E] rounded-xl text-white text-lg">‹</button>
+        <p className="text-white font-bold text-sm">{monthLabel}</p>
+        <button onClick={()=>{setCur(new Date(yr,mo+1,1));setSelDay(null)}}
+          className="w-9 h-9 flex items-center justify-center bg-[#16213E] rounded-xl text-white text-lg">›</button>
+      </div>
+
+      {/* Day headers */}
+      <div className="grid grid-cols-7 px-4 mb-1">
+        {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>(
+          <p key={d} className="text-[#8892B0] text-xs text-center font-semibold py-1">{d}</p>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div className="grid grid-cols-7 px-4 gap-1">
+        {Array(pad).fill(null).map((_,i)=><div key={`p${i}`}/>)}
+        {Array(lastDate).fill(null).map((_,i)=>{
+          const day = i+1
+          const dayTasks = tasksByDay[day]||[]
+          const isToday = new Date(yr,mo,day).getTime()===todayD.getTime()
+          const sel = selDay===day
+          const hasOverdue = dayTasks.some(isOverdue)
+          return (
+            <div key={day} onClick={()=>setSelDay(sel?null:day)}
+              className={`rounded-xl p-1 cursor-pointer transition-all min-h-[46px] flex flex-col items-center gap-1 ${
+                sel?'bg-[#00A2FF]/20 border border-[#00A2FF]/50':
+                isToday?'bg-[#00A2FF]/10 border border-[#00A2FF]/30':
+                'hover:bg-[#16213E] border border-transparent'
+              }`}>
+              <p className={`text-xs font-bold leading-none pt-0.5 ${isToday?'text-[#00A2FF]':sel?'text-white':'text-[#8892B0]'}`}>{day}</p>
+              {dayTasks.length>0&&(
+                <div className="flex flex-wrap gap-0.5 justify-center">
+                  {dayTasks.slice(0,4).map(t=>(
+                    <div key={t.id} className={`w-1.5 h-1.5 rounded-full ${isOverdue(t)?'bg-[#FF3333]':STATUS_COLOR[t.status]||'bg-[#8892B0]'}`}/>
+                  ))}
+                  {dayTasks.length>4&&<div className="w-1.5 h-1.5 rounded-full bg-[#FFB347]"/>}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex gap-4 px-4 mt-3 flex-wrap">
+        {[['bg-[#00A2FF]','In Progress'],['bg-[#00CC88]','Completed'],['bg-[#FFB347]','On Hold'],['bg-[#FF3333]','Overdue'],['bg-[#8892B0]','Not Started']].map(([c,l])=>(
+          <div key={l} className="flex items-center gap-1"><div className={`w-2 h-2 rounded-full ${c}`}/><p className="text-[#8892B0] text-xs">{l}</p></div>
+        ))}
+      </div>
+
+      {/* Selected day task list */}
+      {selDay&&(
+        <div className="px-4 mt-4 space-y-2">
+          <p className="text-[#8892B0] text-xs font-semibold">{selTasks.length} task{selTasks.length!==1?'s':''} due {selDay} {monthLabel}</p>
+          {selTasks.length===0
+            ? <p className="text-[#8892B0] text-xs italic">No tasks due this day</p>
+            : selTasks.map(t=>(
+              <div key={t.id} onClick={()=>onTaskClick(t)}
+                className={`border-l-4 ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'} bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2.5 cursor-pointer flex items-center gap-3`}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-xs font-semibold truncate">{t.title}</p>
+                  <p className="text-[#8892B0] text-xs">{t.category}</p>
+                </div>
+                <StatusBadge status={t.status}/>
+              </div>
+            ))
+          }
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Gantt View ─────────────────────────────────────────────────────────────────
+
+function GanttView({ tasks, onTaskClick }) {
+  const DAY_W = 28 // px per day
+  const ROW_H = 44
+  const NAME_W = 130
+
+  const root = tasks.filter(t=>!t.parent_id && (t.start_date||t.end_date))
+  const today = new Date(new Date().toDateString())
+
+  if (root.length===0) return (
+    <div className="flex items-center justify-center py-20 text-[#8892B0] text-sm">No tasks with dates</div>
+  )
+
+  // Date range
+  const allDates = []
+  root.forEach(t=>{
+    if (t.start_date) allDates.push(new Date(t.start_date+'T00:00:00'))
+    if (t.end_date)   allDates.push(new Date(t.end_date+'T00:00:00'))
+  })
+  const minDate = new Date(Math.min(...allDates))
+  const maxDate = new Date(Math.max(...allDates))
+  // Pad by 2 days on each side
+  minDate.setDate(minDate.getDate()-2)
+  maxDate.setDate(maxDate.getDate()+2)
+  const totalDays = Math.round((maxDate-minDate)/86400000)+1
+
+  function dayOffset(dateStr) {
+    if (!dateStr) return null
+    return Math.round((new Date(dateStr+'T00:00:00')-minDate)/86400000)
+  }
+
+  const todayOffset = Math.round((today-minDate)/86400000)
+  const chartW = totalDays*DAY_W
+
+  // Build month labels
+  const months = []
+  let d = new Date(minDate)
+  while(d<=maxDate) {
+    const label = d.toLocaleDateString('en-IN',{month:'short',year:'2-digit'})
+    const off = Math.round((d-minDate)/86400000)
+    months.push({label, off})
+    d = new Date(d.getFullYear(), d.getMonth()+1, 1)
+  }
+
+  // Group by category
+  const byCategory = {}
+  root.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
+
+  const STATUS_BAR = { completed:'bg-[#00CC88]', in_progress:'bg-[#00A2FF]', on_hold:'bg-[#FFB347]', not_started:'bg-[#2D2B5A]' }
+
+  return (
+    <div className="pb-6">
+      <div className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23'}}>
+        <div style={{minWidth: NAME_W+chartW, position:'relative'}}>
+
+          {/* Header: month labels */}
+          <div className="flex sticky top-0 z-20 bg-[#0F0F23] border-b border-[#2D2B5A]">
+            <div style={{width:NAME_W, minWidth:NAME_W}} className="flex-shrink-0 border-r border-[#2D2B5A] px-3 py-2">
+              <p className="text-[#8892B0] text-xs font-semibold">Task</p>
+            </div>
+            <div style={{width:chartW, position:'relative', height:32}}>
+              {months.map((m,i)=>(
+                <div key={i} style={{position:'absolute',left:m.off*DAY_W, top:0, height:'100%'}}
+                  className="border-l border-[#2D2B5A] pl-1 flex items-center">
+                  <p className="text-[#8892B0] text-xs whitespace-nowrap">{m.label}</p>
+                </div>
+              ))}
+              {/* Today line header */}
+              {todayOffset>=0&&todayOffset<=totalDays&&(
+                <div style={{position:'absolute',left:todayOffset*DAY_W+DAY_W/2,top:0,bottom:0,width:2}}
+                  className="bg-[#FF3333]/60"/>
+              )}
+            </div>
+          </div>
+
+          {/* Rows */}
+          {Object.entries(byCategory).sort().map(([cat,catTasks])=>(
+            <div key={cat}>
+              {/* Category header */}
+              <div className="flex bg-[#16213E] border-b border-[#2D2B5A]">
+                <div style={{width:NAME_W,minWidth:NAME_W}} className="px-3 py-1.5 border-r border-[#2D2B5A]">
+                  <p className="text-[#00A2FF] text-xs font-bold truncate">{cat}</p>
+                </div>
+                <div style={{width:chartW, position:'relative'}}/>
+              </div>
+
+              {/* Task rows */}
+              {catTasks.map(t=>{
+                const s = dayOffset(t.start_date)
+                const e = dayOffset(t.end_date)
+                const left = (s!==null?s:e)*DAY_W
+                const width = s!==null&&e!==null ? (e-s+1)*DAY_W : DAY_W*3
+                const over = isOverdue(t)
+                const barColor = over?'bg-[#FF3333]':STATUS_BAR[t.status]||'bg-[#2D2B5A]'
+                return (
+                  <div key={t.id} className="flex border-b border-[#2D2B5A]/50 hover:bg-[#16213E]/50"
+                    style={{height:ROW_H}}>
+                    {/* Task name */}
+                    <div style={{width:NAME_W,minWidth:NAME_W}}
+                      className="px-3 border-r border-[#2D2B5A] flex items-center cursor-pointer"
+                      onClick={()=>onTaskClick(t)}>
+                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mr-1.5 ${STATUS_BAR[t.status]||'bg-[#8892B0]'}`}/>
+                      <p className="text-white text-xs truncate">{t.title}</p>
+                    </div>
+                    {/* Bar */}
+                    <div style={{width:chartW, position:'relative'}} className="flex items-center">
+                      {/* Today line */}
+                      {todayOffset>=0&&todayOffset<=totalDays&&(
+                        <div style={{position:'absolute',left:todayOffset*DAY_W+DAY_W/2,top:0,bottom:0,width:2}}
+                          className="bg-[#FF3333]/40 z-10"/>
+                      )}
+                      {/* Task bar */}
+                      {(s!==null||e!==null)&&(
+                        <div style={{position:'absolute',left:Math.max(0,left),width:Math.max(width,DAY_W),height:22,borderRadius:6}}
+                          className={`${barColor} opacity-90 cursor-pointer flex items-center px-2`}
+                          onClick={()=>onTaskClick(t)}>
+                          <p className="text-white text-xs truncate font-semibold" style={{fontSize:10}}>{t.title}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+
+          {/* Today legend */}
+          <div className="px-4 py-2 flex items-center gap-2">
+            <div className="w-4 h-0.5 bg-[#FF3333]"/><p className="text-[#8892B0] text-xs">Today</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Timeline View ─────────────────────────────────────────────────────────────
+
+function TimelineView({ tasks, onTaskClick }) {
+  const root = tasks.filter(t=>!t.parent_id)
+
+  // Build events: each task contributes a start event and/or end event
+  const events = [] // {date, type:'start'|'end'|'due', task}
+  root.forEach(t=>{
+    if (t.start_date) events.push({dateStr:t.start_date, type:'start', task:t})
+    if (t.end_date && t.end_date!==t.start_date) events.push({dateStr:t.end_date, type:'due', task:t})
+    else if (t.end_date && !t.start_date) events.push({dateStr:t.end_date, type:'due', task:t})
+  })
+  events.sort((a,b)=>a.dateStr.localeCompare(b.dateStr))
+
+  if (events.length===0) return (
+    <div className="flex items-center justify-center py-20 text-[#8892B0] text-sm">No tasks with dates</div>
+  )
+
+  // Group by date
+  const grouped = {}
+  events.forEach(ev=>{
+    if (!grouped[ev.dateStr]) grouped[ev.dateStr]=[]
+    grouped[ev.dateStr].push(ev)
+  })
+
+  const today = new Date(new Date().toDateString())
+  const todayStr = today.toISOString().split('T')[0]
+
+  const TYPE_STYLE = {
+    start:{ icon:'🚀', label:'Starts', color:'text-[#00A2FF]', dot:'bg-[#00A2FF]' },
+    due:  { icon:'🏁', label:'Due',    color:'text-[#FFB347]', dot:'bg-[#FFB347]' },
+  }
+
+  return (
+    <div className="px-4 pb-28 pt-4 space-y-0">
+      {Object.entries(grouped).map(([dateStr, evs], gi)=>{
+        const date = new Date(dateStr+'T00:00:00')
+        const isToday = dateStr===todayStr
+        const isPast  = date<today
+        const dayLabel = date.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'})
+        return (
+          <div key={dateStr} className="flex gap-3">
+            {/* Spine */}
+            <div className="flex flex-col items-center flex-shrink-0" style={{width:40}}>
+              <div className={`w-3 h-3 rounded-full flex-shrink-0 mt-1 border-2 ${
+                isToday?'bg-[#00A2FF] border-[#00A2FF]':
+                isPast?'bg-[#2D2B5A] border-[#2D2B5A]':'bg-[#0F0F23] border-[#8892B0]'
+              }`}/>
+              {gi<Object.keys(grouped).length-1&&<div className="w-0.5 flex-1 bg-[#2D2B5A] mt-1"/>}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 pb-5 min-w-0">
+              <div className="flex items-center gap-2 mb-2">
+                <p className={`text-xs font-bold ${isToday?'text-[#00A2FF]':isPast?'text-[#8892B0]':'text-white'}`}>
+                  {isToday?'Today · ':''}{dayLabel}
+                </p>
+                {isToday&&<span className="bg-[#00A2FF] text-white text-xs px-1.5 py-0.5 rounded-full font-bold">TODAY</span>}
+              </div>
+              <div className="space-y-2">
+                {evs.map((ev,ei)=>{
+                  const ts = TYPE_STYLE[ev.type]||TYPE_STYLE.due
+                  const over = ev.type==='due'&&isOverdue(ev.task)
+                  return (
+                    <div key={`${ev.task.id}-${ev.type}-${ei}`} onClick={()=>onTaskClick(ev.task)}
+                      className={`border-l-4 ${PRI_BORDER[ev.task.priority]||'border-l-[#8892B0]'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all ${
+                        over?'bg-[#FF3333]/8 border border-[#FF3333]/20':'bg-[#16213E] border border-[#2D2B5A]'
+                      }`}>
+                      <div className="flex items-start gap-2">
+                        <span className="text-sm flex-shrink-0">{over?'⚠️':ts.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-white text-xs font-semibold">{ev.task.title}</p>
+                            <span className={`text-xs font-semibold ${over?'text-[#FF3333]':ts.color}`}>
+                              · {over?'OVERDUE':ts.label}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[#8892B0] text-xs">{ev.task.category}</p>
+                            <StatusBadge status={ev.task.status}/>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Tasks Tab ──────────────────────────────────────────────────────────────────
+
 function TasksTab({ tasks, categories, onTaskClick, filterStatus, setFilterStatus, filterCat, setFilterCat }) {
+  const [view, setView] = useState('list')
   const root = tasks.filter(t=>!t.parent_id)
   const filtered = root
     .filter(t=>filterStatus==='all'||t.status===filterStatus)
     .filter(t=>filterCat==='all'||t.category===filterCat)
 
+  const VIEWS = [
+    {key:'list',     icon:'☰',  label:'List'},
+    {key:'calendar', icon:'📅', label:'Calendar'},
+    {key:'gantt',    icon:'📊', label:'Gantt'},
+    {key:'timeline', icon:'🕐', label:'Timeline'},
+  ]
+
   return (
     <div className="pb-28">
-      {/* Status chips */}
-      <div className="px-4 pt-4 pb-2 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
-        {[{key:'all',label:'All'},{key:'in_progress',label:'In Progress'},{key:'not_started',label:'Not Started'},
-          {key:'on_hold',label:'On Hold'},{key:'completed',label:'Completed'}].map(f=>(
-          <button key={f.key} onClick={()=>setFilterStatus(f.key)}
-            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-              filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
-            }`}>{f.label}</button>
+      {/* View switcher */}
+      <div className="px-4 pt-4 pb-3 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+        {VIEWS.map(v=>(
+          <button key={v.key} onClick={()=>setView(v.key)}
+            className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+              view===v.key?'bg-[#00A2FF] text-white border-[#00A2FF]':'bg-[#16213E] text-[#8892B0] border-[#2D2B5A]'
+            }`}>
+            <span>{v.icon}</span>{v.label}
+          </button>
         ))}
       </div>
-      {/* Category filter */}
-      <div className="px-4 pb-3">
-        <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
-          className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
-          <option value="all">All Categories</option>
-          {categories.map(c=><option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-      <div className="px-4 pb-2"><p className="text-[#8892B0] text-xs">{filtered.length} task{filtered.length!==1?'s':''}</p></div>
-      <div className="px-4 space-y-3">
-        {filtered.length===0 ? (
-          <div className="text-center py-16">
-            <p className="text-4xl mb-3">✅</p>
-            <p className="text-[#8892B0] text-sm">No tasks match this filter</p>
+
+      {/* Filters — only for list view */}
+      {view==='list'&&(
+        <>
+          <div className="px-4 pb-2 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+            {[{key:'all',label:'All'},{key:'in_progress',label:'In Progress'},{key:'not_started',label:'Not Started'},
+              {key:'on_hold',label:'On Hold'},{key:'completed',label:'Completed'}].map(f=>(
+              <button key={f.key} onClick={()=>setFilterStatus(f.key)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                  filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                }`}>{f.label}</button>
+            ))}
           </div>
-        ) : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick}/>)}
-      </div>
+          <div className="px-4 pb-3">
+            <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
+              className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
+              <option value="all">All Categories</option>
+              {categories.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="px-4 pb-2"><p className="text-[#8892B0] text-xs">{filtered.length} task{filtered.length!==1?'s':''}</p></div>
+          <div className="px-4 space-y-3">
+            {filtered.length===0
+              ? <div className="text-center py-16"><p className="text-4xl mb-3">✅</p><p className="text-[#8892B0] text-sm">No tasks match this filter</p></div>
+              : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick}/>)}
+          </div>
+        </>
+      )}
+
+      {view==='calendar' && <CalendarView tasks={root} onTaskClick={onTaskClick}/>}
+      {view==='gantt'    && <GanttView    tasks={root} onTaskClick={onTaskClick}/>}
+      {view==='timeline' && <TimelineView tasks={root} onTaskClick={onTaskClick}/>}
     </div>
   )
 }
