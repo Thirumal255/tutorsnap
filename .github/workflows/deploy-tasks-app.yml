@@ -39,6 +39,10 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TASKS }}
-          projectId: ${{ secrets.FIREBASE_PROJECT_ID_TASKS }}
-          target: tasks-app
+          projectId: tutorsnap-tasks
           entryPoint: tasks-app
+
+      - name: Print deployed URL
+        run: |
+          echo "## 🚀 Tasks App Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: https://tutorsnap-tasks.web.app" >> "$GITHUB_STEP_SUMMARY"
