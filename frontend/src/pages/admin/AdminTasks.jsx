@@ -118,7 +118,12 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
       }
       onSave()
     } catch (e) {
-      setError(e.response?.data?.detail || 'Save failed')
+      const detail = e.response?.data?.detail
+      if (Array.isArray(detail)) {
+        setError(detail.map(d => d.msg || JSON.stringify(d)).join('; '))
+      } else {
+        setError(detail || e.message || 'Save failed')
+      }
     } finally {
       setSaving(false)
     }

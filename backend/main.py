@@ -5633,27 +5633,33 @@ def create_task(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    task = AdminTask(
-        title=data.title,
-        notes=data.notes,
-        status=data.status,
-        priority=data.priority,
-        category=data.category,
-        start_date=_parse_date(data.start_date),
-        end_date=_parse_date(data.end_date),
-        parent_id=data.parent_id,
-    )
-    db.add(task)
-    db.flush()
-    for dep_id in (data.dependency_ids or []):
-        if _has_cycle(task.id, dep_id, db):
-            raise HTTPException(status_code=400, detail=f"Circular dependency with task {dep_id}")
-        db.add(AdminTaskDependency(task_id=task.id, depends_on_id=dep_id))
-    _audit_log(db, current_user, action="create_task", target_type="task",
-               target_id=task.id, target_name=task.title, details=data.category)
-    db.commit()
-    db.refresh(task)
-    return _task_dict(task, include_subtasks=True)
+    try:
+        task = AdminTask(
+            title=data.title,
+            notes=data.notes,
+            status=data.status,
+            priority=data.priority,
+            category=data.category,
+            start_date=_parse_date(data.start_date),
+            end_date=_parse_date(data.end_date),
+            parent_id=data.parent_id,
+        )
+        db.add(task)
+        db.flush()
+        for dep_id in (data.dependency_ids or []):
+            if _has_cycle(task.id, dep_id, db):
+                raise HTTPException(status_code=400, detail=f"Circular dependency with task {dep_id}")
+            db.add(AdminTaskDependency(task_id=task.id, depends_on_id=dep_id))
+        _audit_log(db, current_user, action="create_task", target_type="task",
+                   target_id=task.id, target_name=task.title, details=data.category)
+        db.commit()
+        db.refresh(task)
+        return _task_dict(task, include_subtasks=True)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.put("/api/admin/tasks/{task_id}")
@@ -5704,9 +5710,13 @@ def update_task(
                 raise HTTPException(status_code=400, detail=f"Circular dependency with task {dep_id}")
             db.add(AdminTaskDependency(task_id=task_id, depends_on_id=dep_id))
     task.updated_at = datetime.utcnow()
-    _audit_log(db, current_user, action="update_task", target_type="task",
-               target_id=task.id, target_name=task.title)
-    db.commit()
+    try:
+        _audit_log(db, current_user, action="update_task", target_type="task",
+                   target_id=task.id, target_name=task.title)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
     db.refresh(task)
     return _task_dict(task, include_subtasks=True)
 
