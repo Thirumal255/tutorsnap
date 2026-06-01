@@ -5,6 +5,143 @@ import {
   addTaskExpense, deleteTaskExpense,
 } from './api/client'
 
+// ── Theme ─────────────────────────────────────────────────────────────────────
+
+const LIGHT_STYLES = `
+  html.light body { background:#F1F5F9!important; color:#1E293B!important; }
+  html.light [data-card] { background:#FFFFFF!important; border-color:#E2E8F0!important; }
+  html.light [data-bg] { background:#F1F5F9!important; }
+  html.light [data-nav] { background:rgba(255,255,255,0.95)!important; border-color:#E2E8F0!important; }
+  html.light [data-muted] { color:#64748B!important; }
+  html.light [data-input] { background:#F8FAFC!important; color:#1E293B!important; border-color:#CBD5E1!important; }
+`
+let lightStyleEl = null
+
+function getTheme() { return localStorage.getItem('tasks_theme')||'dark' }
+function setTheme(t) {
+  localStorage.setItem('tasks_theme', t)
+  if (t==='light') {
+    document.documentElement.classList.add('light')
+    if (!lightStyleEl) {
+      lightStyleEl = document.createElement('style')
+      lightStyleEl.textContent = LIGHT_STYLES
+      document.head.appendChild(lightStyleEl)
+    }
+  } else {
+    document.documentElement.classList.remove('light')
+  }
+}
+
+// Apply saved theme immediately
+setTheme(getTheme())
+
+// ── Notifications ──────────────────────────────────────────────────────────────
+
+async function setupNotifications(tasks) {
+  if (!('Notification' in window)) return
+  if (Notification.permission==='default') await Notification.requestPermission()
+  if (Notification.permission!=='granted') return
+
+  const today = new Date(new Date().toDateString())
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1)
+  const notifiedKey = 'notified_' + today.toISOString().split('T')[0]
+  if (sessionStorage.getItem(notifiedKey)) return // only once per session/day
+
+  const dueSoon = tasks.filter(t=>{
+    if (!t.end_date || t.status==='completed' || t.parent_id) return false
+    const due = new Date(t.end_date+'T00:00:00')
+    return due>=today && due<=tomorrow
+  })
+
+  if (dueSoon.length===0) return
+  sessionStorage.setItem(notifiedKey, '1')
+
+  const todayDue  = dueSoon.filter(t=>new Date(t.end_date+'T00:00:00').getTime()===today.getTime())
+  const tmrwDue   = dueSoon.filter(t=>new Date(t.end_date+'T00:00:00').getTime()===tomorrow.getTime())
+
+  if (todayDue.length>0) {
+    new Notification(`⚠️ ${todayDue.length} task${todayDue.length>1?'s':''} due TODAY`, {
+      body: todayDue.map(t=>t.title).join(', '),
+      icon: '/icon-192.png',
+    })
+  }
+  if (tmrwDue.length>0) {
+    new Notification(`📅 ${tmrwDue.length} task${tmrwDue.length>1?'s':''} due TOMORROW`, {
+      body: tmrwDue.map(t=>t.title).join(', '),
+      icon: '/icon-192.png',
+    })
+  }
+}
+
+// ── Long Press Hook ────────────────────────────────────────────────────────────
+
+function useLongPress(onLongPress, ms=600) {
+  const timer = useRef(null)
+  const fired = useRef(false)
+  const start = useCallback(() => {
+    fired.current = false
+    timer.current = setTimeout(()=>{ fired.current=true; onLongPress() }, ms)
+  }, [onLongPress, ms])
+  const cancel = useCallback(() => { if(timer.current) clearTimeout(timer.current) }, [])
+  const handleClick = useCallback((e) => { if(fired.current) e.stopPropagation() }, [])
+  return { onTouchStart:start, onTouchEnd:cancel, onTouchMove:cancel,
+           onMouseDown:start, onMouseUp:cancel, onMouseLeave:cancel, onClick:handleClick }
+}
+
+// ── Confetti ───────────────────────────────────────────────────────────────────
+
+function Confetti({ onDone }) {
+  useEffect(()=>{ const t=setTimeout(onDone,2200); return()=>clearTimeout(t) },[onDone])
+  const colors=['#00CC88','#00A2FF','#FFB347','#FF6B9D','#FFD700','#FF3333','#A78BFA']
+  const pieces = useRef(Array(50).fill(0).map((_,i)=>({
+    id:i, color:colors[i%colors.length],
+    left:5+Math.random()*90,
+    size:5+Math.random()*7,
+    dur:`${0.9+Math.random()*1.2}s`,
+    delay:`${Math.random()*0.6}s`,
+    round:Math.random()>0.4,
+  }))).current
+  return (
+    <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:9999,overflow:'hidden'}}>
+      {pieces.map(p=>(
+        <div key={p.id} className="confetti-piece" style={{
+          position:'absolute', left:`${p.left}%`, top:-20,
+          width:p.size, height:p.size,
+          background:p.color,
+          borderRadius:p.round?'50%':'2px',
+          '--fall-dur':p.dur, '--fall-delay':p.delay,
+        }}/>
+      ))}
+    </div>
+  )
+}
+
+// ── Status Picker ──────────────────────────────────────────────────────────────
+
+function StatusPicker({ task, onSelect, onClose }) {
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}} onClick={onClose}/>
+      <div style={{position:'relative',background:'#16213E',border:'1px solid #2D2B5A',borderRadius:20,padding:20,width:260,zIndex:1}}>
+        <p className="text-white font-bold text-sm mb-3">Change Status</p>
+        <p className="text-[#8892B0] text-xs mb-4 truncate">{task.title}</p>
+        <div className="space-y-2">
+          {Object.entries(S).map(([key,meta])=>(
+            <button key={key} onClick={()=>onSelect(key)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                task.status===key?`${meta.bg} border-2 border-current`:`hover:${meta.bg} border border-transparent`
+              }`}>
+              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${meta.dot}`}/>
+              <span className={`text-sm font-semibold ${meta.color}`}>{meta.label}</span>
+              {task.status===key&&<span className="ml-auto text-xs text-[#8892B0]">current</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function fmtINR(v) {
@@ -108,36 +245,49 @@ function BottomSheet({ show, onClose, title, children }) {
 
 // ── Task Card ──────────────────────────────────────────────────────────────────
 
-function TaskCard({ task, onClick }) {
+function TaskCard({ task, onClick, onStatusChange }) {
   const overdue = isOverdue(task)
   const days = daysLeft(task.end_date)
   const spent = task.total_expense||0
+  const [showPicker, setShowPicker] = useState(false)
+  const longPress = useLongPress(()=>setShowPicker(true))
+
+  async function handleStatusSelect(newStatus) {
+    setShowPicker(false)
+    if (newStatus===task.status) return
+    await updateAdminTask(task.id, {status:newStatus})
+    onStatusChange && onStatusChange(task, newStatus)
+  }
+
   return (
-    <div onClick={()=>onClick(task)}
-      className={`bg-[#16213E] border border-[#2D2B5A] border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all hover:border-[#00A2FF]/40 space-y-3`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-white font-semibold text-sm leading-snug">{task.title}</h3>
-          <p className="text-[#8892B0] text-xs mt-0.5">{task.category}</p>
+    <>
+      <div {...longPress} onClick={()=>onClick(task)}
+        className={`bg-[#16213E] border border-[#2D2B5A] border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all hover:border-[#00A2FF]/40 space-y-3 select-none`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-white font-semibold text-sm leading-snug">{task.title}</h3>
+            <p className="text-[#8892B0] text-xs mt-0.5">{task.category}</p>
+          </div>
+          <StatusBadge status={task.status}/>
         </div>
-        <StatusBadge status={task.status}/>
-      </div>
-      {task.budget>0 && <BudgetBar budget={task.budget} spent={spent} compact/>}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs">
-          {task.end_date && (
-            <span className={`flex items-center gap-1 ${overdue?'text-[#FF3333] font-semibold':days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
-              {overdue?'⚠️':'📅'} {fmtShort(task.end_date)}
-              {overdue?` (${Math.abs(days)}d late)`:days!=null&&days<=3?` (${days}d)`:''}
-            </span>
-          )}
-          {task.subtasks?.length>0&&(
-            <span className="text-[#8892B0]">· {task.subtasks.filter(s=>s.status==='completed').length}/{task.subtasks.length} sub</span>
-          )}
+        {task.budget>0 && <BudgetBar budget={task.budget} spent={spent} compact/>}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs">
+            {task.end_date && (
+              <span className={`flex items-center gap-1 ${overdue?'text-[#FF3333] font-semibold':days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
+                {overdue?'⚠️':'📅'} {fmtShort(task.end_date)}
+                {overdue?` (${Math.abs(days)}d late)`:days!=null&&days<=3?` (${days}d)`:''}
+              </span>
+            )}
+            {task.subtasks?.length>0&&(
+              <span className="text-[#8892B0]">· {task.subtasks.filter(s=>s.status==='completed').length}/{task.subtasks.length} sub</span>
+            )}
+          </div>
+          <span className="text-[#2D2B5A] text-xs">hold to change status</span>
         </div>
-        <span className={`w-2 h-2 rounded-full ${S[task.status]?.dot||'bg-[#8892B0]'}`}/>
       </div>
-    </div>
+      {showPicker&&<StatusPicker task={task} onSelect={handleStatusSelect} onClose={()=>setShowPicker(false)}/>}
+    </>
   )
 }
 
@@ -1236,12 +1386,15 @@ function TimelineView({ tasks, onTaskClick }) {
 
 // ── Tasks Tab ──────────────────────────────────────────────────────────────────
 
-function TasksTab({ tasks, categories, onTaskClick, filterStatus, setFilterStatus, filterCat, setFilterCat }) {
+function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus, setFilterStatus, filterCat, setFilterCat }) {
   const [view, setView] = useState('list')
+  const [search, setSearch] = useState('')
   const root = tasks.filter(t=>!t.parent_id)
+  const q = search.trim().toLowerCase()
   const filtered = root
     .filter(t=>filterStatus==='all'||t.status===filterStatus)
     .filter(t=>filterCat==='all'||t.category===filterCat)
+    .filter(t=>!q || t.title.toLowerCase().includes(q) || t.category.toLowerCase().includes(q) || (t.notes||'').toLowerCase().includes(q))
 
   const VIEWS = [
     {key:'list',     icon:'☰',  label:'List'},
@@ -1252,8 +1405,22 @@ function TasksTab({ tasks, categories, onTaskClick, filterStatus, setFilterStatu
 
   return (
     <div className="pb-28">
+      {/* Search bar */}
+      <div className="px-4 pt-4 pb-2">
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892B0] text-sm">🔍</span>
+          <input value={search} onChange={e=>setSearch(e.target.value)}
+            className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl pl-9 pr-9 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
+            placeholder="Search tasks…"/>
+          {search&&(
+            <button onClick={()=>setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8892B0] hover:text-white text-lg leading-none">×</button>
+          )}
+        </div>
+      </div>
+
       {/* View switcher */}
-      <div className="px-4 pt-4 pb-3 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+      <div className="px-4 pb-3 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
         {VIEWS.map(v=>(
           <button key={v.key} onClick={()=>setView(v.key)}
             className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
@@ -1267,27 +1434,35 @@ function TasksTab({ tasks, categories, onTaskClick, filterStatus, setFilterStatu
       {/* Filters — only for list view */}
       {view==='list'&&(
         <>
-          <div className="px-4 pb-2 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
-            {[{key:'all',label:'All'},{key:'in_progress',label:'In Progress'},{key:'not_started',label:'Not Started'},
-              {key:'on_hold',label:'On Hold'},{key:'completed',label:'Completed'}].map(f=>(
-              <button key={f.key} onClick={()=>setFilterStatus(f.key)}
-                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                  filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
-                }`}>{f.label}</button>
-            ))}
+          {!q&&(
+            <>
+              <div className="px-4 pb-2 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+                {[{key:'all',label:'All'},{key:'in_progress',label:'In Progress'},{key:'not_started',label:'Not Started'},
+                  {key:'on_hold',label:'On Hold'},{key:'completed',label:'Completed'}].map(f=>(
+                  <button key={f.key} onClick={()=>setFilterStatus(f.key)}
+                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                      filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                    }`}>{f.label}</button>
+                ))}
+              </div>
+              <div className="px-4 pb-3">
+                <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
+                  className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
+                  <option value="all">All Categories</option>
+                  {categories.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+          <div className="px-4 pb-2">
+            <p className="text-[#8892B0] text-xs">
+              {q ? `${filtered.length} result${filtered.length!==1?'s':''} for "${search}"` : `${filtered.length} task${filtered.length!==1?'s':''}`}
+            </p>
           </div>
-          <div className="px-4 pb-3">
-            <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
-              className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
-              <option value="all">All Categories</option>
-              {categories.map(c=><option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="px-4 pb-2"><p className="text-[#8892B0] text-xs">{filtered.length} task{filtered.length!==1?'s':''}</p></div>
           <div className="px-4 space-y-3">
             {filtered.length===0
-              ? <div className="text-center py-16"><p className="text-4xl mb-3">✅</p><p className="text-[#8892B0] text-sm">No tasks match this filter</p></div>
-              : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick}/>)}
+              ? <div className="text-center py-16"><p className="text-4xl mb-3">{q?'🔍':'✅'}</p><p className="text-[#8892B0] text-sm">{q?'No tasks match your search':'No tasks match this filter'}</p></div>
+              : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick} onStatusChange={onStatusChange}/>)}
           </div>
         </>
       )}
@@ -1412,11 +1587,28 @@ export default function TasksPage({ onLogout }) {
   const [selectedTask, setSelectedTask] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
   const [editTask, setEditTask] = useState(null)
+  const [confetti, setConfetti] = useState(false)
+  const [theme, setThemeState] = useState(getTheme())
+  const [notifGranted, setNotifGranted] = useState(Notification?.permission==='granted')
+
+  function toggleTheme() {
+    const next = theme==='dark'?'light':'dark'
+    setTheme(next); setThemeState(next)
+  }
+
+  async function requestNotifications() {
+    if (!('Notification' in window)) return
+    const perm = await Notification.requestPermission()
+    setNotifGranted(perm==='granted')
+    if (perm==='granted') setupNotifications(tasks)
+  }
 
   const load = useCallback(async () => {
     try {
       const [t,s,c] = await Promise.all([getAdminTasks(),getAdminTasksSummary(),getAdminTaskCategories()])
       setTasks(t.data); setSummary(s.data); setCategories(c.data)
+      // Setup notifications after load
+      if (Notification?.permission==='granted') setupNotifications(t.data)
     } finally { setLoading(false) }
   }, [])
 
@@ -1429,6 +1621,11 @@ export default function TasksPage({ onLogout }) {
       const updated = t.data.find(x=>x.id===selectedTask.id)
       if (updated) setSelectedTask(updated)
     }
+  }
+
+  async function handleStatusChange(task, newStatus) {
+    if (newStatus==='completed') setConfetti(true)
+    await refresh()
   }
 
   if (loading) return (
@@ -1446,20 +1643,32 @@ export default function TasksPage({ onLogout }) {
 
   return (
     <div className="min-h-screen bg-[#0F0F23] flex flex-col max-w-2xl mx-auto relative">
+      {confetti&&<Confetti onDone={()=>setConfetti(false)}/>}
+
       {/* Header */}
       <div className="sticky top-0 z-30 bg-[#0F0F23]/95 backdrop-blur-md border-b border-[#2D2B5A] px-4 py-3 flex items-center justify-between">
         <div>
           <h1 className="text-white font-fredoka font-bold text-xl leading-none">My Tasks</h1>
           <p className="text-[#8892B0] text-xs mt-0.5">Personal task tracker</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {(tab==='tasks'||tab==='home')&&(
-            <button onClick={()=>setShowCreate(true)} className="bg-[#00A2FF] text-white text-xs font-bold px-4 py-2 rounded-xl">
+            <button onClick={()=>setShowCreate(true)} className="bg-[#00A2FF] text-white text-xs font-bold px-3 py-2 rounded-xl">
               + New
             </button>
           )}
-          <button onClick={onLogout} className="text-[#8892B0] text-xs px-3 py-2 rounded-xl border border-[#2D2B5A]">
-            Sign out
+          {/* Notification bell */}
+          <button onClick={requestNotifications} title={notifGranted?'Notifications on':'Enable notifications'}
+            className={`w-8 h-8 flex items-center justify-center rounded-xl border border-[#2D2B5A] text-sm ${notifGranted?'text-[#00CC88]':'text-[#8892B0]'}`}>
+            {notifGranted?'🔔':'🔕'}
+          </button>
+          {/* Theme toggle */}
+          <button onClick={toggleTheme} title="Toggle theme"
+            className="w-8 h-8 flex items-center justify-center rounded-xl border border-[#2D2B5A] text-sm text-[#8892B0] hover:text-white">
+            {theme==='dark'?'☀️':'🌙'}
+          </button>
+          <button onClick={onLogout} className="text-[#8892B0] text-xs px-2 py-2 rounded-xl border border-[#2D2B5A]">
+            ↩
           </button>
         </div>
       </div>
@@ -1469,6 +1678,7 @@ export default function TasksPage({ onLogout }) {
         {tab==='home'&&<HomeTab tasks={tasks} onTaskClick={setSelectedTask}/>}
         {tab==='overview'&&<OverviewTab tasks={tasks} summary={summary} onTaskClick={setSelectedTask}/>}
         {tab==='tasks'&&<TasksTab tasks={tasks} categories={categories} onTaskClick={setSelectedTask}
+          onStatusChange={handleStatusChange}
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
           filterCat={filterCat} setFilterCat={setFilterCat}/>}
         {tab==='expenses'&&<ExpensesTab tasks={tasks} summary={summary}/>}

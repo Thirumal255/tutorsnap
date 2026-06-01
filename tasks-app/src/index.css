@@ -9,4 +9,26 @@ body {
   color: white;
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ── Light Mode ──────────────────────────────────────────────────────────────── */
+html.light body { background: #F1F5F9; color: #1E293B; }
+html.light { color-scheme: light; }
+
+/* ── Confetti ────────────────────────────────────────────────────────────────── */
+@keyframes confetti-fall {
+  0%   { transform: translateY(0px) rotate(0deg) scale(1); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateY(105vh) rotate(720deg) scale(0.5); opacity: 0; }
+}
+@keyframes confetti-drift {
+  0%, 100% { margin-left: 0; }
+  25%       { margin-left: 20px; }
+  75%       { margin-left: -20px; }
+}
+.confetti-piece {
+  animation:
+    confetti-fall var(--fall-dur) ease-in var(--fall-delay) forwards,
+    confetti-drift calc(var(--fall-dur) * 0.6) ease-in-out var(--fall-delay) infinite;
 }
