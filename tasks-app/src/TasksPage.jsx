@@ -502,7 +502,7 @@ function AddExpenseForm({ task, onSave, onClose }) {
 function SetBudgetForm({ task, allTasks, onSave, onClose }) {
   const inp = "w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
   const totalExp = (task.expenses||[]).reduce((s,e)=>s+e.amount,0)
-  const subTotal = (allTasks||[]).filter(t=>t.parent_id===task.id).reduce((s,t)=>s+(t.total_expense||0),0)
+  const subTotal = (task.subtasks||[]).reduce((s,t)=>s+(t.total_expense||0),0)
   const minBudget = totalExp+subTotal
   const [val, setVal] = useState(task.budget?String(task.budget):'')
   const [saving, setSaving] = useState(false)
@@ -551,7 +551,7 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
   const [action, setAction] = useState(null) // 'status'|'expense'|'budget'|'deps'|'subtasks'
   const overdue = isOverdue(task)
   const spent = task.total_expense || 0
-  const subtasks = allTasks.filter(t => t.parent_id === task.id)
+  const subtasks = task.subtasks || []
 
   async function handleStatusSelect(newStatus) {
     setAction(null)
@@ -775,7 +775,7 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
   const [deleting, setDeleting] = useState(false)
   const overdue = isOverdue(task)
   const spent = task.total_expense||0
-  const subtasks = (allTasks||[]).filter(t=>t.parent_id===task.id)
+  const subtasks = task.subtasks || []
 
   async function handleDelete() {
     if (!confirm('Delete this task?')) return
