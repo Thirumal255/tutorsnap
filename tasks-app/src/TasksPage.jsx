@@ -272,18 +272,21 @@ function TaskCard({ task, onClick, onStatusChange }) {
         </div>
         {task.budget>0 && <BudgetBar budget={task.budget} spent={spent} compact/>}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs">
-            {task.end_date && (
-              <span className={`flex items-center gap-1 ${overdue?'text-[#FF3333] font-semibold':days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
-                {overdue?'⚠️':'📅'} {fmtShort(task.end_date)}
-                {overdue?` (${Math.abs(days)}d late)`:days!=null&&days<=3?` (${days}d)`:''}
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            {(task.start_date || task.end_date) && (
+              <span className={`flex items-center gap-1 ${overdue?'text-[#FF3333] font-semibold':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
+                {overdue?'⚠️':'📅'}
+                {task.start_date && <span>{fmtShort(task.start_date)}</span>}
+                {task.start_date && task.end_date && <span className="text-[#2D2B5A]">→</span>}
+                {task.end_date && <span>{fmtShort(task.end_date)}</span>}
+                {overdue ? ` (${Math.abs(days)}d late)` : days!=null&&days<=3 ? ` (${days}d)` : ''}
               </span>
             )}
             {task.subtasks?.length>0&&(
               <span className="text-[#8892B0]">· {task.subtasks.filter(s=>s.status==='completed').length}/{task.subtasks.length} sub</span>
             )}
           </div>
-          <span className="text-[#2D2B5A] text-xs">hold to change status</span>
+          <span className="text-[#2D2B5A] text-xs">hold to change</span>
         </div>
       </div>
       {showPicker&&<StatusPicker task={task} onSelect={handleStatusSelect} onClose={()=>setShowPicker(false)}/>}
