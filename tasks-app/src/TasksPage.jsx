@@ -481,6 +481,141 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
 
 // ── Overview Tab ───────────────────────────────────────────────────────────────
 
+// ── Home Tab ───────────────────────────────────────────────────────────────────
+
+function HomeTab({ tasks, onTaskClick }) {
+  const today = new Date(new Date().toDateString())
+  const in2days = new Date(today); in2days.setDate(today.getDate()+2)
+  const root = tasks.filter(t=>!t.parent_id)
+
+  const ongoing = root.filter(t=>t.status==='in_progress')
+  const upcoming = root.filter(t=>{
+    if (t.status!=='not_started'||!t.start_date) return false
+    const sd = new Date(t.start_date+'T00:00:00')
+    return sd>=today && sd<=in2days
+  })
+
+  // Group ongoing by category
+  const byCategory = {}
+  ongoing.forEach(t=>{
+    if (!byCategory[t.category]) byCategory[t.category]=[]
+    byCategory[t.category].push(t)
+  })
+
+  const today_str = today.toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short'})
+
+  return (
+    <div className="p-4 pb-28 space-y-6">
+      {/* Date */}
+      <p className="text-[#8892B0] text-xs font-semibold">{today_str}</p>
+
+      {/* Ongoing */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-base">🔄</span>
+          <h2 className="text-white font-bold text-base">Ongoing</h2>
+          <span className="bg-[#00A2FF]/15 text-[#00A2FF] text-xs font-bold px-2 py-0.5 rounded-full">{ongoing.length}</span>
+        </div>
+
+        {ongoing.length===0 ? (
+          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-6 text-center">
+            <p className="text-2xl mb-2">✅</p>
+            <p className="text-[#8892B0] text-sm">No ongoing tasks</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {Object.entries(byCategory).sort().map(([cat,catTasks])=>{
+              const catOverdue = catTasks.filter(isOverdue)
+              return (
+                <div key={cat}>
+                  {/* Category label */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">{cat}</span>
+                    {catOverdue.length>0&&(
+                      <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full">
+                        ⚠️ {catOverdue.length} overdue
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {catTasks.map(t=>{
+                      const overdue = isOverdue(t)
+                      const days = daysLeft(t.end_date)
+                      const spent = t.total_expense||0
+                      return (
+                        <div key={t.id} onClick={()=>onTaskClick(t)}
+                          className={`border-l-4 rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all space-y-2 ${
+                            overdue
+                              ? 'bg-[#FF3333]/8 border-l-[#FF3333] border border-[#FF3333]/20'
+                              : `bg-[#16213E] border border-[#2D2B5A] ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'}`
+                          }`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-white font-semibold text-sm leading-snug flex-1">{t.title}</p>
+                            {overdue&&(
+                              <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">
+                                {Math.abs(days)}d late
+                              </span>
+                            )}
+                          </div>
+                          {t.end_date&&!overdue&&(
+                            <p className={`text-xs flex items-center gap-1 ${days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
+                              📅 Due {fmtShort(t.end_date)}{days!=null&&days<=3?` · ${days}d left`:''}
+                            </p>
+                          )}
+                          {overdue&&t.end_date&&(
+                            <p className="text-[#FF3333] text-xs">📅 Was due {fmtShort(t.end_date)}</p>
+                          )}
+                          {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Upcoming */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-base">📅</span>
+          <h2 className="text-white font-bold text-base">Coming Up</h2>
+          <span className="text-[#8892B0] text-xs">next 2 days</span>
+          {upcoming.length>0&&<span className="bg-[#FFB347]/15 text-[#FFB347] text-xs font-bold px-2 py-0.5 rounded-full">{upcoming.length}</span>}
+        </div>
+
+        {upcoming.length===0 ? (
+          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-5 text-center">
+            <p className="text-[#8892B0] text-sm">Nothing starting in the next 2 days</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {upcoming.map(t=>{
+              const days = daysLeft(t.start_date)
+              return (
+                <div key={t.id} onClick={()=>onTaskClick(t)}
+                  className="bg-[#16213E] border border-[#FFB347]/20 border-l-4 border-l-[#FFB347] rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all space-y-1">
+                  <p className="text-white font-semibold text-sm">{t.title}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[#8892B0] text-xs">{t.category}</p>
+                    <span className="text-[#FFB347] text-xs font-semibold">
+                      {days===0?'Starts today':days===1?'Starts tomorrow':`Starts in ${days}d`} · {fmtShort(t.start_date)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Overview Tab ───────────────────────────────────────────────────────────────
+
 function OverviewTab({ tasks, summary, onTaskClick }) {
   const totalBudget = summary.total_budget||0
   const totalSpent  = summary.total_spent||0
@@ -730,7 +865,7 @@ export default function TasksPage({ onLogout }) {
   const [summary, setSummary] = useState({})
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('tasks')
+  const [tab, setTab] = useState('home')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterCat, setFilterCat] = useState('all')
   const [selectedTask, setSelectedTask] = useState(null)
@@ -762,6 +897,7 @@ export default function TasksPage({ onLogout }) {
   )
 
   const NAV = [
+    {key:'home',    icon:'🏠',label:'Home'},
     {key:'overview',icon:'📊',label:'Overview'},
     {key:'tasks',   icon:'📋',label:'Tasks'},
     {key:'expenses',icon:'💰',label:'Expenses'},
@@ -776,7 +912,7 @@ export default function TasksPage({ onLogout }) {
           <p className="text-[#8892B0] text-xs mt-0.5">Personal task tracker</p>
         </div>
         <div className="flex items-center gap-2">
-          {tab==='tasks'&&(
+          {(tab==='tasks'||tab==='home')&&(
             <button onClick={()=>setShowCreate(true)} className="bg-[#00A2FF] text-white text-xs font-bold px-4 py-2 rounded-xl">
               + New
             </button>
@@ -789,6 +925,7 @@ export default function TasksPage({ onLogout }) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+        {tab==='home'&&<HomeTab tasks={tasks} onTaskClick={setSelectedTask}/>}
         {tab==='overview'&&<OverviewTab tasks={tasks} summary={summary} onTaskClick={setSelectedTask}/>}
         {tab==='tasks'&&<TasksTab tasks={tasks} categories={categories} onTaskClick={setSelectedTask}
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
