@@ -120,7 +120,7 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
     parent_id: task?.parent_id || '',
     dependency_ids: task?.dependency_ids || [],
     newCategory: '',
-    budget: task?.budget || '',
+    budget: task?.budget ?? '',
     expense_amount: '',
     expense_description: '',
     expense_date: new Date().toISOString().split('T')[0],
@@ -298,28 +298,35 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
           </div>
 
           {/* Expense */}
-          <div className="border border-[#2D2B5A] rounded-xl p-4 space-y-3">
-            <p className="text-xs text-[#8892B0] font-semibold">💰 Expense (optional)</p>
-            <div className="grid grid-cols-2 gap-3">
+          {isEdit ? (
+            <div className="border border-[#2D2B5A] rounded-xl p-4">
+              <p className="text-xs text-[#8892B0] font-semibold mb-1">💰 Expenses</p>
+              <p className="text-[#8892B0] text-xs">Use the <span className="text-[#00A2FF]">Add Expense</span> button in the task detail panel to add or manage expenses.</p>
+            </div>
+          ) : (
+            <div className="border border-[#2D2B5A] rounded-xl p-4 space-y-3">
+              <p className="text-xs text-[#8892B0] font-semibold">💰 Expense (optional)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[#8892B0] mb-1">Amount (₹)</label>
+                  <input type="number" value={form.expense_amount} onChange={e => set('expense_amount', e.target.value)}
+                    className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]"
+                    placeholder="0.00" min="0" step="0.01" />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#8892B0] mb-1">Expense Date</label>
+                  <input type="date" value={form.expense_date} onChange={e => set('expense_date', e.target.value)}
+                    className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]" />
+                </div>
+              </div>
               <div>
-                <label className="block text-xs text-[#8892B0] mb-1">Amount (₹)</label>
-                <input type="number" value={form.expense_amount} onChange={e => set('expense_amount', e.target.value)}
+                <label className="block text-xs text-[#8892B0] mb-1">Description</label>
+                <input value={form.expense_description} onChange={e => set('expense_description', e.target.value)}
                   className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]"
-                  placeholder="0.00" min="0" step="0.01" />
-              </div>
-              <div>
-                <label className="block text-xs text-[#8892B0] mb-1">Expense Date</label>
-                <input type="date" value={form.expense_date} onChange={e => set('expense_date', e.target.value)}
-                  className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]" />
+                  placeholder="What was this expense for?" />
               </div>
             </div>
-            <div>
-              <label className="block text-xs text-[#8892B0] mb-1">Description</label>
-              <input value={form.expense_description} onChange={e => set('expense_description', e.target.value)}
-                className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]"
-                placeholder="What was this expense for?" />
-            </div>
-          </div>
+          )}
 
           {/* Sub-tasks */}
           <div className="border border-[#2D2B5A] rounded-xl p-4 space-y-3">
