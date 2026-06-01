@@ -1431,45 +1431,47 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
         ))}
       </div>
 
-      {/* Filters — only for list view */}
-      {view==='list'&&(
+      {/* Filters — all views */}
+      {!q&&(
         <>
-          {!q&&(
-            <>
-              <div className="px-4 pb-2 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
-                {[{key:'all',label:'All'},{key:'in_progress',label:'In Progress'},{key:'not_started',label:'Not Started'},
-                  {key:'on_hold',label:'On Hold'},{key:'completed',label:'Completed'}].map(f=>(
-                  <button key={f.key} onClick={()=>setFilterStatus(f.key)}
-                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                      filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
-                    }`}>{f.label}</button>
-                ))}
-              </div>
-              <div className="px-4 pb-3">
-                <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
-                  className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
-                  <option value="all">All Categories</option>
-                  {categories.map(c=><option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </>
-          )}
-          <div className="px-4 pb-2">
-            <p className="text-[#8892B0] text-xs">
-              {q ? `${filtered.length} result${filtered.length!==1?'s':''} for "${search}"` : `${filtered.length} task${filtered.length!==1?'s':''}`}
-            </p>
+          <div className="px-4 pb-2 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+            {[{key:'all',label:'All'},{key:'in_progress',label:'In Progress'},{key:'not_started',label:'Not Started'},
+              {key:'on_hold',label:'On Hold'},{key:'completed',label:'Completed'}].map(f=>(
+              <button key={f.key} onClick={()=>setFilterStatus(f.key)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                  filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                }`}>{f.label}</button>
+            ))}
           </div>
-          <div className="px-4 space-y-3">
-            {filtered.length===0
-              ? <div className="text-center py-16"><p className="text-4xl mb-3">{q?'🔍':'✅'}</p><p className="text-[#8892B0] text-sm">{q?'No tasks match your search':'No tasks match this filter'}</p></div>
-              : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick} onStatusChange={onStatusChange}/>)}
+          <div className="px-4 pb-3">
+            <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
+              className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
+              <option value="all">All Categories</option>
+              {categories.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
         </>
       )}
 
-      {view==='calendar' && <CalendarView tasks={root} onTaskClick={onTaskClick}/>}
-      {view==='gantt'    && <GanttView    tasks={root} onTaskClick={onTaskClick}/>}
-      {view==='timeline' && <TimelineView tasks={root} onTaskClick={onTaskClick}/>}
+      {/* Task count */}
+      <div className="px-4 pb-2">
+        <p className="text-[#8892B0] text-xs">
+          {q ? `${filtered.length} result${filtered.length!==1?'s':''} for "${search}"` : `${filtered.length} task${filtered.length!==1?'s':''}`}
+        </p>
+      </div>
+
+      {/* Views — all receive filtered tasks */}
+      {view==='list'&&(
+        <div className="px-4 space-y-3">
+          {filtered.length===0
+            ? <div className="text-center py-16"><p className="text-4xl mb-3">{q?'🔍':'✅'}</p><p className="text-[#8892B0] text-sm">{q?'No tasks match your search':'No tasks match this filter'}</p></div>
+            : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick} onStatusChange={onStatusChange}/>)}
+        </div>
+      )}
+
+      {view==='calendar' && <CalendarView tasks={filtered} onTaskClick={onTaskClick}/>}
+      {view==='gantt'    && <GanttView    tasks={filtered} onTaskClick={onTaskClick}/>}
+      {view==='timeline' && <TimelineView tasks={filtered} onTaskClick={onTaskClick}/>}
     </div>
   )
 }
