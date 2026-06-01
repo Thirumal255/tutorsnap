@@ -544,6 +544,87 @@ function SetBudgetForm({ task, allTasks, onSave, onClose }) {
 
 // ── Task Detail ────────────────────────────────────────────────────────────────
 
+function SubtasksSection({ task, subtasks, onRefresh }) {
+  const [input, setInput] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const inp = "flex-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
+
+  async function addSubtask() {
+    const title = input.trim()
+    if (!title) return
+    setSaving(true)
+    try {
+      await createAdminTask({ title, category: task.category, status:'not_started', priority:'medium', parent_id: task.id })
+      setInput(''); await onRefresh()
+    } catch(e) { alert(e.response?.data?.detail||'Failed') }
+    finally { setSaving(false) }
+  }
+
+  async function toggleStatus(st) {
+    const next = st.status==='completed' ? 'not_started' : 'completed'
+    try { await updateAdminTask(st.id, {status:next}); await onRefresh() }
+    catch(e) { alert(e.response?.data?.detail||'Failed') }
+  }
+
+  async function deleteSubtask(st) {
+    if (!confirm(`Delete "${st.title}"?`)) return
+    try { await deleteAdminTask(st.id); await onRefresh() }
+    catch(e) { alert(e.response?.data?.detail||'Failed') }
+  }
+
+  const done = subtasks.filter(s=>s.status==='completed').length
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[#8892B0] text-xs font-semibold">
+          Sub-tasks {subtasks.length>0&&`(${done}/${subtasks.length} done)`}
+        </p>
+        <button onClick={()=>setAdding(a=>!a)}
+          className="text-[#00A2FF] text-xs font-semibold">
+          {adding?'Cancel':'+ Add'}
+        </button>
+      </div>
+
+      {subtasks.length>0&&(
+        <div className="space-y-1.5 mb-2">
+          {subtasks.map(st=>(
+            <div key={st.id} className="flex items-center gap-2 bg-[#0F0F23] rounded-xl px-3 py-2">
+              <button onClick={()=>toggleStatus(st)}
+                className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${
+                  st.status==='completed'?'bg-[#00CC88] border-[#00CC88]':'border-[#2D2B5A]'
+                }`}>
+                {st.status==='completed'&&<span className="text-white text-xs leading-none">✓</span>}
+              </button>
+              <span className={`text-xs flex-1 ${st.status==='completed'?'text-[#8892B0] line-through':'text-white'}`}>
+                {st.title}
+              </span>
+              <button onClick={()=>deleteSubtask(st)} className="text-[#8892B0] hover:text-[#FF3333] text-base leading-none">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {adding&&(
+        <div className="flex gap-2 mt-2">
+          <input value={input} onChange={e=>setInput(e.target.value)}
+            onKeyDown={e=>{ if(e.key==='Enter') addSubtask() }}
+            className={inp} placeholder="Sub-task title…" autoFocus/>
+          <button onClick={addSubtask} disabled={saving||!input.trim()}
+            className="bg-[#00A2FF] text-white text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40">
+            {saving?'…':'Add'}
+          </button>
+        </div>
+      )}
+
+      {subtasks.length===0&&!adding&&(
+        <p className="text-[#8892B0] text-xs italic">No sub-tasks yet</p>
+      )}
+    </div>
+  )
+}
+
 function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
   const [showExp, setShowExp] = useState(false)
   const [showBudget, setShowBudget] = useState(false)
@@ -612,21 +693,8 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
           </div>
         )}
 
-        {subtasks.length>0&&(
-          <div>
-            <p className="text-[#8892B0] text-xs font-semibold mb-2">
-              Sub-tasks ({subtasks.filter(s=>s.status==='completed').length}/{subtasks.length} done)
-            </p>
-            <div className="space-y-2">
-              {subtasks.map(st=>(
-                <div key={st.id} className="flex items-center gap-3 bg-[#0F0F23] rounded-xl px-3 py-2.5">
-                  <StatusBadge status={st.status}/>
-                  <span className="text-white text-xs flex-1">{st.title}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Sub-tasks */}
+        <SubtasksSection task={task} subtasks={subtasks} onRefresh={onRefresh}/>
 
         {/* Dependencies */}
         {task.dependency_ids?.length>0&&(()=>{
