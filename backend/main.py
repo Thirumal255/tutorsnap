@@ -5836,80 +5836,112 @@ def _tg_bar(spent: float, total: float, width: int = 16) -> str:
 
 
 def _build_digest(db: Session) -> str:
-    from datetime import date as _d
+    from datetime import date as _d, timedelta as _td
     today = _d.today()
-    in_two = today.replace(day=today.day + 2) if today.day <= 27 else today  # safe approx
-    try:
-        from datetime import timedelta as _td
-        in_two = today + _td(days=2)
-    except Exception:
-        pass
+    in_two = today + _td(days=2)
 
     tasks = db.query(AdminTask).filter(AdminTask.parent_id.is_(None)).all()
 
-    overdue      = [t for t in tasks if t.end_date and t.end_date < today and t.status != "completed"]
-    in_progress  = [t for t in tasks if t.status == "in_progress"]
-    starting_soon= [t for t in tasks if t.start_date and today <= t.start_date <= in_two and t.status == "not_started"]
-    completed    = [t for t in tasks if t.status == "completed"]
+    overdue       = [t for t in tasks if t.end_date and t.end_date < today and t.status != "completed"]
+    starting_soon = [t for t in tasks if t.start_date and today <= t.start_date <= in_two and t.status == "not_started"]
 
     total_budget = sum(t.budget or 0 for t in tasks)
     total_spent  = sum(sum(e.amount for e in t.expenses) for t in tasks)
-    total_remaining = total_budget - total_spent
+
+    # Build category map
+    by_category: dict = {}
+    for t in tasks:
+        cat = t.category
+        if cat not in by_category:
+            by_category[cat] = []
+        by_category[cat].append(t)
+
+    STATUS_LABEL = {
+        "not_started": "Not Started",
+        "in_progress": "In Progress",
+        "completed":   "Completed",
+        "on_hold":     "On Hold",
+    }
+    STATUS_ICON = {
+        "not_started": "○",   # ○
+        "in_progress": "\U0001f504",  # 🔄
+        "completed":   "✅",   # ✅
+        "on_hold":     "⏸",   # ⏸
+    }
 
     lines = []
-    lines.append(f"*TutorSnap Daily Digest*")
+    lines.append("*✅ TutorSnap Daily Digest*")
     lines.append(f"_{today.strftime('%a, %d %b %Y')}_")
     lines.append("")
 
-    # Overdue
+    # ── Overdue alert ──────────────────────────────────────────────────────────
     if overdue:
-        lines.append(f"*\U0001f534 OVERDUE ({len(overdue)})*")
+        lines.append(f"*\U0001f534 OVERDUE — {len(overdue)} task{'s' if len(overdue)>1 else ''}*")
         for t in overdue:
-            due = t.end_date.strftime('%d %b') if t.end_date else "?"
+            due   = t.end_date.strftime('%d %b') if t.end_date else "?"
             spent = sum(e.amount for e in t.expenses)
-            budget_line = f"  Budget: Rs.{t.budget:,.0f} | Spent: Rs.{spent:,.0f}" if t.budget else ""
-            lines.append(f"• *{t.title}*")
-            lines.append(f"  {t.category} | Due: {due}{budget_line}")
-        lines.append("")
-
-    # In progress
-    if in_progress:
-        lines.append(f"*\U0001f504 IN PROGRESS ({len(in_progress)})*")
-        for t in in_progress:
-            due = t.end_date.strftime('%d %b') if t.end_date else "no due date"
-            spent = sum(e.amount for e in t.expenses)
-            lines.append(f"• *{t.title}*")
-            lines.append(f"  {t.category} | Due: {due}")
+            lines.append(f"  • *{t.title}*")
+            lines.append(f"    [{t.category}] Due: {due}")
             if t.budget:
-                bar = _tg_bar(spent, t.budget)
-                lines.append(f"  Budget: Rs.{t.budget:,.0f}  Spent: Rs.{spent:,.0f}  Left: Rs.{t.budget-spent:,.0f}")
-                lines.append(f"  {bar}")
+                lines.append(f"    Rs.{spent:,.0f} spent of Rs.{t.budget:,.0f}  {_tg_bar(spent, t.budget, 12)}")
         lines.append("")
 
-    # Starting soon
+    # ── Starting soon ──────────────────────────────────────────────────────────
     if starting_soon:
-        lines.append(f"*⏰ STARTING IN 2 DAYS ({len(starting_soon)})*")
+        lines.append(f"*⏰ STARTING IN 2 DAYS — {len(starting_soon)} task{'s' if len(starting_soon)>1 else ''}*")
         for t in starting_soon:
             start = t.start_date.strftime('%d %b') if t.start_date else "?"
-            lines.append(f"• *{t.title}*")
-            lines.append(f"  {t.category} | Starts: {start}")
+            lines.append(f"  • *{t.title}*  [{t.category}] starts {start}")
         lines.append("")
 
-    # Snapshot
-    total = len(tasks)
-    lines.append("*\U0001f4ca TASK SNAPSHOT*")
-    lines.append(f"Total:       {total}")
-    lines.append(f"In Progress: {len(in_progress)}  {_tg_bar(len(in_progress), total) if total else ''}")
-    lines.append(f"Completed:   {len(completed)}  {_tg_bar(len(completed), total) if total else ''}")
-    lines.append(f"Overdue:     {len(overdue)}")
+    # ── Category-wise breakdown ────────────────────────────────────────────────
+    lines.append("*\U0001f4cb CATEGORY BREAKDOWN*")
     lines.append("")
 
-    # Budget snapshot
-    if total_budget > 0:
-        lines.append("*\U0001f4b0 BUDGET SNAPSHOT*")
-        lines.append(f"Allocated:  Rs.{total_budget:,.0f}")
-        lines.append(f"Spent:      Rs.{total_spent:,.0f}  {_tg_bar(total_spent, total_budget)}")
-        lines.append(f"Remaining:  Rs.{total_remaining:,.0f}")
+    for cat, cat_tasks in sorted(by_category.items()):
+        cat_budget = sum(t.budget or 0 for t in cat_tasks)
+        cat_spent  = sum(sum(e.amount for e in t.expenses) for t in cat_tasks)
+        cat_overdue= sum(1 for t in cat_tasks if t.end_date and t.end_date < today and t.status != "completed")
+
+        # Count by status
+        status_counts: dict = {}
+        for t in cat_tasks:
+            status_counts[t.status] = status_counts.get(t.status, 0) + 1
+
+        overdue_tag = f"  \U0001f534 {cat_overdue} overdue" if cat_overdue else ""
+        lines.append(f"*{cat}* ({len(cat_tasks)} tasks{overdue_tag})")
+
+        # Status summary line
+        status_parts = [f"{STATUS_ICON.get(s,'')} {STATUS_LABEL.get(s,s)}: {c}" for s, c in status_counts.items()]
+        lines.append("  " + "  |  ".join(status_parts))
+
+        # Budget bar
+        if cat_budget > 0:
+            remaining = cat_budget - cat_spent
+            lines.append(f"  \U0001f4b0 Rs.{cat_spent:,.0f} / Rs.{cat_budget:,.0f}  {_tg_bar(cat_spent, cat_budget, 12)}  Left: Rs.{remaining:,.0f}")
+        elif cat_spent > 0:
+            lines.append(f"  \U0001f4b0 Spent: Rs.{cat_spent:,.0f}  (no budget set)")
+
+        # Task list — only non-completed tasks
+        active = [t for t in cat_tasks if t.status != "completed"]
+        for t in active:
+            spent  = sum(e.amount for e in t.expenses)
+            icon   = STATUS_ICON.get(t.status, "○")
+            due    = f" | Due: {t.end_date.strftime('%d %b')}" if t.end_date else ""
+            is_od  = " \U0001f534" if t in overdue else ""
+            lines.append(f"  {icon} {t.title}{due}{is_od}")
+            if t.budget:
+                lines.append(f"       Rs.{spent:,.0f} / Rs.{t.budget:,.0f}  {_tg_bar(spent, t.budget, 10)}")
+            elif spent > 0:
+                lines.append(f"       Spent: Rs.{spent:,.0f}")
+        lines.append("")
+
+    # ── Overall budget summary ─────────────────────────────────────────────────
+    if total_budget > 0 or total_spent > 0:
+        lines.append("*\U0001f4b0 OVERALL BUDGET*")
+        lines.append(f"  Allocated: Rs.{total_budget:,.0f}")
+        lines.append(f"  Spent:     Rs.{total_spent:,.0f}  {_tg_bar(total_spent, total_budget) if total_budget else ''}")
+        lines.append(f"  Remaining: Rs.{total_budget - total_spent:,.0f}")
 
     return "\n".join(lines)
 
