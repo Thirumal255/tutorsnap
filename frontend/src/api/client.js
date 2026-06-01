@@ -169,3 +169,14 @@ export const teachChat = (topicId, messages, turnNumber) =>
 // Student Goal Journal
 export const getCurrentGoal = ()     => api.get('/student/goals/current')
 export const setWeeklyGoal  = (data) => api.post('/student/goals', data)
+
+// Admin Task Tracker
+export const getAdminTasks         = (params = {}) => api.get('/admin/tasks', { params })
+export const getAdminTasksSummary  = ()             => api.get('/admin/tasks/summary')
+export const getAdminTaskCategories = ()            => api.get('/admin/tasks/categories')
+export const getAdminTask          = (id)           => api.get(`/admin/tasks/${id}`)
+export const createAdminTask       = (data)         => api.post('/admin/tasks', data)
+export const updateAdminTask       = (id, data)     => api.put(`/admin/tasks/${id}`, data)
+export const deleteAdminTask       = (id)           => api.delete(`/admin/tasks/${id}`)
+export const addTaskExpense        = (id, data)     => api.post(`/admin/tasks/${id}/expenses`, data)
+export const deleteTaskExpense     = (taskId, expId) => api.delete(`/admin/tasks/${taskId}/expenses/${expId}`)

@@ -334,6 +334,57 @@ class ExamSession(Base):
     xp_earned = Column(Integer, nullable=True)
 
 
+class AdminTask(Base):
+    """Personal task tracker for admin — flat purchase, investments, etc."""
+    __tablename__ = "admin_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(200), nullable=False)
+    notes = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="not_started")  # not_started | in_progress | completed | on_hold
+    priority = Column(String(10), nullable=False, default="medium")     # low | medium | high
+    category = Column(String(100), nullable=False)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    parent_id = Column(Integer, ForeignKey("admin_tasks.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    expenses = relationship("AdminTaskExpense", back_populates="task", cascade="all, delete-orphan")
+    subtasks = relationship("AdminTask", foreign_keys="AdminTask.parent_id",
+                            backref="parent", lazy="select")
+    dependencies = relationship("AdminTaskDependency",
+                                foreign_keys="AdminTaskDependency.task_id",
+                                back_populates="task", cascade="all, delete-orphan")
+
+
+class AdminTaskExpense(Base):
+    __tablename__ = "admin_task_expenses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(Integer, ForeignKey("admin_tasks.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    description = Column(String(300), nullable=True)
+    expense_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    task = relationship("AdminTask", back_populates="expenses")
+
+
+class AdminTaskDependency(Base):
+    """task_id must wait for depends_on_id to be completed before it can start."""
+    __tablename__ = "admin_task_dependencies"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(Integer, ForeignKey("admin_tasks.id"), nullable=False)
+    depends_on_id = Column(Integer, ForeignKey("admin_tasks.id"), nullable=False)
+
+    __table_args__ = (UniqueConstraint("task_id", "depends_on_id"),)
+
+    task = relationship("AdminTask", foreign_keys=[task_id], back_populates="dependencies")
+    depends_on = relationship("AdminTask", foreign_keys=[depends_on_id])
+
+
 class StudentGoal(Base):
     """Weekly learning goal set by the student."""
     __tablename__ = "student_goals"

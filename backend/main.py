@@ -26,6 +26,7 @@ from models import (
     AppSettings, User, ParentStudentLink, Notification,
     WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
     AIUsageLog, AdminAuditLog, StudentGoal,
+    AdminTask, AdminTaskExpense, AdminTaskDependency,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -5448,3 +5449,324 @@ def student_progress(
             "chapters": ch_data,
         })
     return result
+
+
+# =============================================================================
+# Admin Personal Task Tracker
+# =============================================================================
+
+class TaskCreate(BaseModel):
+    title: str
+    notes: Optional[str] = None
+    status: str = "not_started"
+    priority: str = "medium"
+    category: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    parent_id: Optional[int] = None
+    dependency_ids: Optional[list[int]] = []
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    category: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    parent_id: Optional[int] = None
+    dependency_ids: Optional[list[int]] = None
+
+class ExpenseCreate(BaseModel):
+    amount: float
+    description: Optional[str] = None
+    expense_date: str
+
+
+def _parse_date(s: Optional[str]) -> Optional[_date]:
+    if not s:
+        return None
+    try:
+        return _date.fromisoformat(s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date: {s}")
+
+
+def _task_dict(t: AdminTask, include_subtasks: bool = False) -> dict:
+    total_expense = sum(e.amount for e in t.expenses)
+    d = {
+        "id": t.id,
+        "title": t.title,
+        "notes": t.notes,
+        "status": t.status,
+        "priority": t.priority,
+        "category": t.category,
+        "start_date": t.start_date.isoformat() if t.start_date else None,
+        "end_date": t.end_date.isoformat() if t.end_date else None,
+        "parent_id": t.parent_id,
+        "created_at": t.created_at.isoformat(),
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+        "total_expense": total_expense,
+        "expenses": [
+            {
+                "id": e.id,
+                "amount": e.amount,
+                "description": e.description,
+                "expense_date": e.expense_date.isoformat(),
+            }
+            for e in sorted(t.expenses, key=lambda e: e.expense_date)
+        ],
+        "dependency_ids": [dep.depends_on_id for dep in t.dependencies],
+    }
+    if include_subtasks:
+        d["subtasks"] = [_task_dict(st) for st in t.subtasks]
+    return d
+
+
+def _shift_task_dates(task: AdminTask, delta_days: int, db: Session, visited: set):
+    if task.id in visited:
+        return
+    visited.add(task.id)
+    if task.start_date:
+        task.start_date = task.start_date + timedelta(days=delta_days)
+    if task.end_date:
+        task.end_date = task.end_date + timedelta(days=delta_days)
+    blocked = db.query(AdminTaskDependency).filter(
+        AdminTaskDependency.depends_on_id == task.id
+    ).all()
+    for dep in blocked:
+        downstream = db.query(AdminTask).filter(AdminTask.id == dep.task_id).first()
+        if downstream:
+            _shift_task_dates(downstream, delta_days, db, visited)
+
+
+def _has_cycle(task_id: int, dep_id: int, db: Session) -> bool:
+    visited = set()
+    queue = [dep_id]
+    while queue:
+        current = queue.pop()
+        if current == task_id:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        deps = db.query(AdminTaskDependency).filter(
+            AdminTaskDependency.task_id == current
+        ).all()
+        queue.extend(d.depends_on_id for d in deps)
+    return False
+
+
+@app.get("/api/admin/tasks")
+def list_tasks(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    q = db.query(AdminTask).filter(AdminTask.parent_id == None)
+    if category:
+        q = q.filter(AdminTask.category == category)
+    if status:
+        q = q.filter(AdminTask.status == status)
+    tasks = q.order_by(AdminTask.end_date.asc().nullslast(), AdminTask.created_at.desc()).all()
+    return [_task_dict(t, include_subtasks=True) for t in tasks]
+
+
+@app.get("/api/admin/tasks/categories")
+def list_categories(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = db.query(AdminTask.category).distinct().order_by(AdminTask.category).all()
+    return [r[0] for r in rows]
+
+
+@app.get("/api/admin/tasks/summary")
+def tasks_summary(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    today = _date.today()
+    all_tasks = db.query(AdminTask).all()
+    total_expense = db.query(func.sum(AdminTaskExpense.amount)).scalar() or 0.0
+
+    by_status: dict = {}
+    for t in all_tasks:
+        by_status[t.status] = by_status.get(t.status, 0) + 1
+
+    overdue = [
+        t for t in all_tasks
+        if t.end_date and t.end_date < today and t.status not in ("completed",)
+    ]
+
+    expense_by_cat: dict = {}
+    for e in db.query(AdminTaskExpense).join(AdminTask).all():
+        cat = e.task.category
+        expense_by_cat[cat] = expense_by_cat.get(cat, 0.0) + e.amount
+
+    return {
+        "total": len(all_tasks),
+        "by_status": by_status,
+        "overdue_count": len(overdue),
+        "overdue": [_task_dict(t) for t in overdue[:10]],
+        "total_expense": round(total_expense, 2),
+        "expense_by_category": {k: round(v, 2) for k, v in expense_by_cat.items()},
+    }
+
+
+@app.get("/api/admin/tasks/{task_id}")
+def get_task(
+    task_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    task = db.query(AdminTask).filter(AdminTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return _task_dict(task, include_subtasks=True)
+
+
+@app.post("/api/admin/tasks", status_code=201)
+def create_task(
+    data: TaskCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    task = AdminTask(
+        title=data.title,
+        notes=data.notes,
+        status=data.status,
+        priority=data.priority,
+        category=data.category,
+        start_date=_parse_date(data.start_date),
+        end_date=_parse_date(data.end_date),
+        parent_id=data.parent_id,
+    )
+    db.add(task)
+    db.flush()
+    for dep_id in (data.dependency_ids or []):
+        if _has_cycle(task.id, dep_id, db):
+            raise HTTPException(status_code=400, detail=f"Circular dependency with task {dep_id}")
+        db.add(AdminTaskDependency(task_id=task.id, depends_on_id=dep_id))
+    _audit_log(db, current_user, action="create_task", target_type="task",
+               target_id=task.id, target_name=task.title, details=data.category)
+    db.commit()
+    db.refresh(task)
+    return _task_dict(task, include_subtasks=True)
+
+
+@app.put("/api/admin/tasks/{task_id}")
+def update_task(
+    task_id: int,
+    data: TaskUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    task = db.query(AdminTask).filter(AdminTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    old_end = task.end_date
+    if data.title is not None:
+        task.title = data.title
+    if data.notes is not None:
+        task.notes = data.notes
+    if data.status is not None:
+        task.status = data.status
+    if data.priority is not None:
+        task.priority = data.priority
+    if data.category is not None:
+        task.category = data.category
+    if data.start_date is not None:
+        task.start_date = _parse_date(data.start_date)
+    if data.end_date is not None:
+        new_end = _parse_date(data.end_date)
+        task.end_date = new_end
+        if old_end and new_end and new_end != old_end:
+            delta = (new_end - old_end).days
+            if delta != 0:
+                blocked = db.query(AdminTaskDependency).filter(
+                    AdminTaskDependency.depends_on_id == task_id
+                ).all()
+                visited = {task_id}
+                for dep in blocked:
+                    downstream = db.query(AdminTask).filter(AdminTask.id == dep.task_id).first()
+                    if downstream:
+                        _shift_task_dates(downstream, delta, db, visited)
+    if data.parent_id is not None:
+        task.parent_id = data.parent_id
+    if data.dependency_ids is not None:
+        db.query(AdminTaskDependency).filter(AdminTaskDependency.task_id == task_id).delete()
+        for dep_id in data.dependency_ids:
+            if dep_id == task_id:
+                raise HTTPException(status_code=400, detail="Task cannot depend on itself")
+            if _has_cycle(task_id, dep_id, db):
+                raise HTTPException(status_code=400, detail=f"Circular dependency with task {dep_id}")
+            db.add(AdminTaskDependency(task_id=task_id, depends_on_id=dep_id))
+    task.updated_at = datetime.utcnow()
+    _audit_log(db, current_user, action="update_task", target_type="task",
+               target_id=task.id, target_name=task.title)
+    db.commit()
+    db.refresh(task)
+    return _task_dict(task, include_subtasks=True)
+
+
+@app.delete("/api/admin/tasks/{task_id}", status_code=204)
+def delete_task(
+    task_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    task = db.query(AdminTask).filter(AdminTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    _audit_log(db, current_user, action="delete_task", target_type="task",
+               target_id=task.id, target_name=task.title)
+    db.delete(task)
+    db.commit()
+
+
+@app.post("/api/admin/tasks/{task_id}/expenses", status_code=201)
+def add_expense(
+    task_id: int,
+    data: ExpenseCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    task = db.query(AdminTask).filter(AdminTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    expense = AdminTaskExpense(
+        task_id=task_id,
+        amount=data.amount,
+        description=data.description,
+        expense_date=_parse_date(data.expense_date),
+    )
+    db.add(expense)
+    _audit_log(db, current_user, action="add_expense", target_type="task",
+               target_id=task_id, target_name=task.title,
+               details=f"Rs.{data.amount} on {data.expense_date}")
+    db.commit()
+    db.refresh(expense)
+    return {"id": expense.id, "amount": expense.amount,
+            "description": expense.description,
+            "expense_date": expense.expense_date.isoformat()}
+
+
+@app.delete("/api/admin/tasks/{task_id}/expenses/{expense_id}", status_code=204)
+def delete_expense(
+    task_id: int,
+    expense_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    expense = db.query(AdminTaskExpense).filter(
+        AdminTaskExpense.id == expense_id,
+        AdminTaskExpense.task_id == task_id,
+    ).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    db.delete(expense)
+    _audit_log(db, current_user, action="delete_expense", target_type="task",
+               target_id=task_id, details=f"Rs.{expense.amount}")
+    db.commit()
