@@ -65,10 +65,10 @@ function SummaryCard({ icon, label, value, sub, accent }) {
 
 // ── Task Form Modal ────────────────────────────────────────────────────────────
 
-const NEW_CAT_SENTINEL = '__new__'
-
 function TaskModal({ task, categories, allTasks, onSave, onClose }) {
   const isEdit = !!task?.id
+  // If no existing categories, jump straight into new-category mode
+  const [addingNew, setAddingNew] = useState(categories.length === 0)
   const [form, setForm] = useState({
     title: task?.title || '',
     notes: task?.notes || '',
@@ -86,8 +86,8 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  // The active category for filtering deps — newCategory takes precedence
-  const activeCategory = form.newCategory.trim() || form.category
+  // Active category for dep filtering
+  const activeCategory = addingNew ? form.newCategory.trim() : form.category
 
   const eligibleDeps = allTasks
     .filter(t => t.id !== task?.id)
@@ -95,8 +95,8 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
 
   async function handleSave() {
     if (!form.title.trim()) return setError('Title is required')
-    const cat = form.newCategory.trim() || form.category
-    if (!cat) return setError('Category is required')
+    const cat = addingNew ? form.newCategory.trim() : form.category
+    if (!cat) return setError(addingNew ? 'Please type a category name' : 'Category is required')
     setSaving(true)
     setError('')
     const payload = {
@@ -174,32 +174,36 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
 
           <div>
             <label className="block text-xs text-[#8892B0] font-semibold mb-1">Category *</label>
-            <select
-              value={form.newCategory ? NEW_CAT_SENTINEL : form.category}
-              onChange={e => {
-                if (e.target.value === NEW_CAT_SENTINEL) {
-                  set('newCategory', ' ') // trigger new-category mode
-                } else {
-                  set('category', e.target.value)
-                  set('newCategory', '')
-                }
-              }}
-              className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]">
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              <option value={NEW_CAT_SENTINEL}>+ Add new category...</option>
-            </select>
-            {form.newCategory && (
-              <div className="mt-2 flex gap-2">
+            {!addingNew ? (
+              <select
+                value={form.category}
+                onChange={e => {
+                  if (e.target.value === '__new__') {
+                    setAddingNew(true)
+                    set('newCategory', '')
+                  } else {
+                    set('category', e.target.value)
+                  }
+                }}
+                className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]">
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value="__new__">+ Add new category...</option>
+              </select>
+            ) : (
+              <div className="flex gap-2">
                 <input
                   autoFocus
-                  value={form.newCategory.trim() === '' ? '' : form.newCategory}
+                  value={form.newCategory}
                   onChange={e => set('newCategory', e.target.value)}
                   className="flex-1 bg-[#0F0F23] border border-[#00A2FF] rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
-                  placeholder="New category name..." />
-                <button type="button" onClick={() => { set('newCategory', ''); set('category', categories[0] || '') }}
-                  className="text-xs text-[#8892B0] hover:text-white px-3 border border-[#2D2B5A] rounded-xl transition-colors">
-                  Cancel
-                </button>
+                  placeholder="e.g. Flat Purchase, Personal..." />
+                {categories.length > 0 && (
+                  <button type="button"
+                    onClick={() => { setAddingNew(false); set('newCategory', '') }}
+                    className="text-xs text-[#8892B0] hover:text-white px-3 border border-[#2D2B5A] rounded-xl transition-colors">
+                    Cancel
+                  </button>
+                )}
               </div>
             )}
           </div>
