@@ -286,7 +286,7 @@ function TaskCard({ task, onClick, onStatusChange }) {
               <span className="text-[#8892B0]">· {task.subtasks.filter(s=>s.status==='completed').length}/{task.subtasks.length} sub</span>
             )}
           </div>
-          <span className="text-[#2D2B5A] text-xs">hold to change</span>
+          <span className={`w-2 h-2 rounded-full ${S[task.status]?.dot||'bg-[#8892B0]'}`}/>
         </div>
       </div>
       {showPicker&&<StatusPicker task={task} onSelect={handleStatusSelect} onClose={()=>setShowPicker(false)}/>}
@@ -911,10 +911,14 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
 
 // ── Home Tab ───────────────────────────────────────────────────────────────────
 
-function HomeTab({ tasks, onTaskClick }) {
+function HomeTab({ tasks, summary, onTaskClick }) {
   const today = new Date(new Date().toDateString())
   const in2days = new Date(today); in2days.setDate(today.getDate()+2)
   const root = tasks.filter(t=>!t.parent_id)
+  const totalBudget = summary.total_budget||0
+  const totalSpent  = summary.total_spent||0
+  const byCategory = {}
+  root.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
 
   const ongoing = root.filter(t=>t.status==='in_progress')
   const upcoming = root.filter(t=>{
@@ -924,10 +928,10 @@ function HomeTab({ tasks, onTaskClick }) {
   })
 
   // Group ongoing by category
-  const byCategory = {}
+  const ongoingByCategory = {}
   ongoing.forEach(t=>{
-    if (!byCategory[t.category]) byCategory[t.category]=[]
-    byCategory[t.category].push(t)
+    if (!ongoingByCategory[t.category]) ongoingByCategory[t.category]=[]
+    ongoingByCategory[t.category].push(t)
   })
 
   const today_str = today.toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short'})
@@ -952,7 +956,7 @@ function HomeTab({ tasks, onTaskClick }) {
           </div>
         ) : (
           <div className="space-y-4">
-            {Object.entries(byCategory).sort().map(([cat,catTasks])=>{
+            {Object.entries(ongoingByCategory).sort().map(([cat,catTasks])=>{
               const catOverdue = catTasks.filter(isOverdue)
               return (
                 <div key={cat}>
@@ -1038,109 +1042,53 @@ function HomeTab({ tasks, onTaskClick }) {
           </div>
         )}
       </div>
-    </div>
-  )
-}
 
-// ── Overview Tab ───────────────────────────────────────────────────────────────
-
-function OverviewTab({ tasks, summary, onTaskClick }) {
-  const totalBudget = summary.total_budget||0
-  const totalSpent  = summary.total_spent||0
-  const root = tasks.filter(t=>!t.parent_id)
-  const overdueTasks = root.filter(isOverdue)
-  const counts = { not_started:0, in_progress:0, completed:0, on_hold:0 }
-  root.forEach(t=>{ if(counts[t.status]!==undefined) counts[t.status]++ })
-  const byCategory = {}
-  root.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
-
-  return (
-    <div className="p-4 space-y-5 pb-28">
-      {overdueTasks.length>0&&(
-        <div className="bg-[#FF3333]/10 border border-[#FF3333]/30 rounded-2xl p-4">
-          <p className="text-[#FF3333] font-bold text-sm mb-2">⚠️ {overdueTasks.length} overdue</p>
-          {overdueTasks.slice(0,3).map(t=>(
-            <p key={t.id} onClick={()=>onTaskClick(t)} className="text-[#FF3333]/80 text-xs cursor-pointer hover:text-[#FF3333] py-0.5">
-              · {t.title}
-            </p>
-          ))}
-        </div>
-      )}
-
-      {/* Status grid */}
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          {key:'in_progress',label:'In Progress',color:'text-[#00A2FF]',bg:'bg-[#00A2FF]/10'},
-          {key:'not_started',label:'Not Started',color:'text-[#8892B0]',bg:'bg-[#8892B0]/10'},
-          {key:'completed',  label:'Completed',  color:'text-[#00CC88]',bg:'bg-[#00CC88]/10'},
-          {key:'on_hold',    label:'On Hold',    color:'text-[#FFB347]',bg:'bg-[#FFB347]/10'},
-        ].map(({key,label,color,bg})=>(
-          <div key={key} className={`${bg} rounded-2xl p-4`}>
-            <p className={`text-3xl font-fredoka font-bold ${color}`}>{counts[key]}</p>
-            <p className="text-[#8892B0] text-xs mt-1">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Budget overview */}
+      {/* Budget summary */}
       {(totalBudget>0||totalSpent>0)&&(
-        <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-5 space-y-4">
-          <p className="text-white font-bold text-sm">💰 Budget Overview</p>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <p className="text-[#8892B0] text-xs">Allocated</p>
-              <p className="text-white font-bold mt-0.5">{fmtINR(totalBudget)}</p>
+        <div>
+          <p className="text-[#8892B0] text-xs font-semibold mb-3">💰 Budget Summary</p>
+          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3 mb-3">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p className="text-[#8892B0] text-xs">Allocated</p>
+                <p className="text-white font-bold mt-0.5">{fmtINR(totalBudget)}</p>
+              </div>
+              <div>
+                <p className="text-[#8892B0] text-xs">Spent</p>
+                <p className="text-[#FFB347] font-bold mt-0.5">{fmtINR(totalSpent)}</p>
+              </div>
+              <div>
+                <p className="text-[#8892B0] text-xs">Remaining</p>
+                <p className={`font-bold mt-0.5 ${totalBudget-totalSpent<0?'text-[#FF3333]':'text-[#00CC88]'}`}>{fmtINR(totalBudget-totalSpent)}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-[#8892B0] text-xs">Spent</p>
-              <p className="text-[#FFB347] font-bold mt-0.5">{fmtINR(totalSpent)}</p>
-            </div>
-            <div>
-              <p className="text-[#8892B0] text-xs">Remaining</p>
-              <p className={`font-bold mt-0.5 ${totalBudget-totalSpent<0?'text-[#FF3333]':'text-[#00CC88]'}`}>{fmtINR(totalBudget-totalSpent)}</p>
-            </div>
+            {totalBudget>0&&<BudgetBar budget={totalBudget} spent={totalSpent}/>}
           </div>
-          {totalBudget>0&&<BudgetBar budget={totalBudget} spent={totalSpent}/>}
-        </div>
-      )}
-
-      {/* Categories */}
-      <div>
-        <p className="text-[#8892B0] text-xs font-semibold mb-3">By Category</p>
-        <div className="space-y-3">
-          {Object.entries(byCategory).sort().map(([cat,catTasks])=>{
-            const catBudget = catTasks.reduce((s,t)=>s+(t.budget||0),0)
-            const catSpent  = catTasks.reduce((s,t)=>s+(t.total_expense||0),0)
-            const catOverdue = catTasks.filter(isOverdue).length
-            const sc = {}
-            catTasks.forEach(t=>{ sc[t.status]=(sc[t.status]||0)+1 })
-            return (
-              <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-white font-semibold text-sm">{cat}</p>
-                    <p className="text-[#8892B0] text-xs mt-0.5">{catTasks.length} tasks{catOverdue>0?` · ⚠️ ${catOverdue} overdue`:''}</p>
-                  </div>
-                  {catBudget>0&&(
+          <div className="space-y-2">
+            {Object.entries(byCategory).sort().map(([cat,catTasks])=>{
+              const catBudget = catTasks.reduce((s,t)=>s+(t.budget||0),0)
+              const catSpent  = catTasks.reduce((s,t)=>s+(t.total_expense||0),0)
+              const catOverdue = catTasks.filter(isOverdue).length
+              if (catBudget===0&&catSpent===0) return null
+              return (
+                <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white text-xs font-semibold">{cat}</p>
+                      {catOverdue>0&&<p className="text-[#FF3333] text-xs">⚠️ {catOverdue} overdue</p>}
+                    </div>
                     <div className="text-right">
                       <p className="text-white text-xs font-semibold">{fmtINR(catSpent)}</p>
-                      <p className="text-[#8892B0] text-xs">of {fmtINR(catBudget)}</p>
+                      {catBudget>0&&<p className="text-[#8892B0] text-xs">of {fmtINR(catBudget)}</p>}
                     </div>
-                  )}
+                  </div>
+                  {catBudget>0&&<BudgetBar budget={catBudget} spent={catSpent} compact/>}
                 </div>
-                {catBudget>0&&<BudgetBar budget={catBudget} spent={catSpent} compact/>}
-                <div className="flex gap-2 flex-wrap">
-                  {Object.entries(sc).map(([st,n])=>(
-                    <span key={st} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${S[st]?.bg} ${S[st]?.color}`}>
-                      {n} {S[st]?.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -1248,252 +1196,6 @@ function CalendarView({ tasks, onTaskClick }) {
           }
         </div>
       )}
-    </div>
-  )
-}
-
-// ── Gantt View ─────────────────────────────────────────────────────────────────
-
-function GanttView({ tasks, onTaskClick }) {
-  const DAY_W = 32
-  const ROW_H = 44
-  const NAME_W = 140
-  const HEADER_H = 52
-  const topScrollRef = useRef(null)
-  const botScrollRef = useRef(null)
-  function syncTop(e) { if(topScrollRef.current) topScrollRef.current.scrollLeft = e.target.scrollLeft }
-  function syncBot(e) { if(botScrollRef.current) botScrollRef.current.scrollLeft = e.target.scrollLeft }
-
-  const allRoot = tasks.filter(t=>!t.parent_id)
-  const withDates = allRoot.filter(t=>t.start_date||t.end_date)
-  const noDates   = allRoot.filter(t=>!t.start_date&&!t.end_date)
-  const today = new Date(new Date().toDateString())
-
-  if (withDates.length===0) return (
-    <div className="flex items-center justify-center py-20 text-[#8892B0] text-sm">No tasks with dates set</div>
-  )
-
-  // Date range — anchor on today if within range
-  const allDates = []
-  withDates.forEach(t=>{
-    if (t.start_date) allDates.push(new Date(t.start_date+'T00:00:00'))
-    if (t.end_date)   allDates.push(new Date(t.end_date+'T00:00:00'))
-  })
-  allDates.push(today)
-  const minDate = new Date(Math.min(...allDates))
-  const maxDate = new Date(Math.max(...allDates))
-  minDate.setDate(minDate.getDate()-3)
-  maxDate.setDate(maxDate.getDate()+3)
-  const totalDays = Math.round((maxDate-minDate)/86400000)+1
-  const chartW = totalDays*DAY_W
-
-  function dayOff(dateStr) {
-    if (!dateStr) return null
-    return Math.round((new Date(dateStr+'T00:00:00')-minDate)/86400000)
-  }
-  const todayOff = Math.round((today-minDate)/86400000)
-
-  // Week markers every 7 days
-  const weekMarkers = []
-  for(let i=0; i<totalDays; i+=7) {
-    const d = new Date(minDate.getTime()+i*86400000)
-    weekMarkers.push({ off:i, label: d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}) })
-  }
-
-  // Month markers
-  const monthMarkers = []
-  let md = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
-  while(md<=maxDate) {
-    const off = Math.round((md-minDate)/86400000)
-    if (off>=0) monthMarkers.push({ off, label: md.toLocaleDateString('en-IN',{month:'short',year:'2-digit'}) })
-    md = new Date(md.getFullYear(), md.getMonth()+1, 1)
-  }
-
-  const byCategory = {}
-  withDates.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
-
-  const BAR_COLOR = {
-    completed:   { bg:'#00CC88', opacity:0.85 },
-    in_progress: { bg:'#00A2FF', opacity:0.9  },
-    on_hold:     { bg:'#FFB347', opacity:0.85 },
-    not_started: { bg:'#4A5568', opacity:0.8  },
-  }
-
-  return (
-    <div className="pb-6">
-      {/* Legend */}
-      <div className="flex gap-3 px-4 py-2 flex-wrap">
-        {Object.entries(BAR_COLOR).map(([st,{bg}])=>(
-          <div key={st} className="flex items-center gap-1">
-            <div className="w-3 h-2 rounded-sm" style={{background:bg}}/>
-            <p className="text-[#8892B0] text-xs">{st.replace('_',' ')}</p>
-          </div>
-        ))}
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-2 rounded-sm bg-[#FF3333]"/>
-          <p className="text-[#8892B0] text-xs">overdue</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-0.5 h-3 bg-[#FF3333]"/>
-          <p className="text-[#8892B0] text-xs">today</p>
-        </div>
-      </div>
-
-      {/* Top scrollbar (mirror) */}
-      <div ref={topScrollRef} onScroll={syncBot}
-        className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23',height:12}}>
-        <div style={{width:NAME_W+chartW,height:1}}/>
-      </div>
-
-      {/* Main chart */}
-      <div ref={botScrollRef} onScroll={syncTop}
-        className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23'}}>
-        <div style={{minWidth:NAME_W+chartW}}>
-
-          {/* Header */}
-          <div className="flex sticky top-0 z-20 bg-[#0F0F23]" style={{height:HEADER_H}}>
-            <div style={{width:NAME_W,minWidth:NAME_W,height:HEADER_H}}
-              className="flex-shrink-0 border-r border-b border-[#2D2B5A] px-3 flex items-end pb-1.5">
-              <p className="text-[#8892B0] text-xs font-semibold">Task</p>
-            </div>
-            <div style={{width:chartW,position:'relative',height:HEADER_H}} className="border-b border-[#2D2B5A]">
-              {/* Month row */}
-              {monthMarkers.map((m,i)=>(
-                <div key={i} style={{position:'absolute',left:m.off*DAY_W,top:0,height:22}}
-                  className="border-l border-[#2D2B5A] pl-1 flex items-center">
-                  <p className="text-[#8892B0] text-xs font-bold whitespace-nowrap">{m.label}</p>
-                </div>
-              ))}
-              {/* Week row */}
-              {weekMarkers.map((w,i)=>(
-                <div key={i} style={{position:'absolute',left:w.off*DAY_W,top:24,height:28}}
-                  className="border-l border-[#2D2B5A]/50 pl-1 flex items-center">
-                  <p className="text-[#8892B0] whitespace-nowrap" style={{fontSize:10}}>{w.label}</p>
-                </div>
-              ))}
-              {/* Today line in header */}
-              {todayOff>=0&&todayOff<=totalDays&&(
-                <div style={{position:'absolute',left:todayOff*DAY_W+DAY_W/2-1,top:0,bottom:0,width:2}}
-                  className="bg-[#FF3333]"/>
-              )}
-            </div>
-          </div>
-
-          {/* Category + task rows */}
-          {Object.entries(byCategory).sort().map(([cat,catTasks])=>(
-            <div key={cat}>
-              {/* Category header row */}
-              <div className="flex bg-[#16213E]" style={{height:30}}>
-                <div style={{width:NAME_W,minWidth:NAME_W}}
-                  className="px-3 border-r border-b border-[#2D2B5A] flex items-center">
-                  <p className="text-[#00A2FF] text-xs font-bold truncate">{cat}</p>
-                </div>
-                <div style={{width:chartW,position:'relative'}} className="border-b border-[#2D2B5A]">
-                  {/* vertical grid lines */}
-                  {weekMarkers.map((w,i)=>(
-                    <div key={i} style={{position:'absolute',left:w.off*DAY_W,top:0,bottom:0,width:1}}
-                      className="bg-[#2D2B5A]/30"/>
-                  ))}
-                  {todayOff>=0&&<div style={{position:'absolute',left:todayOff*DAY_W+DAY_W/2-1,top:0,bottom:0,width:2}} className="bg-[#FF3333]/50"/>}
-                </div>
-              </div>
-
-              {/* Task rows */}
-              {catTasks.map(t=>{
-                const s = dayOff(t.start_date)
-                const e = dayOff(t.end_date)
-                // bar position: if only one date, show a point/narrow bar
-                const barLeft = (s!==null ? s : e!==null ? e : 0) * DAY_W
-                const barWidth = s!==null&&e!==null
-                  ? Math.max((e-s+1)*DAY_W, DAY_W)
-                  : DAY_W*2 // single date → 2-day wide bar
-                const over = isOverdue(t)
-                const barCfg = BAR_COLOR[t.status]||BAR_COLOR.not_started
-                const barBg = over ? '#FF3333' : barCfg.bg
-                const hasBar = s!==null||e!==null
-
-                return (
-                  <div key={t.id} className="flex border-b border-[#2D2B5A]/30 hover:bg-[#16213E]/40 transition-colors"
-                    style={{height:ROW_H}}>
-                    {/* Name column */}
-                    <div style={{width:NAME_W,minWidth:NAME_W}}
-                      className="px-3 border-r border-[#2D2B5A] flex items-center gap-2 cursor-pointer flex-shrink-0"
-                      onClick={()=>onTaskClick(t)}>
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:barBg}}/>
-                      <p className="text-white text-xs truncate">{t.title}</p>
-                    </div>
-                    {/* Chart area */}
-                    <div style={{width:chartW,position:'relative'}} className="flex items-center overflow-hidden">
-                      {/* Grid lines */}
-                      {weekMarkers.map((w,i)=>(
-                        <div key={i} style={{position:'absolute',left:w.off*DAY_W,top:0,bottom:0,width:1}}
-                          className="bg-[#2D2B5A]/20"/>
-                      ))}
-                      {/* Today line */}
-                      {todayOff>=0&&todayOff<=totalDays&&(
-                        <div style={{position:'absolute',left:todayOff*DAY_W+DAY_W/2-1,top:0,bottom:0,width:2}}
-                          className="bg-[#FF3333]/60 z-10"/>
-                      )}
-                      {/* Bar */}
-                      {hasBar&&(
-                        <div
-                          style={{
-                            position:'absolute',
-                            left:Math.max(0,barLeft),
-                            width:barWidth,
-                            height:24,
-                            borderRadius:6,
-                            background:barBg,
-                            opacity:barCfg.opacity||0.9,
-                            cursor:'pointer',
-                            display:'flex',
-                            alignItems:'center',
-                            paddingLeft:8,
-                            paddingRight:8,
-                            overflow:'hidden',
-                            zIndex:5,
-                          }}
-                          onClick={()=>onTaskClick(t)}>
-                          <p style={{color:'white',fontSize:10,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                            {t.title}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ))}
-
-          {/* Tasks without dates */}
-          {noDates.length>0&&(
-            <div>
-              <div className="flex bg-[#16213E]" style={{height:30}}>
-                <div style={{width:NAME_W,minWidth:NAME_W}}
-                  className="px-3 border-r border-b border-[#2D2B5A] flex items-center">
-                  <p className="text-[#8892B0] text-xs font-bold">No dates set</p>
-                </div>
-                <div style={{width:chartW}} className="border-b border-[#2D2B5A]"/>
-              </div>
-              {noDates.map(t=>(
-                <div key={t.id} className="flex border-b border-[#2D2B5A]/30 hover:bg-[#16213E]/40"
-                  style={{height:ROW_H}}>
-                  <div style={{width:NAME_W,minWidth:NAME_W}}
-                    className="px-3 border-r border-[#2D2B5A] flex items-center gap-2 cursor-pointer"
-                    onClick={()=>onTaskClick(t)}>
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#8892B0] flex-shrink-0"/>
-                    <p className="text-[#8892B0] text-xs truncate">{t.title}</p>
-                  </div>
-                  <div style={{width:chartW}} className="flex items-center px-4">
-                    <p className="text-[#2D2B5A] text-xs italic">— no dates —</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   )
 }
@@ -1608,7 +1310,6 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
   const VIEWS = [
     {key:'list',     icon:'☰',  label:'List'},
     {key:'calendar', icon:'📅', label:'Calendar'},
-    {key:'gantt',    icon:'📊', label:'Gantt'},
     {key:'timeline', icon:'🕐', label:'Timeline'},
   ]
 
@@ -1679,7 +1380,6 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
       )}
 
       {view==='calendar' && <CalendarView tasks={filtered} onTaskClick={onTaskClick}/>}
-      {view==='gantt'    && <GanttView    tasks={filtered} onTaskClick={onTaskClick}/>}
       {view==='timeline' && <TimelineView tasks={filtered} onTaskClick={onTaskClick}/>}
     </div>
   )
@@ -1854,10 +1554,9 @@ export default function TasksPage({ onLogout }) {
   )
 
   const NAV = [
-    {key:'home',    icon:'🏠',label:'Home'},
-    {key:'overview',icon:'📊',label:'Overview'},
-    {key:'tasks',   icon:'📋',label:'Tasks'},
-    {key:'expenses',icon:'💰',label:'Expenses'},
+    {key:'home',    icon:'🏠', label:'Home'},
+    {key:'tasks',   icon:'📋', label:'Tasks'},
+    {key:'expenses',icon:'💰', label:'Expenses'},
   ]
 
   return (
@@ -1894,8 +1593,7 @@ export default function TasksPage({ onLogout }) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {tab==='home'&&<HomeTab tasks={tasks} onTaskClick={openQuick}/>}
-        {tab==='overview'&&<OverviewTab tasks={tasks} summary={summary} onTaskClick={openQuick}/>}
+        {tab==='home'&&<HomeTab tasks={tasks} summary={summary} onTaskClick={openQuick}/>}
         {tab==='tasks'&&<TasksTab tasks={tasks} categories={categories} onTaskClick={openQuick}
           onStatusChange={handleStatusChange}
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
