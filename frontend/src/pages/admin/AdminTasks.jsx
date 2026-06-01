@@ -856,13 +856,36 @@ function TaskRow({ task, onClick }) {
 
 // ── Expense Report Tab ─────────────────────────────────────────────────────────
 
-function ExpenseReport({ summary }) {
+function ExpenseReport({ summary, tasks = [], onTaskClick }) {
   if (!summary) return null
-  const cats = Object.entries(summary.expense_by_category || {}).sort((a, b) => b[1] - a[1])
+
+  // Group tasks by category, only top-level (no parent)
+  const byCategory = {}
+  tasks.filter(t => !t.parent_id).forEach(t => {
+    if (!byCategory[t.category]) byCategory[t.category] = []
+    byCategory[t.category].push(t)
+  })
+
+  // Sort categories by total spent desc
+  const catEntries = Object.entries(byCategory).sort((a, b) => {
+    const spentA = a[1].reduce((s, t) => s + (t.total_expense || 0), 0)
+    const spentB = b[1].reduce((s, t) => s + (t.total_expense || 0), 0)
+    return spentB - spentA
+  })
+
+  const totalSpent  = summary.total_expense || 0
+  const totalBudget = summary.total_budget  || 0
 
   function exportCSV() {
-    const rows = [['Category', 'Amount (Rs)'], ...cats.map(([k, v]) => [k, v])]
-    const csv = rows.map(r => r.join(',')).join('\n')
+    const rows = [['Category', 'Task', 'Status', 'Budget (Rs)', 'Spent (Rs)', 'Remaining (Rs)']]
+    catEntries.forEach(([cat, catTasks]) => {
+      catTasks.forEach(t => {
+        const spent = t.total_expense || 0
+        const budget = t.budget || 0
+        rows.push([cat, t.title, t.status, budget, spent, budget ? budget - spent : ''])
+      })
+    })
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -872,10 +895,27 @@ function ExpenseReport({ summary }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[#8892B0] text-sm">Total across all tasks</p>
-          <p className="text-3xl font-fredoka font-bold text-[#00CC88]">₹{summary.total_expense?.toLocaleString('en-IN')}</p>
+      {/* Totals header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex gap-6">
+          <div>
+            <p className="text-[#8892B0] text-xs font-semibold">TOTAL SPENT</p>
+            <p className="text-2xl font-fredoka font-bold text-[#00CC88]">₹{totalSpent.toLocaleString('en-IN')}</p>
+          </div>
+          {totalBudget > 0 && (
+            <>
+              <div>
+                <p className="text-[#8892B0] text-xs font-semibold">TOTAL BUDGET</p>
+                <p className="text-2xl font-fredoka font-bold text-white">₹{totalBudget.toLocaleString('en-IN')}</p>
+              </div>
+              <div>
+                <p className="text-[#8892B0] text-xs font-semibold">REMAINING</p>
+                <p className={`text-2xl font-fredoka font-bold ${totalBudget - totalSpent < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'}`}>
+                  ₹{(totalBudget - totalSpent).toLocaleString('en-IN')}
+                </p>
+              </div>
+            </>
+          )}
         </div>
         <button onClick={exportCSV}
           className="px-4 py-2 bg-[#00A2FF]/15 text-[#00A2FF] hover:bg-[#00A2FF]/25 rounded-xl text-sm font-semibold transition-colors">
@@ -883,27 +923,74 @@ function ExpenseReport({ summary }) {
         </button>
       </div>
 
-      <div>
-        <p className="text-xs text-[#8892B0] font-semibold mb-3">By Category</p>
-        <div className="space-y-2">
-          {cats.map(([cat, amt]) => {
-            const pct = summary.total_expense > 0 ? (amt / summary.total_expense) * 100 : 0
-            return (
-              <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-white text-sm font-semibold">{cat}</span>
-                  <span className="text-[#00CC88] font-bold text-sm">₹{amt?.toLocaleString('en-IN')}</span>
+      {/* Category sections */}
+      {catEntries.length === 0 && (
+        <p className="text-[#8892B0] text-sm">No expenses recorded yet.</p>
+      )}
+      {catEntries.map(([cat, catTasks]) => {
+        const catSpent  = catTasks.reduce((s, t) => s + (t.total_expense || 0), 0)
+        const catBudget = catTasks.reduce((s, t) => s + (t.budget || 0), 0)
+        const pct = totalSpent > 0 ? (catSpent / totalSpent) * 100 : 0
+
+        return (
+          <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+            {/* Category header */}
+            <div className="px-5 py-4 border-b border-[#2D2B5A]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white font-fredoka font-bold text-base">{cat}</span>
+                <div className="text-right">
+                  <span className="text-[#00CC88] font-bold text-sm">₹{catSpent.toLocaleString('en-IN')} spent</span>
+                  {catBudget > 0 && (
+                    <span className="text-[#8892B0] text-xs ml-2">of ₹{catBudget.toLocaleString('en-IN')}</span>
+                  )}
                 </div>
-                <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#00CC88] rounded-full transition-all" style={{ width: `${pct}%` }} />
-                </div>
-                <p className="text-[#8892B0] text-xs mt-1">{pct.toFixed(1)}% of total</p>
               </div>
-            )
-          })}
-          {cats.length === 0 && <p className="text-[#8892B0] text-sm">No expenses recorded yet</p>}
-        </div>
-      </div>
+              <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
+                <div className="h-full bg-[#00CC88] rounded-full" style={{ width: `${pct}%` }} />
+              </div>
+              <p className="text-[#8892B0] text-xs mt-1">{pct.toFixed(1)}% of total spend</p>
+            </div>
+
+            {/* Task rows */}
+            <div className="divide-y divide-[#2D2B5A]">
+              {catTasks.map(t => {
+                const spent  = t.total_expense || 0
+                const budget = t.budget || 0
+                const hasData = spent > 0 || budget > 0
+                if (!hasData) return (
+                  <div key={t.id} onClick={() => onTaskClick?.(t)}
+                    className="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-[#1A2A4A] transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#8892B0] text-sm truncate">{t.title}</p>
+                    </div>
+                    <StatusBadge status={t.status} />
+                    <span className="text-[#2D2B5A] text-xs">No budget/expense</span>
+                  </div>
+                )
+                return (
+                  <div key={t.id} onClick={() => onTaskClick?.(t)}
+                    className="px-5 py-4 cursor-pointer hover:bg-[#1A2A4A] transition-colors space-y-2">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-semibold truncate">{t.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <StatusBadge status={t.status} />
+                          {t.end_date && <span className="text-[#8892B0] text-xs">Due {fmt(t.end_date)}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {spent > 0 && <p className="text-[#00CC88] font-bold text-sm">₹{spent.toLocaleString('en-IN')}</p>}
+                        {budget > 0 && <p className="text-[#8892B0] text-xs">of ₹{budget.toLocaleString('en-IN')}</p>}
+                      </div>
+                    </div>
+                    {budget > 0 && <BudgetBar budget={budget} spent={spent} />}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -1139,7 +1226,7 @@ export default function AdminTasks() {
       )}
 
       {/* Expenses Tab */}
-      {tab === 'expenses' && <ExpenseReport summary={summary} />}
+      {tab === 'expenses' && <ExpenseReport summary={summary} tasks={allFlat} onTaskClick={t => { setTab('tasks'); setSelectedTask(t) }} />}
 
       {/* Modals */}
       {showNewTask && (
