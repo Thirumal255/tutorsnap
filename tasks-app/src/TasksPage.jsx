@@ -5,35 +5,6 @@ import {
   addTaskExpense, deleteTaskExpense,
 } from './api/client'
 
-// ── Theme ─────────────────────────────────────────────────────────────────────
-
-const LIGHT_STYLES = `
-  html.light body { background:#F1F5F9!important; color:#1E293B!important; }
-  html.light [data-card] { background:#FFFFFF!important; border-color:#E2E8F0!important; }
-  html.light [data-bg] { background:#F1F5F9!important; }
-  html.light [data-nav] { background:rgba(255,255,255,0.95)!important; border-color:#E2E8F0!important; }
-  html.light [data-muted] { color:#64748B!important; }
-  html.light [data-input] { background:#F8FAFC!important; color:#1E293B!important; border-color:#CBD5E1!important; }
-`
-let lightStyleEl = null
-
-function getTheme() { return localStorage.getItem('tasks_theme')||'dark' }
-function setTheme(t) {
-  localStorage.setItem('tasks_theme', t)
-  if (t==='light') {
-    document.documentElement.classList.add('light')
-    if (!lightStyleEl) {
-      lightStyleEl = document.createElement('style')
-      lightStyleEl.textContent = LIGHT_STYLES
-      document.head.appendChild(lightStyleEl)
-    }
-  } else {
-    document.documentElement.classList.remove('light')
-  }
-}
-
-// Apply saved theme immediately
-setTheme(getTheme())
 
 // ── Notifications ──────────────────────────────────────────────────────────────
 
@@ -1505,13 +1476,9 @@ export default function TasksPage({ onLogout }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editTask, setEditTask] = useState(null)
   const [confetti, setConfetti] = useState(false)
-  const [theme, setThemeState] = useState(getTheme())
+
   const [notifGranted, setNotifGranted] = useState(Notification?.permission==='granted')
 
-  function toggleTheme() {
-    const next = theme==='dark'?'light':'dark'
-    setTheme(next); setThemeState(next)
-  }
 
   async function requestNotifications() {
     if (!('Notification' in window)) return
@@ -1587,11 +1554,7 @@ export default function TasksPage({ onLogout }) {
             className={`w-8 h-8 flex items-center justify-center rounded-xl border border-[#2D2B5A] text-sm ${notifGranted?'text-[#00CC88]':'text-[#8892B0]'}`}>
             {notifGranted?'🔔':'🔕'}
           </button>
-          {/* Theme toggle */}
-          <button onClick={toggleTheme} title="Toggle theme"
-            className="w-8 h-8 flex items-center justify-center rounded-xl border border-[#2D2B5A] text-sm text-[#8892B0] hover:text-white">
-            {theme==='dark'?'☀️':'🌙'}
-          </button>
+
           <button onClick={onLogout} className="text-[#8892B0] text-xs px-2 py-2 rounded-xl border border-[#2D2B5A]">
             ↩
           </button>
