@@ -924,7 +924,7 @@ function ExpenseReport({ summary, tasks = [], onTaskClick }) {
               <div>
                 <p className="text-[#8892B0] text-xs font-semibold">REMAINING</p>
                 <p className={`text-2xl font-fredoka font-bold ${totalBudget - totalSpent < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'}`}>
-                  ₹{(totalBudget - fmtINR(totalSpent))}
+                  {fmtINR(totalBudget - totalSpent)}
                 </p>
               </div>
             </>
@@ -943,7 +943,7 @@ function ExpenseReport({ summary, tasks = [], onTaskClick }) {
       {catEntries.map(([cat, catTasks]) => {
         const catSpent  = catTasks.reduce((s, t) => s + (t.total_expense || 0), 0)
         const catBudget = catTasks.reduce((s, t) => s + (t.budget || 0), 0)
-        const pct = totalSpent > 0 ? (catSpent / totalSpent) * 100 : 0
+        const pct = catBudget > 0 ? (catSpent / catBudget) * 100 : catSpent > 0 ? 100 : 0
 
         return (
           <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
@@ -961,7 +961,7 @@ function ExpenseReport({ summary, tasks = [], onTaskClick }) {
               <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
                 <div className="h-full bg-[#00CC88] rounded-full" style={{ width: `${pct}%` }} />
               </div>
-              <p className="text-[#8892B0] text-xs mt-1">{pct.toFixed(1)}% of total spend</p>
+              <p className="text-[#8892B0] text-xs mt-1">{catBudget > 0 ? `${pct.toFixed(1)}% of budget used` : catSpent > 0 ? '(no budget set)' : ''}</p>
             </div>
 
             {/* Task rows */}

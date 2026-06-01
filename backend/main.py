@@ -5831,7 +5831,8 @@ def _fmt_inr(amount: float) -> str:
         return "Rs.0"
     if amount >= 1_00_00_000:        # 1 Crore+
         val = amount / 1_00_00_000
-        return f"Rs.{val:.2f}Cr".rstrip('0').rstrip('.')+"Cr" if '.' in f"{val:.2f}" else f"Rs.{val:.0f}Cr"
+        s = f"{val:.2f}".rstrip('0').rstrip('.')
+        return f"Rs.{s}Cr"
     if amount >= 1_00_000:           # 1 Lakh+
         val = amount / 1_00_000
         s = f"{val:.2f}".rstrip('0').rstrip('.')
