@@ -87,7 +87,9 @@ jobs:
           JWT_SECRET=JWT_SECRET:latest,\
           ADMIN_EMAILS=ADMIN_EMAILS:latest,\
           GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest,\
-          FRONTEND_URL=FRONTEND_URL:latest" \
+          FRONTEND_URL=FRONTEND_URL:latest,\
+          TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,\
+          TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest" \
             --set-env-vars="\
           ENVIRONMENT=production,\
           CLAUDE_MODEL=claude-sonnet-4-5-20250929,\
@@ -101,6 +103,34 @@ jobs:
             --max-instances=10 \
             --port=8080 \
             --quiet
+
+      - name: Setup Cloud Scheduler for daily Telegram digest
+        run: |
+          URL=$(gcloud run services describe tutorsnap-api \
+            --region=$REGION \
+            --format='value(status.url)')
+          JOB_NAME="tutorsnap-task-digest"
+          SCHEDULE="30 1 * * *"  # 01:30 UTC = 07:00 IST daily
+          NOTIFY_URL="${URL}/api/admin/tasks/notify"
+          # Create or update the scheduler job
+          if gcloud scheduler jobs describe $JOB_NAME --location=$REGION --quiet 2>/dev/null; then
+            gcloud scheduler jobs update http $JOB_NAME \
+              --location=$REGION \
+              --schedule="$SCHEDULE" \
+              --uri="$NOTIFY_URL" \
+              --http-method=POST \
+              --time-zone="Asia/Kolkata" \
+              --quiet
+          else
+            gcloud scheduler jobs create http $JOB_NAME \
+              --location=$REGION \
+              --schedule="$SCHEDULE" \
+              --uri="$NOTIFY_URL" \
+              --http-method=POST \
+              --time-zone="Asia/Kolkata" \
+              --quiet
+          fi
+          echo "Cloud Scheduler job '$JOB_NAME' set to run daily at 7:00 AM IST"
 
       - name: Print deployed URL
         run: |

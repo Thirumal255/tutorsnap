@@ -52,6 +52,33 @@ function PriorityBadge({ priority }) {
   return <span className={`text-xs font-bold ${m.color}`}>{m.label}</span>
 }
 
+function BudgetBar({ budget, spent }) {
+  if (!budget || budget <= 0) return null
+  const pct = Math.min((spent / budget) * 100, 100)
+  const remaining = budget - spent
+  const over = spent > budget
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-[#8892B0]">Budget: <span className="text-white font-semibold">₹{budget.toLocaleString('en-IN')}</span></span>
+        <span className={over ? 'text-[#FF3333] font-bold' : 'text-[#00CC88] font-semibold'}>
+          {over ? `Over by ₹${(spent - budget).toLocaleString('en-IN')}` : `₹${remaining.toLocaleString('en-IN')} left`}
+        </span>
+      </div>
+      <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${over ? 'bg-[#FF3333]' : pct > 80 ? 'bg-[#FFB347]' : 'bg-[#00CC88]'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs text-[#8892B0]">
+        <span>Spent: ₹{spent.toLocaleString('en-IN')}</span>
+        <span>{pct.toFixed(0)}% used</span>
+      </div>
+    </div>
+  )
+}
+
 function SummaryCard({ icon, label, value, sub, accent }) {
   return (
     <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-5 flex flex-col gap-1">
@@ -80,6 +107,7 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
     parent_id: task?.parent_id || '',
     dependency_ids: task?.dependency_ids || [],
     newCategory: '',
+    budget: task?.budget || '',
     expense_amount: '',
     expense_description: '',
     expense_date: new Date().toISOString().split('T')[0],
@@ -105,6 +133,7 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
     setSaving(true)
     setError('')
     const expAmount = parseFloat(form.expense_amount)
+    const budgetAmount = parseFloat(form.budget)
     const payload = {
       title: form.title.trim(),
       notes: form.notes.trim() || null,
@@ -113,6 +142,7 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
       category: cat,
       start_date: form.start_date || null,
       end_date: form.end_date || null,
+      budget: budgetAmount > 0 ? budgetAmount : null,
       parent_id: form.parent_id ? parseInt(form.parent_id) : null,
       dependency_ids: form.dependency_ids,
       expense_amount: expAmount > 0 ? expAmount : null,
@@ -244,6 +274,14 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
               <input type="date" value={form.end_date} onChange={e => set('end_date', e.target.value)}
                 className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]" />
             </div>
+          </div>
+
+          {/* Budget */}
+          <div>
+            <label className="block text-xs text-[#8892B0] font-semibold mb-1">Allocated Budget (₹) <span className="font-normal">— optional</span></label>
+            <input type="number" value={form.budget} onChange={e => set('budget', e.target.value)}
+              className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]"
+              placeholder="e.g. 50000" min="0" step="1" />
           </div>
 
           {/* Expense */}
@@ -586,6 +624,17 @@ function TaskDetail({ task, allTasks, categories, onUpdate, onClose }) {
               )}
             </div>
 
+            {/* Budget bar */}
+            {(task.budget > 0 || task.total_expense > 0) && (
+              <div className="bg-[#0F0F23] rounded-2xl p-4">
+                <p className="text-sm font-fredoka font-bold text-white mb-3">📊 Budget vs Spend</p>
+                <BudgetBar budget={task.budget} spent={task.total_expense || 0} />
+                {!task.budget && (
+                  <p className="text-xs text-[#8892B0] mt-2">No budget set — edit task to add one.</p>
+                )}
+              </div>
+            )}
+
             {/* Expenses */}
             <div className="bg-[#0F0F23] rounded-2xl p-4">
               <div className="flex items-center justify-between mb-3">
@@ -687,12 +736,24 @@ function TaskRow({ task, onClick }) {
             )}
           </div>
         </div>
-        {task.total_expense > 0 && (
-          <div className="text-right flex-shrink-0">
-            <p className="text-xs text-[#8892B0]">Spent</p>
-            <p className="text-sm font-bold text-[#00CC88]">₹{task.total_expense?.toLocaleString('en-IN')}</p>
-          </div>
-        )}
+        <div className="text-right flex-shrink-0 min-w-[80px]">
+          {task.budget > 0 ? (
+            <>
+              <p className="text-xs text-[#8892B0]">Budget</p>
+              <p className="text-sm font-bold text-white">₹{task.budget?.toLocaleString('en-IN')}</p>
+              {task.total_expense > 0 && (
+                <p className={`text-xs font-semibold ${task.total_expense > task.budget ? 'text-[#FF3333]' : 'text-[#00CC88]'}`}>
+                  ₹{task.total_expense?.toLocaleString('en-IN')} spent
+                </p>
+              )}
+            </>
+          ) : task.total_expense > 0 ? (
+            <>
+              <p className="text-xs text-[#8892B0]">Spent</p>
+              <p className="text-sm font-bold text-[#00CC88]">₹{task.total_expense?.toLocaleString('en-IN')}</p>
+            </>
+          ) : null}
+        </div>
       </div>
     </div>
   )
@@ -851,6 +912,30 @@ export default function AdminTasks() {
             <SummaryCard icon="✅" label="Completed" value={summary.by_status?.completed || 0} accent="text-[#00CC88]" />
             <SummaryCard icon="⚠️" label="Overdue" value={overdueCount} accent={overdueCount > 0 ? 'text-[#FF3333]' : 'text-white'} />
           </div>
+
+          {/* Budget overview */}
+          {(summary.total_budget > 0 || summary.total_spent > 0) && (
+            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-5 space-y-4">
+              <p className="text-sm font-fredoka font-bold text-white">📊 Budget Overview</p>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-[#8892B0] text-xs mb-1">Allocated</p>
+                  <p className="text-white font-bold text-lg">₹{(summary.total_budget || 0).toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-[#8892B0] text-xs mb-1">Spent</p>
+                  <p className="text-[#FFB347] font-bold text-lg">₹{(summary.total_spent || 0).toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-[#8892B0] text-xs mb-1">Remaining</p>
+                  <p className={`font-bold text-lg ${(summary.total_budget - summary.total_spent) < 0 ? 'text-[#FF3333]' : 'text-[#00CC88]'}`}>
+                    ₹{((summary.total_budget || 0) - (summary.total_spent || 0)).toLocaleString('en-IN')}
+                  </p>
+                </div>
+              </div>
+              <BudgetBar budget={summary.total_budget} spent={summary.total_spent || 0} />
+            </div>
+          )}
 
           {summary.overdue?.length > 0 && (
             <div>

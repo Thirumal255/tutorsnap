@@ -346,6 +346,7 @@ class AdminTask(Base):
     category = Column(String(100), nullable=False)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
+    budget = Column(Float, nullable=True)
     parent_id = Column(Integer, ForeignKey("admin_tasks.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

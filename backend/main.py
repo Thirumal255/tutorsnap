@@ -5463,6 +5463,7 @@ class TaskCreate(BaseModel):
     category: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    budget: Optional[float] = None
     parent_id: Optional[int] = None
     dependency_ids: Optional[list[int]] = []
     expense_amount: Optional[float] = None
@@ -5477,6 +5478,7 @@ class TaskUpdate(BaseModel):
     category: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    budget: Optional[float] = None
     parent_id: Optional[int] = None
     dependency_ids: Optional[list[int]] = None
 
@@ -5506,6 +5508,7 @@ def _task_dict(t: AdminTask, include_subtasks: bool = False) -> dict:
         "category": t.category,
         "start_date": t.start_date.isoformat() if t.start_date else None,
         "end_date": t.end_date.isoformat() if t.end_date else None,
+        "budget": t.budget,
         "parent_id": t.parent_id,
         "created_at": t.created_at.isoformat(),
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
@@ -5593,6 +5596,7 @@ def tasks_summary(
     today = _date.today()
     all_tasks = db.query(AdminTask).all()
     total_expense = db.query(func.sum(AdminTaskExpense.amount)).scalar() or 0.0
+    total_budget = sum(t.budget or 0 for t in all_tasks)
 
     by_status: dict = {}
     for t in all_tasks:
@@ -5604,9 +5608,13 @@ def tasks_summary(
     ]
 
     expense_by_cat: dict = {}
+    budget_by_cat: dict = {}
     for e in db.query(AdminTaskExpense).join(AdminTask).all():
         cat = e.task.category
         expense_by_cat[cat] = expense_by_cat.get(cat, 0.0) + e.amount
+    for t in all_tasks:
+        if t.budget:
+            budget_by_cat[t.category] = budget_by_cat.get(t.category, 0.0) + t.budget
 
     return {
         "total": len(all_tasks),
@@ -5614,7 +5622,10 @@ def tasks_summary(
         "overdue_count": len(overdue),
         "overdue": [_task_dict(t) for t in overdue[:10]],
         "total_expense": round(total_expense, 2),
+        "total_budget": round(total_budget, 2),
+        "total_spent": round(total_expense, 2),
         "expense_by_category": {k: round(v, 2) for k, v in expense_by_cat.items()},
+        "budget_by_category": {k: round(v, 2) for k, v in budget_by_cat.items()},
     }
 
 
@@ -5645,6 +5656,7 @@ def create_task(
             category=data.category,
             start_date=_parse_date(data.start_date),
             end_date=_parse_date(data.end_date),
+            budget=data.budget,
             parent_id=data.parent_id,
         )
         db.add(task)
@@ -5696,6 +5708,8 @@ def update_task(
         task.category = data.category
     if data.start_date is not None:
         task.start_date = _parse_date(data.start_date)
+    if data.budget is not None:
+        task.budget = data.budget
     if data.end_date is not None:
         new_end = _parse_date(data.end_date)
         task.end_date = new_end
@@ -5791,3 +5805,130 @@ def delete_expense(
     _audit_log(db, current_user, action="delete_expense", target_type="task",
                target_id=task_id, details=f"Rs.{expense.amount}")
     db.commit()
+
+
+# ── Telegram Daily Digest ──────────────────────────────────────────────────────
+
+def _tg_bar(spent: float, total: float, width: int = 16) -> str:
+    """Return a text progress bar like [████░░░░]  42%"""
+    if not total or total <= 0:
+        return ""
+    pct = min(spent / total, 1.0)
+    filled = round(pct * width)
+    bar = chr(9608) * filled + chr(9617) * (width - filled)
+    return f"[{bar}] {pct*100:.0f}%"
+
+
+def _build_digest(db: Session) -> str:
+    from datetime import date as _d
+    today = _d.today()
+    in_two = today.replace(day=today.day + 2) if today.day <= 27 else today  # safe approx
+    try:
+        from datetime import timedelta as _td
+        in_two = today + _td(days=2)
+    except Exception:
+        pass
+
+    tasks = db.query(AdminTask).filter(AdminTask.parent_id.is_(None)).all()
+
+    overdue      = [t for t in tasks if t.end_date and t.end_date < today and t.status != "completed"]
+    in_progress  = [t for t in tasks if t.status == "in_progress"]
+    starting_soon= [t for t in tasks if t.start_date and today <= t.start_date <= in_two and t.status == "not_started"]
+    completed    = [t for t in tasks if t.status == "completed"]
+
+    total_budget = sum(t.budget or 0 for t in tasks)
+    total_spent  = sum(sum(e.amount for e in t.expenses) for t in tasks)
+    total_remaining = total_budget - total_spent
+
+    lines = []
+    lines.append(f"*TutorSnap Daily Digest*")
+    lines.append(f"_{today.strftime('%a, %d %b %Y')}_")
+    lines.append("")
+
+    # Overdue
+    if overdue:
+        lines.append(f"*\U0001f534 OVERDUE ({len(overdue)})*")
+        for t in overdue:
+            due = t.end_date.strftime('%d %b') if t.end_date else "?"
+            spent = sum(e.amount for e in t.expenses)
+            budget_line = f"  Budget: Rs.{t.budget:,.0f} | Spent: Rs.{spent:,.0f}" if t.budget else ""
+            lines.append(f"• *{t.title}*")
+            lines.append(f"  {t.category} | Due: {due}{budget_line}")
+        lines.append("")
+
+    # In progress
+    if in_progress:
+        lines.append(f"*\U0001f504 IN PROGRESS ({len(in_progress)})*")
+        for t in in_progress:
+            due = t.end_date.strftime('%d %b') if t.end_date else "no due date"
+            spent = sum(e.amount for e in t.expenses)
+            lines.append(f"• *{t.title}*")
+            lines.append(f"  {t.category} | Due: {due}")
+            if t.budget:
+                bar = _tg_bar(spent, t.budget)
+                lines.append(f"  Budget: Rs.{t.budget:,.0f}  Spent: Rs.{spent:,.0f}  Left: Rs.{t.budget-spent:,.0f}")
+                lines.append(f"  {bar}")
+        lines.append("")
+
+    # Starting soon
+    if starting_soon:
+        lines.append(f"*⏰ STARTING IN 2 DAYS ({len(starting_soon)})*")
+        for t in starting_soon:
+            start = t.start_date.strftime('%d %b') if t.start_date else "?"
+            lines.append(f"• *{t.title}*")
+            lines.append(f"  {t.category} | Starts: {start}")
+        lines.append("")
+
+    # Snapshot
+    total = len(tasks)
+    lines.append("*\U0001f4ca TASK SNAPSHOT*")
+    lines.append(f"Total:       {total}")
+    lines.append(f"In Progress: {len(in_progress)}  {_tg_bar(len(in_progress), total) if total else ''}")
+    lines.append(f"Completed:   {len(completed)}  {_tg_bar(len(completed), total) if total else ''}")
+    lines.append(f"Overdue:     {len(overdue)}")
+    lines.append("")
+
+    # Budget snapshot
+    if total_budget > 0:
+        lines.append("*\U0001f4b0 BUDGET SNAPSHOT*")
+        lines.append(f"Allocated:  Rs.{total_budget:,.0f}")
+        lines.append(f"Spent:      Rs.{total_spent:,.0f}  {_tg_bar(total_spent, total_budget)}")
+        lines.append(f"Remaining:  Rs.{total_remaining:,.0f}")
+
+    return "\n".join(lines)
+
+
+@app.post("/api/admin/tasks/notify")
+def send_task_digest(
+    db: Session = Depends(get_db),
+    x_notify_secret: Optional[str] = None,
+):
+    """Called by Cloud Scheduler daily at 7 AM IST. Sends Telegram digest."""
+    import urllib.request
+    import urllib.parse
+
+    notify_secret = os.getenv("NOTIFY_SECRET", "")
+    if notify_secret and x_notify_secret != notify_secret:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id   = os.getenv("TELEGRAM_CHAT_ID", "")
+    if not bot_token or not chat_id:
+        raise HTTPException(status_code=500, detail="Telegram not configured")
+
+    message = _build_digest(db)
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = urllib.parse.urlencode({
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown",
+    }).encode()
+    req = urllib.request.Request(url, data=payload, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        result = json.loads(resp.read())
+
+    if not result.get("ok"):
+        raise HTTPException(status_code=500, detail=f"Telegram error: {result}")
+
+    return {"sent": True, "message_length": len(message)}
