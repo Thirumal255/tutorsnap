@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   getAdminTasks, getAdminTasksSummary, getAdminTaskCategories,
   createAdminTask, updateAdminTask, deleteAdminTask,
@@ -143,7 +143,7 @@ function TaskCard({ task, onClick }) {
 
 // ── Task Form ──────────────────────────────────────────────────────────────────
 
-function TaskForm({ task, categories, onSave, onClose }) {
+function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
   const isEdit = !!task?.id
   const [addingCat, setAddingCat] = useState(categories.length===0)
   const inp = "w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
@@ -156,10 +156,24 @@ function TaskForm({ task, categories, onSave, onClose }) {
     budget: task?.budget??'', newCategory:'',
     expense_amount:'', expense_description:'',
     expense_date: new Date().toISOString().split('T')[0],
+    dependency_ids: task?.dependency_ids||[],
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = (k,v) => setForm(f=>({...f,[k]:v}))
+
+  // Tasks in the active category (excluding self) for dependency picker
+  const activeCat = addingCat ? form.newCategory.trim() : form.category
+  const eligibleDeps = allTasks.filter(t=>
+    t.category===activeCat && t.id!==task?.id && !t.parent_id
+  )
+  function toggleDep(id) {
+    setForm(f=>({...f, dependency_ids:
+      f.dependency_ids.includes(id)
+        ? f.dependency_ids.filter(x=>x!==id)
+        : [...f.dependency_ids, id]
+    }))
+  }
 
   async function handleSave() {
     if (!form.title.trim()) return setError('Title is required')
@@ -173,6 +187,7 @@ function TaskForm({ task, categories, onSave, onClose }) {
       status: form.status, priority: form.priority, category: cat,
       start_date: form.start_date||null, end_date: form.end_date||null,
       budget: budgetAmount>0 ? budgetAmount : null,
+      dependency_ids: form.dependency_ids,
       expense_amount: !isEdit&&expAmount>0 ? expAmount : null,
       expense_description: !isEdit ? form.expense_description.trim()||null : null,
       expense_date: !isEdit&&expAmount>0 ? form.expense_date : null,
@@ -248,6 +263,38 @@ function TaskForm({ task, categories, onSave, onClose }) {
         <label className={lbl}>Notes</label>
         <textarea value={form.notes} onChange={e=>set('notes',e.target.value)} className={`${inp} resize-none`} rows={3} placeholder="Additional notes..."/>
       </div>
+
+      {/* Dependencies */}
+      {eligibleDeps.length>0&&(
+        <div>
+          <label className={lbl}>🔗 Depends On <span className="font-normal">(same category)</span></label>
+          <div className="space-y-2 max-h-48 overflow-y-auto bg-[#0F0F23] rounded-xl p-3 border border-[#2D2B5A]">
+            {eligibleDeps.map(t=>{
+              const checked = form.dependency_ids.includes(t.id)
+              return (
+                <div key={t.id} onClick={()=>toggleDep(t.id)}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all ${
+                    checked?'bg-[#00A2FF]/15 border border-[#00A2FF]/30':'hover:bg-[#16213E] border border-transparent'
+                  }`}>
+                  <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
+                    checked?'bg-[#00A2FF] border-[#00A2FF]':'border-[#2D2B5A]'
+                  }`}>
+                    {checked&&<span className="text-white text-xs leading-none">✓</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-xs font-semibold truncate">{t.title}</p>
+                    <p className={`text-xs ${S[t.status]?.color||'text-[#8892B0]'}`}>{S[t.status]?.label}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {form.dependency_ids.length>0&&(
+            <p className="text-[#00A2FF] text-xs mt-1">{form.dependency_ids.length} dependenc{form.dependency_ids.length>1?'ies':'y'} selected</p>
+          )}
+        </div>
+      )}
+
       {error&&<p className="text-[#FF3333] text-xs bg-[#FF3333]/10 rounded-xl p-3">{error}</p>}
       <button onClick={handleSave} disabled={saving}
         className="w-full bg-[#00A2FF] text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 active:scale-[0.98] transition-all">
@@ -853,6 +900,10 @@ function GanttView({ tasks, onTaskClick }) {
   const ROW_H = 44
   const NAME_W = 140
   const HEADER_H = 52
+  const topScrollRef = useRef(null)
+  const botScrollRef = useRef(null)
+  function syncTop(e) { if(topScrollRef.current) topScrollRef.current.scrollLeft = e.target.scrollLeft }
+  function syncBot(e) { if(botScrollRef.current) botScrollRef.current.scrollLeft = e.target.scrollLeft }
 
   const allRoot = tasks.filter(t=>!t.parent_id)
   const withDates = allRoot.filter(t=>t.start_date||t.end_date)
@@ -929,7 +980,15 @@ function GanttView({ tasks, onTaskClick }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23'}}>
+      {/* Top scrollbar (mirror) */}
+      <div ref={topScrollRef} onScroll={syncBot}
+        className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23',height:12}}>
+        <div style={{width:NAME_W+chartW,height:1}}/>
+      </div>
+
+      {/* Main chart */}
+      <div ref={botScrollRef} onScroll={syncTop}
+        className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23'}}>
         <div style={{minWidth:NAME_W+chartW}}>
 
           {/* Header */}
@@ -1080,7 +1139,7 @@ function GanttView({ tasks, onTaskClick }) {
   )
 }
 
-// ── Timeline View ─────────────────────────────────────────────────────────────
+// ── Timeline View ──────────────────────────────────────────────────────────────
 
 function TimelineView({ tasks, onTaskClick }) {
   const root = tasks.filter(t=>!t.parent_id)
@@ -1438,12 +1497,12 @@ export default function TasksPage({ onLogout }) {
 
       {/* Create */}
       <BottomSheet show={showCreate} onClose={()=>setShowCreate(false)} title="New Task">
-        <TaskForm task={null} categories={categories} onSave={refresh} onClose={()=>setShowCreate(false)}/>
+        <TaskForm task={null} categories={categories} allTasks={tasks} onSave={refresh} onClose={()=>setShowCreate(false)}/>
       </BottomSheet>
 
       {/* Edit */}
       <BottomSheet show={!!editTask} onClose={()=>setEditTask(null)} title="Edit Task">
-        {editTask&&<TaskForm task={editTask} categories={categories} onSave={refresh} onClose={()=>setEditTask(null)}/>}
+        {editTask&&<TaskForm task={editTask} categories={categories} allTasks={tasks} onSave={refresh} onClose={()=>setEditTask(null)}/>}
       </BottomSheet>
     </div>
   )
