@@ -849,121 +849,196 @@ function CalendarView({ tasks, onTaskClick }) {
 // ── Gantt View ─────────────────────────────────────────────────────────────────
 
 function GanttView({ tasks, onTaskClick }) {
-  const DAY_W = 28 // px per day
+  const DAY_W = 32
   const ROW_H = 44
-  const NAME_W = 130
+  const NAME_W = 140
+  const HEADER_H = 52
 
-  const root = tasks.filter(t=>!t.parent_id && (t.start_date||t.end_date))
+  const allRoot = tasks.filter(t=>!t.parent_id)
+  const withDates = allRoot.filter(t=>t.start_date||t.end_date)
+  const noDates   = allRoot.filter(t=>!t.start_date&&!t.end_date)
   const today = new Date(new Date().toDateString())
 
-  if (root.length===0) return (
-    <div className="flex items-center justify-center py-20 text-[#8892B0] text-sm">No tasks with dates</div>
+  if (withDates.length===0) return (
+    <div className="flex items-center justify-center py-20 text-[#8892B0] text-sm">No tasks with dates set</div>
   )
 
-  // Date range
+  // Date range — anchor on today if within range
   const allDates = []
-  root.forEach(t=>{
+  withDates.forEach(t=>{
     if (t.start_date) allDates.push(new Date(t.start_date+'T00:00:00'))
     if (t.end_date)   allDates.push(new Date(t.end_date+'T00:00:00'))
   })
+  allDates.push(today)
   const minDate = new Date(Math.min(...allDates))
   const maxDate = new Date(Math.max(...allDates))
-  // Pad by 2 days on each side
-  minDate.setDate(minDate.getDate()-2)
-  maxDate.setDate(maxDate.getDate()+2)
+  minDate.setDate(minDate.getDate()-3)
+  maxDate.setDate(maxDate.getDate()+3)
   const totalDays = Math.round((maxDate-minDate)/86400000)+1
+  const chartW = totalDays*DAY_W
 
-  function dayOffset(dateStr) {
+  function dayOff(dateStr) {
     if (!dateStr) return null
     return Math.round((new Date(dateStr+'T00:00:00')-minDate)/86400000)
   }
+  const todayOff = Math.round((today-minDate)/86400000)
 
-  const todayOffset = Math.round((today-minDate)/86400000)
-  const chartW = totalDays*DAY_W
-
-  // Build month labels
-  const months = []
-  let d = new Date(minDate)
-  while(d<=maxDate) {
-    const label = d.toLocaleDateString('en-IN',{month:'short',year:'2-digit'})
-    const off = Math.round((d-minDate)/86400000)
-    months.push({label, off})
-    d = new Date(d.getFullYear(), d.getMonth()+1, 1)
+  // Week markers every 7 days
+  const weekMarkers = []
+  for(let i=0; i<totalDays; i+=7) {
+    const d = new Date(minDate.getTime()+i*86400000)
+    weekMarkers.push({ off:i, label: d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) })
   }
 
-  // Group by category
-  const byCategory = {}
-  root.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
+  // Month markers
+  const monthMarkers = []
+  let md = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+  while(md<=maxDate) {
+    const off = Math.round((md-minDate)/86400000)
+    if (off>=0) monthMarkers.push({ off, label: md.toLocaleDateString('en-IN',{month:'short',year:'2-digit'}) })
+    md = new Date(md.getFullYear(), md.getMonth()+1, 1)
+  }
 
-  const STATUS_BAR = { completed:'bg-[#00CC88]', in_progress:'bg-[#00A2FF]', on_hold:'bg-[#FFB347]', not_started:'bg-[#2D2B5A]' }
+  const byCategory = {}
+  withDates.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
+
+  const BAR_COLOR = {
+    completed:   { bg:'#00CC88', opacity:0.85 },
+    in_progress: { bg:'#00A2FF', opacity:0.9  },
+    on_hold:     { bg:'#FFB347', opacity:0.85 },
+    not_started: { bg:'#4A5568', opacity:0.8  },
+  }
 
   return (
     <div className="pb-6">
-      <div className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23'}}>
-        <div style={{minWidth: NAME_W+chartW, position:'relative'}}>
+      {/* Legend */}
+      <div className="flex gap-3 px-4 py-2 flex-wrap">
+        {Object.entries(BAR_COLOR).map(([st,{bg}])=>(
+          <div key={st} className="flex items-center gap-1">
+            <div className="w-3 h-2 rounded-sm" style={{background:bg}}/>
+            <p className="text-[#8892B0] text-xs">{st.replace('_',' ')}</p>
+          </div>
+        ))}
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-2 rounded-sm bg-[#FF3333]"/>
+          <p className="text-[#8892B0] text-xs">overdue</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-0.5 h-3 bg-[#FF3333]"/>
+          <p className="text-[#8892B0] text-xs">today</p>
+        </div>
+      </div>
 
-          {/* Header: month labels */}
-          <div className="flex sticky top-0 z-20 bg-[#0F0F23] border-b border-[#2D2B5A]">
-            <div style={{width:NAME_W, minWidth:NAME_W}} className="flex-shrink-0 border-r border-[#2D2B5A] px-3 py-2">
+      <div className="overflow-x-auto" style={{scrollbarWidth:'thin',scrollbarColor:'#2D2B5A #0F0F23'}}>
+        <div style={{minWidth:NAME_W+chartW}}>
+
+          {/* Header */}
+          <div className="flex sticky top-0 z-20 bg-[#0F0F23]" style={{height:HEADER_H}}>
+            <div style={{width:NAME_W,minWidth:NAME_W,height:HEADER_H}}
+              className="flex-shrink-0 border-r border-b border-[#2D2B5A] px-3 flex items-end pb-1.5">
               <p className="text-[#8892B0] text-xs font-semibold">Task</p>
             </div>
-            <div style={{width:chartW, position:'relative', height:32}}>
-              {months.map((m,i)=>(
-                <div key={i} style={{position:'absolute',left:m.off*DAY_W, top:0, height:'100%'}}
+            <div style={{width:chartW,position:'relative',height:HEADER_H}} className="border-b border-[#2D2B5A]">
+              {/* Month row */}
+              {monthMarkers.map((m,i)=>(
+                <div key={i} style={{position:'absolute',left:m.off*DAY_W,top:0,height:22}}
                   className="border-l border-[#2D2B5A] pl-1 flex items-center">
-                  <p className="text-[#8892B0] text-xs whitespace-nowrap">{m.label}</p>
+                  <p className="text-[#8892B0] text-xs font-bold whitespace-nowrap">{m.label}</p>
                 </div>
               ))}
-              {/* Today line header */}
-              {todayOffset>=0&&todayOffset<=totalDays&&(
-                <div style={{position:'absolute',left:todayOffset*DAY_W+DAY_W/2,top:0,bottom:0,width:2}}
-                  className="bg-[#FF3333]/60"/>
+              {/* Week row */}
+              {weekMarkers.map((w,i)=>(
+                <div key={i} style={{position:'absolute',left:w.off*DAY_W,top:24,height:28}}
+                  className="border-l border-[#2D2B5A]/50 pl-1 flex items-center">
+                  <p className="text-[#8892B0] whitespace-nowrap" style={{fontSize:10}}>{w.label}</p>
+                </div>
+              ))}
+              {/* Today line in header */}
+              {todayOff>=0&&todayOff<=totalDays&&(
+                <div style={{position:'absolute',left:todayOff*DAY_W+DAY_W/2-1,top:0,bottom:0,width:2}}
+                  className="bg-[#FF3333]"/>
               )}
             </div>
           </div>
 
-          {/* Rows */}
+          {/* Category + task rows */}
           {Object.entries(byCategory).sort().map(([cat,catTasks])=>(
             <div key={cat}>
-              {/* Category header */}
-              <div className="flex bg-[#16213E] border-b border-[#2D2B5A]">
-                <div style={{width:NAME_W,minWidth:NAME_W}} className="px-3 py-1.5 border-r border-[#2D2B5A]">
+              {/* Category header row */}
+              <div className="flex bg-[#16213E]" style={{height:30}}>
+                <div style={{width:NAME_W,minWidth:NAME_W}}
+                  className="px-3 border-r border-b border-[#2D2B5A] flex items-center">
                   <p className="text-[#00A2FF] text-xs font-bold truncate">{cat}</p>
                 </div>
-                <div style={{width:chartW, position:'relative'}}/>
+                <div style={{width:chartW,position:'relative'}} className="border-b border-[#2D2B5A]">
+                  {/* vertical grid lines */}
+                  {weekMarkers.map((w,i)=>(
+                    <div key={i} style={{position:'absolute',left:w.off*DAY_W,top:0,bottom:0,width:1}}
+                      className="bg-[#2D2B5A]/30"/>
+                  ))}
+                  {todayOff>=0&&<div style={{position:'absolute',left:todayOff*DAY_W+DAY_W/2-1,top:0,bottom:0,width:2}} className="bg-[#FF3333]/50"/>}
+                </div>
               </div>
 
               {/* Task rows */}
               {catTasks.map(t=>{
-                const s = dayOffset(t.start_date)
-                const e = dayOffset(t.end_date)
-                const left = (s!==null?s:e)*DAY_W
-                const width = s!==null&&e!==null ? (e-s+1)*DAY_W : DAY_W*3
+                const s = dayOff(t.start_date)
+                const e = dayOff(t.end_date)
+                // bar position: if only one date, show a point/narrow bar
+                const barLeft = (s!==null ? s : e!==null ? e : 0) * DAY_W
+                const barWidth = s!==null&&e!==null
+                  ? Math.max((e-s+1)*DAY_W, DAY_W)
+                  : DAY_W*2 // single date → 2-day wide bar
                 const over = isOverdue(t)
-                const barColor = over?'bg-[#FF3333]':STATUS_BAR[t.status]||'bg-[#2D2B5A]'
+                const barCfg = BAR_COLOR[t.status]||BAR_COLOR.not_started
+                const barBg = over ? '#FF3333' : barCfg.bg
+                const hasBar = s!==null||e!==null
+
                 return (
-                  <div key={t.id} className="flex border-b border-[#2D2B5A]/50 hover:bg-[#16213E]/50"
+                  <div key={t.id} className="flex border-b border-[#2D2B5A]/30 hover:bg-[#16213E]/40 transition-colors"
                     style={{height:ROW_H}}>
-                    {/* Task name */}
+                    {/* Name column */}
                     <div style={{width:NAME_W,minWidth:NAME_W}}
-                      className="px-3 border-r border-[#2D2B5A] flex items-center cursor-pointer"
+                      className="px-3 border-r border-[#2D2B5A] flex items-center gap-2 cursor-pointer flex-shrink-0"
                       onClick={()=>onTaskClick(t)}>
-                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mr-1.5 ${STATUS_BAR[t.status]||'bg-[#8892B0]'}`}/>
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:barBg}}/>
                       <p className="text-white text-xs truncate">{t.title}</p>
                     </div>
-                    {/* Bar */}
-                    <div style={{width:chartW, position:'relative'}} className="flex items-center">
+                    {/* Chart area */}
+                    <div style={{width:chartW,position:'relative'}} className="flex items-center overflow-hidden">
+                      {/* Grid lines */}
+                      {weekMarkers.map((w,i)=>(
+                        <div key={i} style={{position:'absolute',left:w.off*DAY_W,top:0,bottom:0,width:1}}
+                          className="bg-[#2D2B5A]/20"/>
+                      ))}
                       {/* Today line */}
-                      {todayOffset>=0&&todayOffset<=totalDays&&(
-                        <div style={{position:'absolute',left:todayOffset*DAY_W+DAY_W/2,top:0,bottom:0,width:2}}
-                          className="bg-[#FF3333]/40 z-10"/>
+                      {todayOff>=0&&todayOff<=totalDays&&(
+                        <div style={{position:'absolute',left:todayOff*DAY_W+DAY_W/2-1,top:0,bottom:0,width:2}}
+                          className="bg-[#FF3333]/60 z-10"/>
                       )}
-                      {/* Task bar */}
-                      {(s!==null||e!==null)&&(
-                        <div style={{position:'absolute',left:Math.max(0,left),width:Math.max(width,DAY_W),height:22,borderRadius:6}}
-                          className={`${barColor} opacity-90 cursor-pointer flex items-center px-2`}
+                      {/* Bar */}
+                      {hasBar&&(
+                        <div
+                          style={{
+                            position:'absolute',
+                            left:Math.max(0,barLeft),
+                            width:barWidth,
+                            height:24,
+                            borderRadius:6,
+                            background:barBg,
+                            opacity:barCfg.opacity||0.9,
+                            cursor:'pointer',
+                            display:'flex',
+                            alignItems:'center',
+                            paddingLeft:8,
+                            paddingRight:8,
+                            overflow:'hidden',
+                            zIndex:5,
+                          }}
                           onClick={()=>onTaskClick(t)}>
-                          <p className="text-white text-xs truncate font-semibold" style={{fontSize:10}}>{t.title}</p>
+                          <p style={{color:'white',fontSize:10,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                            {t.title}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -973,10 +1048,32 @@ function GanttView({ tasks, onTaskClick }) {
             </div>
           ))}
 
-          {/* Today legend */}
-          <div className="px-4 py-2 flex items-center gap-2">
-            <div className="w-4 h-0.5 bg-[#FF3333]"/><p className="text-[#8892B0] text-xs">Today</p>
-          </div>
+          {/* Tasks without dates */}
+          {noDates.length>0&&(
+            <div>
+              <div className="flex bg-[#16213E]" style={{height:30}}>
+                <div style={{width:NAME_W,minWidth:NAME_W}}
+                  className="px-3 border-r border-b border-[#2D2B5A] flex items-center">
+                  <p className="text-[#8892B0] text-xs font-bold">No dates set</p>
+                </div>
+                <div style={{width:chartW}} className="border-b border-[#2D2B5A]"/>
+              </div>
+              {noDates.map(t=>(
+                <div key={t.id} className="flex border-b border-[#2D2B5A]/30 hover:bg-[#16213E]/40"
+                  style={{height:ROW_H}}>
+                  <div style={{width:NAME_W,minWidth:NAME_W}}
+                    className="px-3 border-r border-[#2D2B5A] flex items-center gap-2 cursor-pointer"
+                    onClick={()=>onTaskClick(t)}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#8892B0] flex-shrink-0"/>
+                    <p className="text-[#8892B0] text-xs truncate">{t.title}</p>
+                  </div>
+                  <div style={{width:chartW}} className="flex items-center px-4">
+                    <p className="text-[#2D2B5A] text-xs italic">— no dates —</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
