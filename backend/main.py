@@ -5500,7 +5500,9 @@ def _parse_date(s: Optional[str]) -> Optional[_date]:
 
 
 def _task_dict(t: AdminTask, include_subtasks: bool = False) -> dict:
-    total_expense = sum(e.amount for e in t.expenses)
+    own_expense = sum(e.amount for e in t.expenses)
+    sub_expense = sum(sum(e.amount for e in st.expenses) for st in t.subtasks)
+    total_expense = own_expense + sub_expense
     d = {
         "id": t.id,
         "title": t.title,
