@@ -282,9 +282,9 @@ jobs:
               f.write(f"total_pct={total_pct}\n")
               f.write(f"summary<<__COV__\n{summary}\n__COV__\n")
 
-      # ── 9. Telegram — text notification ───────────────────────────────────
+      # ── 9. Telegram — text notification (only on failure) ─────────────────
       - name: Send Telegram notification
-        if: always()
+        if: steps.report.outputs.status != 'passed'
         continue-on-error: true
         shell: bash
         env:
@@ -314,9 +314,9 @@ jobs:
             --data-urlencode "text=${TEXT}" \
             > /dev/null
 
-      # ── 10. Telegram — send coverage HTML as downloadable zip ─────────────
+      # ── 10. Telegram — send coverage HTML as downloadable zip (only on failure) ──
       - name: Send coverage report to Telegram
-        if: always()
+        if: steps.report.outputs.status != 'passed'
         continue-on-error: true
         shell: bash
         env:
