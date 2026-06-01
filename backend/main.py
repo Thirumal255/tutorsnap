@@ -272,6 +272,8 @@ _ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:5174",
     os.getenv("FRONTEND_URL", ""),
+    "https://tutorsnap-tasks.web.app",
+    "https://tutorsnap-tasks.firebaseapp.com",
     "capacitor://localhost",
     "http://localhost",
     "https://localhost",
