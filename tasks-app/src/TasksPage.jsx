@@ -545,6 +545,144 @@ function SetBudgetForm({ task, allTasks, onSave, onClose }) {
   )
 }
 
+// ── Quick Action Sheet ─────────────────────────────────────────────────────────
+
+function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) {
+  const [action, setAction] = useState(null) // 'status'|'expense'|'budget'|'deps'
+  const overdue = isOverdue(task)
+  const spent = task.total_expense || 0
+
+  async function handleStatusSelect(newStatus) {
+    setAction(null)
+    if (newStatus === task.status) return
+    await updateAdminTask(task.id, { status: newStatus })
+    await onRefresh()
+  }
+
+  async function saveDeps(ids) {
+    await updateAdminTask(task.id, { dependency_ids: ids })
+    await onRefresh()
+    setAction(null)
+  }
+
+  if (action === 'status') return (
+    <div className="p-5 space-y-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-white font-bold text-sm">Change Status</p>
+        <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
+      </div>
+      <p className="text-[#8892B0] text-xs truncate mb-3">{task.title}</p>
+      {Object.entries(S).map(([key,meta])=>(
+        <button key={key} onClick={()=>handleStatusSelect(key)}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all border ${
+            task.status===key?`${meta.bg} border-current`:`hover:${meta.bg} border-[#2D2B5A]`
+          }`}>
+          <span className={`w-3 h-3 rounded-full flex-shrink-0 ${meta.dot}`}/>
+          <span className={`text-sm font-semibold ${meta.color}`}>{meta.label}</span>
+          {task.status===key&&<span className="ml-auto text-xs text-[#8892B0]">current</span>}
+        </button>
+      ))}
+    </div>
+  )
+
+  if (action === 'expense') return (
+    <AddExpenseForm task={task} onSave={async()=>{await onRefresh();setAction(null)}} onClose={()=>setAction(null)}/>
+  )
+
+  if (action === 'budget') return (
+    <SetBudgetForm task={task} allTasks={allTasks} onSave={async()=>{await onRefresh();setAction(null)}} onClose={()=>setAction(null)}/>
+  )
+
+  if (action === 'deps') {
+    const activeCat = task.category
+    const eligible = allTasks.filter(t=>t.category===activeCat && t.id!==task.id && !t.parent_id)
+    const [sel, setSel] = useState(task.dependency_ids||[])
+    const toggle = (id) => setSel(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id])
+    return (
+      <div className="p-5 space-y-3">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-white font-bold text-sm">🔗 Link Dependencies</p>
+          <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
+        </div>
+        <p className="text-[#8892B0] text-xs mb-2">{task.category} tasks</p>
+        {eligible.length===0
+          ? <p className="text-[#8892B0] text-xs italic py-4 text-center">No other tasks in this category</p>
+          : <div className="space-y-2 max-h-56 overflow-y-auto">
+              {eligible.map(t=>{
+                const checked = sel.includes(t.id)
+                return (
+                  <div key={t.id} onClick={()=>toggle(t.id)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all border ${
+                      checked?'bg-[#00A2FF]/15 border-[#00A2FF]/30':'bg-[#0F0F23] border-transparent hover:border-[#2D2B5A]'
+                    }`}>
+                    <div className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center ${checked?'bg-[#00A2FF] border-[#00A2FF]':'border-[#2D2B5A]'}`}>
+                      {checked&&<span className="text-white text-xs">✓</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-xs font-semibold truncate">{t.title}</p>
+                      <p className={`text-xs ${S[t.status]?.color}`}>{S[t.status]?.label}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+        }
+        <button onClick={()=>saveDeps(sel)}
+          className="w-full bg-[#00A2FF] text-white font-bold py-3 rounded-2xl text-sm">
+          Save Dependencies
+        </button>
+      </div>
+    )
+  }
+
+  // Default: quick actions menu
+  return (
+    <div className="p-5 space-y-4">
+      {/* Task header */}
+      <div className={`border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} pl-3 space-y-1`}>
+        <p className="text-white font-bold text-sm leading-snug">{task.title}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-[#8892B0] text-xs">{task.category}</p>
+          <StatusBadge status={task.status}/>
+          {overdue&&<span className="text-[#FF3333] text-xs font-bold">⚠️ Overdue</span>}
+        </div>
+        {task.budget>0&&<BudgetBar budget={task.budget} spent={spent} compact/>}
+      </div>
+
+      {/* 4 quick action buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={()=>setAction('status')}
+          className="flex flex-col items-center gap-2 bg-[#00A2FF]/10 border border-[#00A2FF]/20 rounded-2xl p-4 active:scale-95 transition-all">
+          <span className="text-2xl">⚡</span>
+          <p className="text-[#00A2FF] text-xs font-bold">Change Status</p>
+        </button>
+        <button onClick={()=>setAction('expense')}
+          className="flex flex-col items-center gap-2 bg-[#00CC88]/10 border border-[#00CC88]/20 rounded-2xl p-4 active:scale-95 transition-all">
+          <span className="text-2xl">💸</span>
+          <p className="text-[#00CC88] text-xs font-bold">Add Expense</p>
+        </button>
+        <button onClick={()=>setAction('budget')}
+          className="flex flex-col items-center gap-2 bg-[#FFB347]/10 border border-[#FFB347]/20 rounded-2xl p-4 active:scale-95 transition-all">
+          <span className="text-2xl">🎯</span>
+          <p className="text-[#FFB347] text-xs font-bold">Set Budget</p>
+        </button>
+        <button onClick={()=>setAction('deps')}
+          className="flex flex-col items-center gap-2 bg-[#A78BFA]/10 border border-[#A78BFA]/20 rounded-2xl p-4 active:scale-95 transition-all">
+          <span className="text-2xl">🔗</span>
+          <p className="text-[#A78BFA] text-xs font-bold">Dependencies</p>
+        </button>
+      </div>
+
+      {/* Full details */}
+      <button onClick={onFullDetail}
+        className="w-full flex items-center justify-between bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3">
+        <span className="text-white text-sm font-semibold">View Full Details</span>
+        <span className="text-[#8892B0]">→</span>
+      </button>
+    </div>
+  )
+}
+
 // ── Task Detail ────────────────────────────────────────────────────────────────
 
 function SubtasksSection({ task, subtasks, onRefresh }) {
@@ -1657,7 +1795,8 @@ export default function TasksPage({ onLogout }) {
   const [tab, setTab] = useState('home')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterCat, setFilterCat] = useState('all')
-  const [selectedTask, setSelectedTask] = useState(null)
+  const [quickTask, setQuickTask] = useState(null)   // quick action sheet
+  const [selectedTask, setSelectedTask] = useState(null) // full detail
   const [showCreate, setShowCreate] = useState(false)
   const [editTask, setEditTask] = useState(null)
   const [confetti, setConfetti] = useState(false)
@@ -1694,12 +1833,19 @@ export default function TasksPage({ onLogout }) {
       const updated = t.data.find(x=>x.id===selectedTask.id)
       if (updated) setSelectedTask(updated)
     }
+    if (quickTask) {
+      const updated = t.data.find(x=>x.id===quickTask.id)
+      if (updated) setQuickTask(updated)
+    }
   }
 
   async function handleStatusChange(task, newStatus) {
     if (newStatus==='completed') setConfetti(true)
     await refresh()
   }
+
+  function openQuick(task) { setQuickTask(task) }
+  function openFull(task)  { setQuickTask(null); setSelectedTask(task) }
 
   if (loading) return (
     <div className="min-h-screen bg-[#0F0F23] flex items-center justify-center">
@@ -1748,9 +1894,9 @@ export default function TasksPage({ onLogout }) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {tab==='home'&&<HomeTab tasks={tasks} onTaskClick={setSelectedTask}/>}
-        {tab==='overview'&&<OverviewTab tasks={tasks} summary={summary} onTaskClick={setSelectedTask}/>}
-        {tab==='tasks'&&<TasksTab tasks={tasks} categories={categories} onTaskClick={setSelectedTask}
+        {tab==='home'&&<HomeTab tasks={tasks} onTaskClick={openQuick}/>}
+        {tab==='overview'&&<OverviewTab tasks={tasks} summary={summary} onTaskClick={openQuick}/>}
+        {tab==='tasks'&&<TasksTab tasks={tasks} categories={categories} onTaskClick={openQuick}
           onStatusChange={handleStatusChange}
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
           filterCat={filterCat} setFilterCat={setFilterCat}/>}
@@ -1770,6 +1916,15 @@ export default function TasksPage({ onLogout }) {
           ))}
         </div>
       </div>
+
+      {/* Quick Action Sheet */}
+      <BottomSheet show={!!quickTask} onClose={()=>setQuickTask(null)}>
+        {quickTask&&<QuickActionSheet
+          task={quickTask} allTasks={tasks}
+          onClose={()=>setQuickTask(null)}
+          onRefresh={refresh}
+          onFullDetail={()=>openFull(quickTask)}/>}
+      </BottomSheet>
 
       {/* Task Detail */}
       <BottomSheet show={!!selectedTask} onClose={()=>setSelectedTask(null)}>
