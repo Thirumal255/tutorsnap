@@ -65,6 +65,8 @@ function SummaryCard({ icon, label, value, sub, accent }) {
 
 // ── Task Form Modal ────────────────────────────────────────────────────────────
 
+const NEW_CAT_SENTINEL = '__new__'
+
 function TaskModal({ task, categories, allTasks, onSave, onClose }) {
   const isEdit = !!task?.id
   const [form, setForm] = useState({
@@ -84,11 +86,12 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const categoryOptions = form.newCategory
-    ? [...categories, form.newCategory]
-    : categories
+  // The active category for filtering deps — newCategory takes precedence
+  const activeCategory = form.newCategory.trim() || form.category
 
-  const eligibleDeps = allTasks.filter(t => t.id !== task?.id)
+  const eligibleDeps = allTasks
+    .filter(t => t.id !== task?.id)
+    .filter(t => activeCategory ? t.category === activeCategory : true)
 
   async function handleSave() {
     if (!form.title.trim()) return setError('Title is required')
@@ -171,15 +174,34 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
 
           <div>
             <label className="block text-xs text-[#8892B0] font-semibold mb-1">Category *</label>
-            {categories.length > 0 && !form.newCategory && (
-              <select value={form.category} onChange={e => set('category', e.target.value)}
-                className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF] mb-2">
-                {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+            <select
+              value={form.newCategory ? NEW_CAT_SENTINEL : form.category}
+              onChange={e => {
+                if (e.target.value === NEW_CAT_SENTINEL) {
+                  set('newCategory', ' ') // trigger new-category mode
+                } else {
+                  set('category', e.target.value)
+                  set('newCategory', '')
+                }
+              }}
+              className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]">
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value={NEW_CAT_SENTINEL}>+ Add new category...</option>
+            </select>
+            {form.newCategory && (
+              <div className="mt-2 flex gap-2">
+                <input
+                  autoFocus
+                  value={form.newCategory.trim() === '' ? '' : form.newCategory}
+                  onChange={e => set('newCategory', e.target.value)}
+                  className="flex-1 bg-[#0F0F23] border border-[#00A2FF] rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
+                  placeholder="New category name..." />
+                <button type="button" onClick={() => { set('newCategory', ''); set('category', categories[0] || '') }}
+                  className="text-xs text-[#8892B0] hover:text-white px-3 border border-[#2D2B5A] rounded-xl transition-colors">
+                  Cancel
+                </button>
+              </div>
             )}
-            <input value={form.newCategory} onChange={e => set('newCategory', e.target.value)}
-              className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00A2FF]"
-              placeholder={categories.length > 0 ? 'Or type a new category...' : 'Category name (e.g. Flat Purchase)'} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -195,26 +217,31 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
             </div>
           </div>
 
-          {allTasks.length > 0 && (
-            <div>
-              <label className="block text-xs text-[#8892B0] font-semibold mb-1">Depends On</label>
-              <div className="max-h-36 overflow-y-auto space-y-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl p-2">
-                {eligibleDeps.filter(t => !form.category || t.category === (form.newCategory || form.category)).map(t => (
-                  <label key={t.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#16213E] cursor-pointer">
-                    <input type="checkbox" checked={form.dependency_ids.includes(t.id)}
-                      onChange={() => toggleDep(t.id)}
-                      className="accent-[#00A2FF]" />
-                    <span className="text-white text-xs">{t.title}</span>
-                    <StatusBadge status={t.status} />
-                  </label>
-                ))}
-                {eligibleDeps.filter(t => !form.category || t.category === (form.newCategory || form.category)).length === 0 && (
-                  <p className="text-[#8892B0] text-xs px-2 py-1">No other tasks in this category yet</p>
-                )}
-              </div>
-              <p className="text-[#8892B0] text-xs mt-1">Only tasks in the same category shown</p>
+          <div>
+            <label className="block text-xs text-[#8892B0] font-semibold mb-1">
+              Depends On
+              {eligibleDeps.length > 0 && (
+                <span className="ml-1 text-[#8892B0] font-normal">(tasks in same category)</span>
+              )}
+            </label>
+            <div className="max-h-40 overflow-y-auto space-y-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl p-2">
+              {eligibleDeps.length > 0 ? eligibleDeps.map(t => (
+                <label key={t.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#16213E] cursor-pointer">
+                  <input type="checkbox" checked={form.dependency_ids.includes(t.id)}
+                    onChange={() => toggleDep(t.id)}
+                    className="accent-[#00A2FF]" />
+                  <span className="text-white text-xs flex-1">{t.title}</span>
+                  <StatusBadge status={t.status} />
+                </label>
+              )) : (
+                <p className="text-[#8892B0] text-xs px-2 py-1">
+                  {activeCategory
+                    ? `No other tasks under "${activeCategory}" yet`
+                    : 'Select a category first'}
+                </p>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="p-6 border-t border-[#2D2B5A] flex gap-3 justify-end">
