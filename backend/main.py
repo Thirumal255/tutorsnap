@@ -5465,6 +5465,9 @@ class TaskCreate(BaseModel):
     end_date: Optional[str] = None
     parent_id: Optional[int] = None
     dependency_ids: Optional[list[int]] = []
+    expense_amount: Optional[float] = None
+    expense_description: Optional[str] = None
+    expense_date: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -5650,6 +5653,14 @@ def create_task(
             if _has_cycle(task.id, dep_id, db):
                 raise HTTPException(status_code=400, detail=f"Circular dependency with task {dep_id}")
             db.add(AdminTaskDependency(task_id=task.id, depends_on_id=dep_id))
+        if data.expense_amount and data.expense_amount > 0:
+            exp_date = _parse_date(data.expense_date) or _date.today()
+            db.add(AdminTaskExpense(
+                task_id=task.id,
+                amount=data.expense_amount,
+                description=data.expense_description,
+                expense_date=exp_date,
+            ))
         _audit_log(db, current_user, action="create_task", target_type="task",
                    target_id=task.id, target_name=task.title, details=data.category)
         db.commit()
