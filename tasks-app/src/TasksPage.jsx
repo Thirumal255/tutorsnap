@@ -431,6 +431,28 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
           </div>
         )}
 
+        {/* Dependencies */}
+        {task.dependency_ids?.length>0&&(()=>{
+          const deps = task.dependency_ids.map(id=>allTasks.find(t=>t.id===id)).filter(Boolean)
+          return deps.length>0 ? (
+            <div>
+              <p className="text-[#8892B0] text-xs font-semibold mb-2">🔗 Depends On ({deps.length})</p>
+              <div className="space-y-2">
+                {deps.map(dep=>(
+                  <div key={dep.id} className="flex items-center gap-3 bg-[#0F0F23] rounded-xl px-3 py-2.5">
+                    <StatusBadge status={dep.status}/>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-xs font-semibold truncate">{dep.title}</p>
+                      <p className="text-[#8892B0] text-xs">{dep.category}</p>
+                    </div>
+                    {dep.status!=='completed'&&<span className="text-[#FFB347] text-xs">⚠️ Pending</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null
+        })()}
+
         {/* Expenses */}
         <div>
           <div className="flex items-center justify-between mb-2">
