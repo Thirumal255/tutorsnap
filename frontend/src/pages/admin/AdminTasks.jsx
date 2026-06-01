@@ -23,6 +23,19 @@ const PRIORITY_META = {
 const STATUSES = Object.keys(STATUS_META)
 const PRIORITIES = Object.keys(PRIORITY_META)
 
+function fmtINR(amount) {
+  if (!amount && amount !== 0) return '₹0'
+  if (amount >= 1_00_00_000) {
+    const v = (amount / 1_00_00_000)
+    return `₹${parseFloat(v.toFixed(2))}Cr`
+  }
+  if (amount >= 1_00_000) {
+    const v = (amount / 1_00_000)
+    return `₹${parseFloat(v.toFixed(2))}L`
+  }
+  return `₹${amount.toLocaleString('en-IN')}`
+}
+
 function fmt(dateStr) {
   if (!dateStr) return '—'
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', {
@@ -60,9 +73,9 @@ function BudgetBar({ budget, spent }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-[#8892B0]">Budget: <span className="text-white font-semibold">₹{budget.toLocaleString('en-IN')}</span></span>
+        <span className="text-[#8892B0]">Budget: <span className="text-white font-semibold">{fmtINR(budget)}</span></span>
         <span className={over ? 'text-[#FF3333] font-bold' : 'text-[#00CC88] font-semibold'}>
-          {over ? `Over by ₹${(spent - budget).toLocaleString('en-IN')}` : `₹${remaining.toLocaleString('en-IN')} left`}
+          {over ? `Over by ${fmtINR(spent - budget)}` : `${fmtINR(remaining)} left`}
         </span>
       </div>
       <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
@@ -72,7 +85,7 @@ function BudgetBar({ budget, spent }) {
         />
       </div>
       <div className="flex items-center justify-between text-xs text-[#8892B0]">
-        <span>Spent: ₹{spent.toLocaleString('en-IN')}</span>
+        <span>Spent: {fmtINR(spent)}</span>
         <span>{pct.toFixed(0)}% used</span>
       </div>
     </div>
@@ -421,7 +434,7 @@ function BudgetModal({ task, onSave, onClose }) {
     // Allow 0 to clear budget
     if (isNaN(val) || val < 0) return setError('Enter a valid amount or leave empty to clear')
     if (val > 0 && val < totalSpent) {
-      return setError(`Budget must be at least ₹${totalSpent.toLocaleString('en-IN')} (total expenses so far)`)
+      return setError(`Budget must be at least ${fmtINR(totalSpent)} (total expenses so far)`)
     }
     setSaving(true)
     setError('')
@@ -465,14 +478,14 @@ function BudgetModal({ task, onSave, onClose }) {
           {totalSpent > 0 && (
             <div className="bg-[#0F0F23] rounded-xl px-3 py-2.5 space-y-0.5">
               <p className="text-xs text-[#8892B0]">
-                Total expenses: <span className="text-white font-semibold">₹{totalSpent.toLocaleString('en-IN')}</span>
-                {subtaskSpent > 0 && <span className="ml-1">(incl. ₹{subtaskSpent.toLocaleString('en-IN')} from sub-tasks)</span>}
+                Total expenses: <span className="text-white font-semibold">{fmtINR(totalSpent)}</span>
+                {subtaskSpent > 0 && <span className="ml-1">(incl. {fmtINR(subtaskSpent)} from sub-tasks)</span>}
               </p>
               <p className="text-xs text-[#8892B0]">Budget must be ≥ total expenses if set.</p>
             </div>
           )}
           {task.budget > 0 && (
-            <p className="text-xs text-[#8892B0]">Current: ₹{task.budget?.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-[#8892B0]">Current: {fmtINR(task.budget)}</p>
           )}
         </div>
         <div className="p-5 border-t border-[#2D2B5A] flex gap-3 justify-end">
@@ -734,7 +747,7 @@ function TaskDetail({ task, allTasks, categories, onUpdate, onClose }) {
                   <p className="text-sm font-fredoka font-bold text-white">💰 Expenses</p>
                   {task.total_expense > 0 && (
                     <p className="text-xs text-[#00CC88] font-semibold mt-0.5">
-                      Total: ₹{task.total_expense?.toLocaleString('en-IN')}
+                      Total: {fmtINR(task.total_expense)}
                     </p>
                   )}
                 </div>
@@ -748,7 +761,7 @@ function TaskDetail({ task, allTasks, categories, onUpdate, onClose }) {
                   {task.expenses.map(e => (
                     <div key={e.id} className="flex items-center gap-3 bg-[#16213E] rounded-xl px-3 py-2.5">
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-semibold">₹{e.amount?.toLocaleString('en-IN')}</p>
+                        <p className="text-white text-sm font-semibold">{fmtINR(e.amount)}</p>
                         {e.description && <p className="text-[#8892B0] text-xs truncate">{e.description}</p>}
                       </div>
                       <p className="text-[#8892B0] text-xs flex-shrink-0 bg-[#0F0F23] px-2 py-1 rounded-lg">{fmt(e.expense_date)}</p>
@@ -835,17 +848,17 @@ function TaskRow({ task, onClick }) {
           {task.budget > 0 ? (
             <>
               <p className="text-xs text-[#8892B0]">Budget</p>
-              <p className="text-sm font-bold text-white">₹{task.budget?.toLocaleString('en-IN')}</p>
+              <p className="text-sm font-bold text-white">{fmtINR(task.budget)}</p>
               {task.total_expense > 0 && (
                 <p className={`text-xs font-semibold ${task.total_expense > task.budget ? 'text-[#FF3333]' : 'text-[#00CC88]'}`}>
-                  ₹{task.total_expense?.toLocaleString('en-IN')} spent
+                  {fmtINR(task.total_expense)} spent
                 </p>
               )}
             </>
           ) : task.total_expense > 0 ? (
             <>
               <p className="text-xs text-[#8892B0]">Spent</p>
-              <p className="text-sm font-bold text-[#00CC88]">₹{task.total_expense?.toLocaleString('en-IN')}</p>
+              <p className="text-sm font-bold text-[#00CC88]">{fmtINR(task.total_expense)}</p>
             </>
           ) : null}
         </div>
@@ -900,18 +913,18 @@ function ExpenseReport({ summary, tasks = [], onTaskClick }) {
         <div className="flex gap-6">
           <div>
             <p className="text-[#8892B0] text-xs font-semibold">TOTAL SPENT</p>
-            <p className="text-2xl font-fredoka font-bold text-[#00CC88]">₹{totalSpent.toLocaleString('en-IN')}</p>
+            <p className="text-2xl font-fredoka font-bold text-[#00CC88]">{fmtINR(totalSpent)}</p>
           </div>
           {totalBudget > 0 && (
             <>
               <div>
                 <p className="text-[#8892B0] text-xs font-semibold">TOTAL BUDGET</p>
-                <p className="text-2xl font-fredoka font-bold text-white">₹{totalBudget.toLocaleString('en-IN')}</p>
+                <p className="text-2xl font-fredoka font-bold text-white">{fmtINR(totalBudget)}</p>
               </div>
               <div>
                 <p className="text-[#8892B0] text-xs font-semibold">REMAINING</p>
                 <p className={`text-2xl font-fredoka font-bold ${totalBudget - totalSpent < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'}`}>
-                  ₹{(totalBudget - totalSpent).toLocaleString('en-IN')}
+                  ₹{(totalBudget - fmtINR(totalSpent))}
                 </p>
               </div>
             </>
@@ -939,9 +952,9 @@ function ExpenseReport({ summary, tasks = [], onTaskClick }) {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-fredoka font-bold text-base">{cat}</span>
                 <div className="text-right">
-                  <span className="text-[#00CC88] font-bold text-sm">₹{catSpent.toLocaleString('en-IN')} spent</span>
+                  <span className="text-[#00CC88] font-bold text-sm">{fmtINR(catSpent)} spent</span>
                   {catBudget > 0 && (
-                    <span className="text-[#8892B0] text-xs ml-2">of ₹{catBudget.toLocaleString('en-IN')}</span>
+                    <span className="text-[#8892B0] text-xs ml-2">of {fmtINR(catBudget)}</span>
                   )}
                 </div>
               </div>
@@ -979,8 +992,8 @@ function ExpenseReport({ summary, tasks = [], onTaskClick }) {
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        {spent > 0 && <p className="text-[#00CC88] font-bold text-sm">₹{spent.toLocaleString('en-IN')}</p>}
-                        {budget > 0 && <p className="text-[#8892B0] text-xs">of ₹{budget.toLocaleString('en-IN')}</p>}
+                        {spent > 0 && <p className="text-[#00CC88] font-bold text-sm">{fmtINR(spent)}</p>}
+                        {budget > 0 && <p className="text-[#8892B0] text-xs">of {fmtINR(budget)}</p>}
                       </div>
                     </div>
                     {budget > 0 && <BudgetBar budget={budget} spent={spent} />}
@@ -1154,7 +1167,7 @@ export default function AdminTasks() {
                     <BudgetBar budget={data.budget} spent={data.spent} />
                   )}
                   {data.budget === 0 && data.spent > 0 && (
-                    <p className="text-xs text-[#8892B0]">Spent: ₹{data.spent.toLocaleString('en-IN')} · No budget set</p>
+                    <p className="text-xs text-[#8892B0]">Spent: {fmtINR(data.spent)} · No budget set</p>
                   )}
                 </div>
               ))}
@@ -1168,16 +1181,16 @@ export default function AdminTasks() {
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <p className="text-[#8892B0] text-xs mb-1">Allocated</p>
-                  <p className="text-white font-bold text-lg">₹{(summary.total_budget || 0).toLocaleString('en-IN')}</p>
+                  <p className="text-white font-bold text-lg">₹{(summary.total_budget || fmtINR(0))}</p>
                 </div>
                 <div>
                   <p className="text-[#8892B0] text-xs mb-1">Spent</p>
-                  <p className="text-[#FFB347] font-bold text-lg">₹{(summary.total_spent || 0).toLocaleString('en-IN')}</p>
+                  <p className="text-[#FFB347] font-bold text-lg">₹{(summary.total_spent || fmtINR(0))}</p>
                 </div>
                 <div>
                   <p className="text-[#8892B0] text-xs mb-1">Remaining</p>
                   <p className={`font-bold text-lg ${((summary.total_budget || 0) - (summary.total_spent || 0)) < 0 ? 'text-[#FF3333]' : 'text-[#00CC88]'}`}>
-                    ₹{((summary.total_budget || 0) - (summary.total_spent || 0)).toLocaleString('en-IN')}
+                    ₹{((summary.total_budget || 0) - (summary.total_spent || fmtINR(0)))}
                   </p>
                 </div>
               </div>

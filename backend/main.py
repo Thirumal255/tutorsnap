@@ -5825,6 +5825,20 @@ def delete_expense(
 
 # ── Telegram Daily Digest ──────────────────────────────────────────────────────
 
+def _fmt_inr(amount: float) -> str:
+    """Format amount in Indian units: Cr / L / plain with commas."""
+    if amount is None:
+        return "Rs.0"
+    if amount >= 1_00_00_000:        # 1 Crore+
+        val = amount / 1_00_00_000
+        return f"Rs.{val:.2f}Cr".rstrip('0').rstrip('.')+"Cr" if '.' in f"{val:.2f}" else f"Rs.{val:.0f}Cr"
+    if amount >= 1_00_000:           # 1 Lakh+
+        val = amount / 1_00_000
+        s = f"{val:.2f}".rstrip('0').rstrip('.')
+        return f"Rs.{s}L"
+    # Plain with Indian comma grouping
+    return f"Rs.{amount:,.0f}"
+
 def _tg_bar(spent: float, total: float, width: int = 16) -> str:
     """Return a text progress bar like [████░░░░]  42%"""
     if not total or total <= 0:
@@ -5883,7 +5897,7 @@ def _build_digest(db: Session) -> str:
             lines.append(f"  • *{t.title}*")
             lines.append(f"    [{t.category}] Due: {due}")
             if t.budget:
-                lines.append(f"    Rs.{spent:,.0f} spent of Rs.{t.budget:,.0f}  {_tg_bar(spent, t.budget, 12)}")
+                lines.append(f"    {_fmt_inr(spent)} spent of {_fmt_inr(t.budget)}  {_tg_bar(spent, t.budget, 12)}")
         lines.append("")
 
     # ── Starting soon ──────────────────────────────────────────────────────────
@@ -5918,9 +5932,9 @@ def _build_digest(db: Session) -> str:
         # Budget bar
         if cat_budget > 0:
             remaining = cat_budget - cat_spent
-            lines.append(f"  \U0001f4b0 Rs.{cat_spent:,.0f} / Rs.{cat_budget:,.0f}  {_tg_bar(cat_spent, cat_budget, 12)}  Left: Rs.{remaining:,.0f}")
+            lines.append(f"  \U0001f4b0 {_fmt_inr(cat_spent)} / {_fmt_inr(cat_budget)}  {_tg_bar(cat_spent, cat_budget, 12)}  Left: {_fmt_inr(remaining)}")
         elif cat_spent > 0:
-            lines.append(f"  \U0001f4b0 Spent: Rs.{cat_spent:,.0f}  (no budget set)")
+            lines.append(f"  \U0001f4b0 Spent: {_fmt_inr(cat_spent)}  (no budget set)")
 
         # Task list — only non-completed tasks
         active = [t for t in cat_tasks if t.status != "completed"]
@@ -5931,17 +5945,17 @@ def _build_digest(db: Session) -> str:
             is_od  = " \U0001f534" if t in overdue else ""
             lines.append(f"  {icon} {t.title}{due}{is_od}")
             if t.budget:
-                lines.append(f"       Rs.{spent:,.0f} / Rs.{t.budget:,.0f}  {_tg_bar(spent, t.budget, 10)}")
+                lines.append(f"       {_fmt_inr(spent)} / {_fmt_inr(t.budget)}  {_tg_bar(spent, t.budget, 10)}")
             elif spent > 0:
-                lines.append(f"       Spent: Rs.{spent:,.0f}")
+                lines.append(f"       Spent: {_fmt_inr(spent)}")
         lines.append("")
 
     # ── Overall budget summary ─────────────────────────────────────────────────
     if total_budget > 0 or total_spent > 0:
         lines.append("*\U0001f4b0 OVERALL BUDGET*")
-        lines.append(f"  Allocated: Rs.{total_budget:,.0f}")
-        lines.append(f"  Spent:     Rs.{total_spent:,.0f}  {_tg_bar(total_spent, total_budget) if total_budget else ''}")
-        lines.append(f"  Remaining: Rs.{total_budget - total_spent:,.0f}")
+        lines.append(f"  Allocated: {_fmt_inr(total_budget)}")
+        lines.append(f"  Spent:     {_fmt_inr(total_spent)}  {_tg_bar(total_spent, total_budget) if total_budget else ''}")
+        lines.append(f"  Remaining: {_fmt_inr(total_budget - total_spent)}")
 
     return "\n".join(lines)
 
