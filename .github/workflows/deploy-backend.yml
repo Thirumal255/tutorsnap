@@ -106,6 +106,7 @@ jobs:
             --quiet
 
       - name: Setup Cloud Scheduler for daily Telegram digest
+        continue-on-error: true
         run: |
           URL=$(gcloud run services describe tutorsnap-api \
             --region=$REGION \
