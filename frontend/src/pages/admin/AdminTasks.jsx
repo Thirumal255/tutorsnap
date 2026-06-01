@@ -407,6 +407,66 @@ function TaskModal({ task, categories, allTasks, onSave, onClose }) {
 
 // ── Expense Modal ──────────────────────────────────────────────────────────────
 
+function BudgetModal({ task, onSave, onClose }) {
+  const [amount, setAmount] = useState(task?.budget ? String(task.budget) : '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSave() {
+    const val = parseFloat(amount)
+    if (!amount || val <= 0) return setError('Enter a valid budget amount')
+    setSaving(true)
+    setError('')
+    try {
+      await updateAdminTask(task.id, { budget: val })
+      onSave()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to set budget')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl w-full max-w-sm">
+        <div className="p-5 border-b border-[#2D2B5A] flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-fredoka font-bold text-white">Set Budget</h3>
+            <p className="text-xs text-[#8892B0] mt-0.5">{task.title}</p>
+          </div>
+          <button onClick={onClose} className="text-[#8892B0] hover:text-white text-xl leading-none">×</button>
+        </div>
+        <div className="p-5 space-y-3">
+          {error && <p className="text-[#FF3333] text-sm">{error}</p>}
+          <div>
+            <label className="block text-xs text-[#8892B0] font-semibold mb-1">Allocated Budget (₹) *</label>
+            <input
+              autoFocus
+              type="number"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              className="w-full bg-[#0F0F23] border border-[#00A2FF] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none"
+              placeholder="e.g. 50000"
+              min="0" step="1" />
+          </div>
+          {task.budget > 0 && (
+            <p className="text-xs text-[#8892B0]">Current budget: ₹{task.budget?.toLocaleString('en-IN')}</p>
+          )}
+        </div>
+        <div className="p-5 border-t border-[#2D2B5A] flex gap-3 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-[#8892B0] hover:text-white border border-[#2D2B5A] rounded-xl text-sm font-semibold transition-colors">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-5 py-2 bg-[#00A2FF] hover:bg-[#0088CC] disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors">
+            {saving ? 'Saving...' : task.budget > 0 ? 'Update Budget' : 'Set Budget'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ExpenseModal({ task, onSave, onClose }) {
   const [form, setForm] = useState({ amount: '', description: '', expense_date: new Date().toISOString().split('T')[0] })
   const [saving, setSaving] = useState(false)
@@ -472,6 +532,7 @@ function ExpenseModal({ task, onSave, onClose }) {
 
 function TaskDetail({ task, allTasks, categories, onUpdate, onClose }) {
   const [showExpenseModal, setShowExpenseModal] = useState(false)
+  const [showBudgetModal, setShowBudgetModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showSubtaskModal, setShowSubtaskModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -625,15 +686,19 @@ function TaskDetail({ task, allTasks, categories, onUpdate, onClose }) {
             </div>
 
             {/* Budget bar */}
-            {(task.budget > 0 || task.total_expense > 0) && (
-              <div className="bg-[#0F0F23] rounded-2xl p-4">
-                <p className="text-sm font-fredoka font-bold text-white mb-3">📊 Budget vs Spend</p>
-                <BudgetBar budget={task.budget} spent={task.total_expense || 0} />
-                {!task.budget && (
-                  <p className="text-xs text-[#8892B0] mt-2">No budget set — edit task to add one.</p>
-                )}
+            <div className="bg-[#0F0F23] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-fredoka font-bold text-white">📊 Budget vs Spend</p>
+                <button onClick={() => setShowBudgetModal(true)}
+                  className="text-xs px-3 py-1.5 bg-[#00A2FF]/15 text-[#00A2FF] hover:bg-[#00A2FF]/25 rounded-xl font-semibold transition-colors">
+                  {task.budget > 0 ? '✏️ Edit Budget' : '+ Set Budget'}
+                </button>
               </div>
-            )}
+              {task.budget > 0 || task.total_expense > 0
+                ? <BudgetBar budget={task.budget} spent={task.total_expense || 0} />
+                : <p className="text-[#8892B0] text-xs text-center py-2">No budget set yet — click <span className="text-[#00A2FF]">+ Set Budget</span> to track spend</p>
+              }
+            </div>
 
             {/* Expenses */}
             <div className="bg-[#0F0F23] rounded-2xl p-4">
@@ -689,6 +754,9 @@ function TaskDetail({ task, allTasks, categories, onUpdate, onClose }) {
 
       {showExpenseModal && (
         <ExpenseModal task={task} onSave={() => { setShowExpenseModal(false); onUpdate() }} onClose={() => setShowExpenseModal(false)} />
+      )}
+      {showBudgetModal && (
+        <BudgetModal task={task} onSave={() => { setShowBudgetModal(false); onUpdate() }} onClose={() => setShowBudgetModal(false)} />
       )}
       {showEditModal && (
         <TaskModal task={task} categories={categories} allTasks={allTasks}
