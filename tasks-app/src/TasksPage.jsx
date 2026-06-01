@@ -245,12 +245,33 @@ function BottomSheet({ show, onClose, title, children }) {
 
 // ── Task Card ──────────────────────────────────────────────────────────────────
 
+function SubtaskPill({ subtasks }) {
+  if (!subtasks?.length) return null
+  const done = subtasks.filter(s=>s.status==='completed').length
+  const total = subtasks.length
+  const pct = Math.round((done/total)*100)
+  const all_done = done===total
+  return (
+    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${all_done?'bg-[#00CC88]/15 text-[#00CC88]':'bg-[#2D2B5A]/50 text-[#8892B0]'}`}>
+      <span>{all_done?'✓':done+'/'+total}</span>
+      <span>{total===1?'subtask':'subtasks'}</span>
+      {!all_done&&(
+        <div className="w-10 h-1 bg-[#0F0F23] rounded-full overflow-hidden">
+          <div className="h-full bg-[#00A2FF] rounded-full" style={{width:`${pct}%`}}/>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TaskCard({ task, onClick, onStatusChange }) {
   const overdue = isOverdue(task)
   const days = daysLeft(task.end_date)
   const spent = task.total_expense||0
   const [showPicker, setShowPicker] = useState(false)
+  const [completing, setCompleting] = useState(false)
   const longPress = useLongPress(()=>setShowPicker(true))
+  const isDone = task.status==='completed'
 
   async function handleStatusSelect(newStatus) {
     setShowPicker(false)
@@ -259,48 +280,60 @@ function TaskCard({ task, onClick, onStatusChange }) {
     onStatusChange && onStatusChange(task, newStatus)
   }
 
+  async function handleComplete(e) {
+    e.stopPropagation()
+    setCompleting(true)
+    const newStatus = isDone ? 'in_progress' : 'completed'
+    await updateAdminTask(task.id, {status: newStatus})
+    onStatusChange && onStatusChange(task, newStatus)
+    setCompleting(false)
+  }
+
   return (
     <>
       <div {...longPress} onClick={()=>onClick(task)}
-        className={`bg-[#16213E] border border-[#2D2B5A] border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all hover:border-[#00A2FF]/40 space-y-3 select-none`}>
-        <div className="flex items-start justify-between gap-2">
+        className={`bg-[#16213E] border border-[#2D2B5A] border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all hover:border-[#00A2FF]/40 space-y-2.5 select-none`}>
+
+        {/* Top row: complete btn + title + status */}
+        <div className="flex items-start gap-2.5">
+          {/* One-tap complete button */}
+          <button onClick={handleComplete} disabled={completing}
+            className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center mt-0.5 transition-all ${
+              isDone ? 'bg-[#00CC88] border-[#00CC88] text-white'
+                     : 'border-[#2D2B5A] text-transparent hover:border-[#00CC88] hover:text-[#00CC88]'
+            }`}>
+            <span className="text-xs font-bold leading-none">✓</span>
+          </button>
+
           <div className="flex-1 min-w-0">
-            <h3 className="text-white font-semibold text-sm leading-snug">{task.title}</h3>
-            <p className="text-[#8892B0] text-xs mt-0.5">{task.category}</p>
+            <h3 className={`font-semibold text-sm leading-snug ${isDone?'line-through text-[#8892B0]':'text-white'}`}>
+              {task.title}
+            </h3>
+            {/* Notes preview */}
+            {task.notes&&!isDone&&(
+              <p className="text-[#8892B0] text-xs mt-0.5 truncate">{task.notes}</p>
+            )}
           </div>
           <StatusBadge status={task.status}/>
         </div>
+
+        {/* Budget bar */}
         {task.budget>0 && <BudgetBar budget={task.budget} spent={spent} compact/>}
-        <div className="flex items-center justify-between">
+
+        {/* Bottom row: dates + subtask pill */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 text-xs flex-wrap">
-            {(task.start_date || task.end_date) && (
+            {(task.start_date||task.end_date)&&(
               <span className={`flex items-center gap-1 ${overdue?'text-[#FF3333] font-semibold':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
                 {overdue?'⚠️':'📅'}
-                {task.start_date && <span>{fmtShort(task.start_date)}</span>}
-                {task.start_date && task.end_date && <span className="text-[#2D2B5A]">→</span>}
-                {task.end_date && <span>{fmtShort(task.end_date)}</span>}
-                {overdue ? ` (${Math.abs(days)}d late)` : days!=null&&days<=3 ? ` (${days}d)` : ''}
+                {task.start_date&&<span>{fmtShort(task.start_date)}</span>}
+                {task.start_date&&task.end_date&&<span className="text-[#2D2B5A]">→</span>}
+                {task.end_date&&<span>{fmtShort(task.end_date)}</span>}
+                {overdue?` (${Math.abs(days)}d late)`:days!=null&&days<=3?` (${days}d)`:''}
               </span>
             )}
-            {task.subtasks?.length>0&&(()=>{
-              const done = task.subtasks.filter(s=>s.status==='completed').length
-              const total = task.subtasks.length
-              const pct = Math.round((done/total)*100)
-              const all_done = done===total
-              return (
-                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${all_done?'bg-[#00CC88]/15 text-[#00CC88]':'bg-[#2D2B5A]/50 text-[#8892B0]'}`}>
-                  <span>{all_done?'✓':done+'/'+total}</span>
-                  <span>{total===1?'subtask':'subtasks'}</span>
-                  {!all_done&&(
-                    <div className="w-10 h-1 bg-[#0F0F23] rounded-full overflow-hidden">
-                      <div className="h-full bg-[#00A2FF] rounded-full" style={{width:`${pct}%`}}/>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
           </div>
-          <span className={`w-2 h-2 rounded-full ${S[task.status]?.dot||'bg-[#8892B0]'}`}/>
+          <SubtaskPill subtasks={task.subtasks}/>
         </div>
       </div>
       {showPicker&&<StatusPicker task={task} onSelect={handleStatusSelect} onClose={()=>setShowPicker(false)}/>}
@@ -690,12 +723,13 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
             <p className={`text-xs font-bold text-center leading-tight ${btn.color}`}>{btn.label}</p>
           </button>
         ))}
-        <button onClick={onFullDetail}
-          className="flex flex-col items-center gap-1.5 bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-3 active:scale-95 transition-all">
-          <span className="text-xl">📄</span>
-          <p className="text-xs font-bold text-center leading-tight text-[#8892B0]">Full Detail</p>
-        </button>
       </div>
+
+      <button onClick={onFullDetail}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-[#8892B0] hover:text-white transition-colors">
+        <span className="text-sm">View full details</span>
+        <span>→</span>
+      </button>
     </div>
   )
 }
@@ -928,14 +962,10 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
 
 // ── Home Tab ───────────────────────────────────────────────────────────────────
 
-function HomeTab({ tasks, summary, onTaskClick }) {
+function HomeTab({ tasks, onTaskClick }) {
   const today = new Date(new Date().toDateString())
   const in2days = new Date(today); in2days.setDate(today.getDate()+2)
   const root = tasks.filter(t=>!t.parent_id)
-  const totalBudget = summary.total_budget||0
-  const totalSpent  = summary.total_spent||0
-  const byCategory = {}
-  root.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
 
   const ongoing = root.filter(t=>t.status==='in_progress')
   const upcoming = root.filter(t=>{
@@ -999,7 +1029,10 @@ function HomeTab({ tasks, summary, onTaskClick }) {
                               : `bg-[#16213E] border border-[#2D2B5A] ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'}`
                           }`}>
                           <div className="flex items-start justify-between gap-2">
-                            <p className="text-white font-semibold text-sm leading-snug flex-1">{t.title}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
+                              {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
+                            </div>
                             {overdue&&(
                               <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">
                                 {Math.abs(days)}d late
@@ -1015,23 +1048,7 @@ function HomeTab({ tasks, summary, onTaskClick }) {
                             <p className="text-[#FF3333] text-xs">📅 Was due {fmtShort(t.end_date)}</p>
                           )}
                           {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
-                          {t.subtasks?.length>0&&(()=>{
-                            const done = t.subtasks.filter(s=>s.status==='completed').length
-                            const total = t.subtasks.length
-                            const pct = Math.round((done/total)*100)
-                            const all_done = done===total
-                            return (
-                              <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${all_done?'bg-[#00CC88]/15 text-[#00CC88]':'bg-[#2D2B5A]/50 text-[#8892B0]'}`}>
-                                <span>{all_done?'✓':done+'/'+total}</span>
-                                <span>{total===1?'subtask':'subtasks'}</span>
-                                {!all_done&&(
-                                  <div className="w-10 h-1 bg-[#0F0F23] rounded-full overflow-hidden">
-                                    <div className="h-full bg-[#00A2FF] rounded-full" style={{width:`${pct}%`}}/>
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })()}
+                          <SubtaskPill subtasks={t.subtasks}/>
                         </div>
                       )
                     })}
@@ -1077,52 +1094,6 @@ function HomeTab({ tasks, summary, onTaskClick }) {
         )}
       </div>
 
-      {/* Budget summary */}
-      {(totalBudget>0||totalSpent>0)&&(
-        <div>
-          <p className="text-[#8892B0] text-xs font-semibold mb-3">💰 Budget Summary</p>
-          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3 mb-3">
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <p className="text-[#8892B0] text-xs">Allocated</p>
-                <p className="text-white font-bold mt-0.5">{fmtINR(totalBudget)}</p>
-              </div>
-              <div>
-                <p className="text-[#8892B0] text-xs">Spent</p>
-                <p className="text-[#FFB347] font-bold mt-0.5">{fmtINR(totalSpent)}</p>
-              </div>
-              <div>
-                <p className="text-[#8892B0] text-xs">Remaining</p>
-                <p className={`font-bold mt-0.5 ${totalBudget-totalSpent<0?'text-[#FF3333]':'text-[#00CC88]'}`}>{fmtINR(totalBudget-totalSpent)}</p>
-              </div>
-            </div>
-            {totalBudget>0&&<BudgetBar budget={totalBudget} spent={totalSpent}/>}
-          </div>
-          <div className="space-y-2">
-            {Object.entries(byCategory).sort().map(([cat,catTasks])=>{
-              const catBudget = catTasks.reduce((s,t)=>s+(t.budget||0),0)
-              const catSpent  = catTasks.reduce((s,t)=>s+(t.total_expense||0),0)
-              const catOverdue = catTasks.filter(isOverdue).length
-              if (catBudget===0&&catSpent===0) return null
-              return (
-                <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-white text-xs font-semibold">{cat}</p>
-                      {catOverdue>0&&<p className="text-[#FF3333] text-xs">⚠️ {catOverdue} overdue</p>}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-white text-xs font-semibold">{fmtINR(catSpent)}</p>
-                      {catBudget>0&&<p className="text-[#8892B0] text-xs">of {fmtINR(catBudget)}</p>}
-                    </div>
-                  </div>
-                  {catBudget>0&&<BudgetBar budget={catBudget} spent={catSpent} compact/>}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1587,8 +1558,10 @@ export default function TasksPage({ onLogout }) {
     </div>
   )
 
+  const overdueCount = tasks.filter(t=>!t.parent_id&&isOverdue(t)).length
+
   const NAV = [
-    {key:'home',    icon:'🏠', label:'Home'},
+    {key:'home',    icon:'🏠', label:'Home', badge: overdueCount},
     {key:'tasks',   icon:'📋', label:'Tasks'},
     {key:'expenses',icon:'💰', label:'Expenses'},
   ]
@@ -1627,7 +1600,7 @@ export default function TasksPage({ onLogout }) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {tab==='home'&&<HomeTab tasks={tasks} summary={summary} onTaskClick={openQuick}/>}
+        {tab==='home'&&<HomeTab tasks={tasks} onTaskClick={openQuick}/>}
         {tab==='tasks'&&<TasksTab tasks={tasks} categories={categories} onTaskClick={openQuick}
           onStatusChange={handleStatusChange}
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
@@ -1642,7 +1615,14 @@ export default function TasksPage({ onLogout }) {
             <button key={n.key} onClick={()=>setTab(n.key)}
               className={`flex-1 flex flex-col items-center gap-1 py-3 transition-all relative ${tab===n.key?'text-[#00A2FF]':'text-[#8892B0]'}`}>
               {tab===n.key&&<div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[#00A2FF] rounded-full"/>}
-              <span className="text-xl leading-none">{n.icon}</span>
+              <div className="relative">
+                <span className="text-xl leading-none">{n.icon}</span>
+                {n.badge>0&&(
+                  <span className="absolute -top-1 -right-2 bg-[#FF3333] text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                    {n.badge}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] font-semibold">{n.label}</span>
             </button>
           ))}
