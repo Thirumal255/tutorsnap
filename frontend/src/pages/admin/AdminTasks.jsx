@@ -412,9 +412,17 @@ function BudgetModal({ task, onSave, onClose }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Total expense including sub-tasks
+  const subtaskSpent = task.subtasks?.reduce((sum, st) => sum + (st.total_expense || 0), 0) || 0
+  const totalSpent = (task.total_expense || 0) + subtaskSpent
+
   async function handleSave() {
-    const val = parseFloat(amount)
-    if (!amount || val <= 0) return setError('Enter a valid budget amount')
+    const val = amount === '' ? 0 : parseFloat(amount)
+    // Allow 0 to clear budget
+    if (isNaN(val) || val < 0) return setError('Enter a valid amount or leave empty to clear')
+    if (val > 0 && val < totalSpent) {
+      return setError(`Budget must be at least ₹${totalSpent.toLocaleString('en-IN')} (total expenses so far)`)
+    }
     setSaving(true)
     setError('')
     try {
@@ -438,9 +446,12 @@ function BudgetModal({ task, onSave, onClose }) {
           <button onClick={onClose} className="text-[#8892B0] hover:text-white text-xl leading-none">×</button>
         </div>
         <div className="p-5 space-y-3">
-          {error && <p className="text-[#FF3333] text-sm">{error}</p>}
+          {error && <p className="text-[#FF3333] text-sm bg-[#FF3333]/10 border border-[#FF3333]/20 rounded-xl px-3 py-2">{error}</p>}
           <div>
-            <label className="block text-xs text-[#8892B0] font-semibold mb-1">Allocated Budget (₹) *</label>
+            <label className="block text-xs text-[#8892B0] font-semibold mb-1">
+              Allocated Budget (₹)
+              <span className="font-normal ml-1">— leave empty or set 0 to clear</span>
+            </label>
             <input
               autoFocus
               type="number"
@@ -451,15 +462,31 @@ function BudgetModal({ task, onSave, onClose }) {
               placeholder="e.g. 50000"
               min="0" step="1" />
           </div>
+          {totalSpent > 0 && (
+            <div className="bg-[#0F0F23] rounded-xl px-3 py-2.5 space-y-0.5">
+              <p className="text-xs text-[#8892B0]">
+                Total expenses: <span className="text-white font-semibold">₹{totalSpent.toLocaleString('en-IN')}</span>
+                {subtaskSpent > 0 && <span className="ml-1">(incl. ₹{subtaskSpent.toLocaleString('en-IN')} from sub-tasks)</span>}
+              </p>
+              <p className="text-xs text-[#8892B0]">Budget must be ≥ total expenses if set.</p>
+            </div>
+          )}
           {task.budget > 0 && (
-            <p className="text-xs text-[#8892B0]">Current budget: ₹{task.budget?.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-[#8892B0]">Current: ₹{task.budget?.toLocaleString('en-IN')}</p>
           )}
         </div>
         <div className="p-5 border-t border-[#2D2B5A] flex gap-3 justify-end">
           <button onClick={onClose} className="px-4 py-2 text-[#8892B0] hover:text-white border border-[#2D2B5A] rounded-xl text-sm font-semibold transition-colors">Cancel</button>
+          {task.budget > 0 && (
+            <button onClick={() => { setAmount('0'); setTimeout(handleSave, 0) }}
+              disabled={saving}
+              className="px-4 py-2 text-[#FF3333] hover:text-white border border-[#FF3333]/30 hover:bg-[#FF3333]/10 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50">
+              Clear
+            </button>
+          )}
           <button onClick={handleSave} disabled={saving}
             className="px-5 py-2 bg-[#00A2FF] hover:bg-[#0088CC] disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors">
-            {saving ? 'Saving...' : task.budget > 0 ? 'Update Budget' : 'Set Budget'}
+            {saving ? 'Saving...' : task.budget > 0 ? 'Update' : 'Set Budget'}
           </button>
         </div>
       </div>
@@ -981,33 +1008,10 @@ export default function AdminTasks() {
             <SummaryCard icon="⚠️" label="Overdue" value={overdueCount} accent={overdueCount > 0 ? 'text-[#FF3333]' : 'text-white'} />
           </div>
 
-          {/* Budget overview */}
-          {(summary.total_budget > 0 || summary.total_spent > 0) && (
-            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-5 space-y-4">
-              <p className="text-sm font-fredoka font-bold text-white">📊 Budget Overview</p>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <p className="text-[#8892B0] text-xs mb-1">Allocated</p>
-                  <p className="text-white font-bold text-lg">₹{(summary.total_budget || 0).toLocaleString('en-IN')}</p>
-                </div>
-                <div>
-                  <p className="text-[#8892B0] text-xs mb-1">Spent</p>
-                  <p className="text-[#FFB347] font-bold text-lg">₹{(summary.total_spent || 0).toLocaleString('en-IN')}</p>
-                </div>
-                <div>
-                  <p className="text-[#8892B0] text-xs mb-1">Remaining</p>
-                  <p className={`font-bold text-lg ${(summary.total_budget - summary.total_spent) < 0 ? 'text-[#FF3333]' : 'text-[#00CC88]'}`}>
-                    ₹{((summary.total_budget || 0) - (summary.total_spent || 0)).toLocaleString('en-IN')}
-                  </p>
-                </div>
-              </div>
-              <BudgetBar budget={summary.total_budget} spent={summary.total_spent || 0} />
-            </div>
-          )}
-
+          {/* Overdue alert */}
           {summary.overdue?.length > 0 && (
             <div>
-              <p className="text-xs text-[#FF3333] font-semibold mb-3">OVERDUE TASKS</p>
+              <p className="text-xs text-[#FF3333] font-semibold mb-3">⚠️ OVERDUE TASKS</p>
               <div className="space-y-2">
                 {summary.overdue.map(t => (
                   <div key={t.id} onClick={() => { setTab('tasks'); setSelectedTask(t) }}
@@ -1023,19 +1027,76 @@ export default function AdminTasks() {
             </div>
           )}
 
-          {/* Status breakdown */}
-          <div>
-            <p className="text-xs text-[#8892B0] font-semibold mb-3">STATUS BREAKDOWN</p>
-            <div className="grid grid-cols-2 gap-3">
-              {STATUSES.map(s => (
-                <div key={s} className="bg-[#16213E] border border-[#2D2B5A] rounded-xl px-4 py-3 flex items-center gap-3">
-                  <span className={`w-2.5 h-2.5 rounded-full ${STATUS_META[s].dot}`} />
-                  <span className="text-[#8892B0] text-sm">{STATUS_META[s].label}</span>
-                  <span className="ml-auto text-white font-bold">{summary.by_status?.[s] || 0}</span>
+          {/* Category-wise breakdown */}
+          {summary.by_category && Object.keys(summary.by_category).length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs text-[#8892B0] font-semibold">BY CATEGORY</p>
+              {Object.entries(summary.by_category).map(([cat, data]) => (
+                <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
+                  {/* Category header */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white font-fredoka font-bold text-base">{cat}</p>
+                      <p className="text-[#8892B0] text-xs mt-0.5">{data.total} task{data.total !== 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="text-right">
+                      {data.overdue > 0 && (
+                        <span className="text-xs font-bold text-[#FF3333] bg-[#FF3333]/10 px-2 py-0.5 rounded-full">
+                          {data.overdue} overdue
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Status pills */}
+                  <div className="flex gap-2 flex-wrap">
+                    {STATUSES.map(s => {
+                      const count = data.by_status?.[s] || 0
+                      if (!count) return null
+                      return (
+                        <span key={s} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_META[s].color}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_META[s].dot}`} />
+                          {STATUS_META[s].label}: {count}
+                        </span>
+                      )
+                    })}
+                  </div>
+
+                  {/* Budget bar if any */}
+                  {(data.budget > 0 || data.spent > 0) && (
+                    <BudgetBar budget={data.budget} spent={data.spent} />
+                  )}
+                  {data.budget === 0 && data.spent > 0 && (
+                    <p className="text-xs text-[#8892B0]">Spent: ₹{data.spent.toLocaleString('en-IN')} · No budget set</p>
+                  )}
                 </div>
               ))}
             </div>
-          </div>
+          )}
+
+          {/* Total budget summary */}
+          {(summary.total_budget > 0 || summary.total_spent > 0) && (
+            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-5 space-y-4">
+              <p className="text-sm font-fredoka font-bold text-white">💰 Total Budget Summary</p>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-[#8892B0] text-xs mb-1">Allocated</p>
+                  <p className="text-white font-bold text-lg">₹{(summary.total_budget || 0).toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-[#8892B0] text-xs mb-1">Spent</p>
+                  <p className="text-[#FFB347] font-bold text-lg">₹{(summary.total_spent || 0).toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-[#8892B0] text-xs mb-1">Remaining</p>
+                  <p className={`font-bold text-lg ${((summary.total_budget || 0) - (summary.total_spent || 0)) < 0 ? 'text-[#FF3333]' : 'text-[#00CC88]'}`}>
+                    ₹{((summary.total_budget || 0) - (summary.total_spent || 0)).toLocaleString('en-IN')}
+                  </p>
+                </div>
+              </div>
+              <BudgetBar budget={summary.total_budget} spent={summary.total_spent || 0} />
+            </div>
+          )}
         </div>
       )}
 

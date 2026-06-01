@@ -5607,14 +5607,21 @@ def tasks_summary(
         if t.end_date and t.end_date < today and t.status not in ("completed",)
     ]
 
-    expense_by_cat: dict = {}
-    budget_by_cat: dict = {}
-    for e in db.query(AdminTaskExpense).join(AdminTask).all():
-        cat = e.task.category
-        expense_by_cat[cat] = expense_by_cat.get(cat, 0.0) + e.amount
+    # Build category-wise breakdown
+    by_category: dict = {}
     for t in all_tasks:
-        if t.budget:
-            budget_by_cat[t.category] = budget_by_cat.get(t.category, 0.0) + t.budget
+        cat = t.category
+        if cat not in by_category:
+            by_category[cat] = {"total": 0, "by_status": {}, "budget": 0.0, "spent": 0.0, "overdue": 0}
+        by_category[cat]["total"] += 1
+        by_category[cat]["by_status"][t.status] = by_category[cat]["by_status"].get(t.status, 0) + 1
+        by_category[cat]["budget"] += t.budget or 0.0
+        task_spent = sum(e.amount for e in t.expenses)
+        by_category[cat]["spent"] += task_spent
+        if t.end_date and t.end_date < today and t.status != "completed":
+            by_category[cat]["overdue"] += 1
+
+    expense_by_cat = {cat: round(v["spent"], 2) for cat, v in by_category.items()}
 
     return {
         "total": len(all_tasks),
@@ -5624,8 +5631,17 @@ def tasks_summary(
         "total_expense": round(total_expense, 2),
         "total_budget": round(total_budget, 2),
         "total_spent": round(total_expense, 2),
-        "expense_by_category": {k: round(v, 2) for k, v in expense_by_cat.items()},
-        "budget_by_category": {k: round(v, 2) for k, v in budget_by_cat.items()},
+        "expense_by_category": expense_by_cat,
+        "by_category": {
+            cat: {
+                "total": v["total"],
+                "by_status": v["by_status"],
+                "budget": round(v["budget"], 2),
+                "spent": round(v["spent"], 2),
+                "overdue": v["overdue"],
+            }
+            for cat, v in by_category.items()
+        },
     }
 
 
@@ -5709,7 +5725,7 @@ def update_task(
     if data.start_date is not None:
         task.start_date = _parse_date(data.start_date)
     if data.budget is not None:
-        task.budget = data.budget
+        task.budget = data.budget if data.budget > 0 else None
     if data.end_date is not None:
         new_end = _parse_date(data.end_date)
         task.end_date = new_end
