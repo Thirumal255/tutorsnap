@@ -1088,7 +1088,7 @@ function GanttView({ tasks, onTaskClick }) {
   const weekMarkers = []
   for(let i=0; i<totalDays; i+=7) {
     const d = new Date(minDate.getTime()+i*86400000)
-    weekMarkers.push({ off:i, label: d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) })
+    weekMarkers.push({ off:i, label: d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}) })
   }
 
   // Month markers
@@ -1328,7 +1328,7 @@ function TimelineView({ tasks, onTaskClick }) {
         const date = new Date(dateStr+'T00:00:00')
         const isToday = dateStr===todayStr
         const isPast  = date<today
-        const dayLabel = date.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'})
+        const dayLabel = date.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})
         return (
           <div key={dateStr} className="flex gap-3">
             {/* Spine */}
