@@ -5912,8 +5912,8 @@ def send_task_digest(
     if notify_secret and x_notify_secret != notify_secret:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    chat_id   = os.getenv("TELEGRAM_CHAT_ID", "")
+    bot_token = os.getenv("TASK_TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id   = os.getenv("TASK_TELEGRAM_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID", "")
     if not bot_token or not chat_id:
         raise HTTPException(status_code=500, detail="Telegram not configured")
 

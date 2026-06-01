@@ -90,7 +90,9 @@ jobs:
           GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest,\
           FRONTEND_URL=FRONTEND_URL:latest,\
           TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,\
-          TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest" \
+          TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest,\
+          TASK_TELEGRAM_BOT_TOKEN=TASK_TELEGRAM_BOT_TOKEN:latest,\
+          TASK_TELEGRAM_CHAT_ID=TASK_TELEGRAM_CHAT_ID:latest" \
             --set-env-vars="\
           ENVIRONMENT=production,\
           CLAUDE_MODEL=claude-sonnet-4-5-20250929,\
