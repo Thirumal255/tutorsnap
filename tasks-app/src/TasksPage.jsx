@@ -548,9 +548,10 @@ function SetBudgetForm({ task, allTasks, onSave, onClose }) {
 // ── Quick Action Sheet ─────────────────────────────────────────────────────────
 
 function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) {
-  const [action, setAction] = useState(null) // 'status'|'expense'|'budget'|'deps'
+  const [action, setAction] = useState(null) // 'status'|'expense'|'budget'|'deps'|'subtasks'
   const overdue = isOverdue(task)
   const spent = task.total_expense || 0
+  const subtasks = allTasks.filter(t => t.parent_id === task.id)
 
   async function handleStatusSelect(newStatus) {
     setAction(null)
@@ -635,6 +636,17 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
     )
   }
 
+  if (action === 'subtasks') return (
+    <div className="p-5 space-y-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-white font-bold text-sm">📋 Sub-tasks</p>
+        <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
+      </div>
+      <p className="text-[#8892B0] text-xs truncate mb-2">{task.title}</p>
+      <SubtasksSection task={task} subtasks={subtasks} onRefresh={async()=>{ await onRefresh() }}/>
+    </div>
+  )
+
   // Default: quick actions menu
   return (
     <div className="p-5 space-y-4">
@@ -649,36 +661,27 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
         {task.budget>0&&<BudgetBar budget={task.budget} spent={spent} compact/>}
       </div>
 
-      {/* 4 quick action buttons */}
-      <div className="grid grid-cols-2 gap-3">
-        <button onClick={()=>setAction('status')}
-          className="flex flex-col items-center gap-2 bg-[#00A2FF]/10 border border-[#00A2FF]/20 rounded-2xl p-4 active:scale-95 transition-all">
-          <span className="text-2xl">⚡</span>
-          <p className="text-[#00A2FF] text-xs font-bold">Change Status</p>
-        </button>
-        <button onClick={()=>setAction('expense')}
-          className="flex flex-col items-center gap-2 bg-[#00CC88]/10 border border-[#00CC88]/20 rounded-2xl p-4 active:scale-95 transition-all">
-          <span className="text-2xl">💸</span>
-          <p className="text-[#00CC88] text-xs font-bold">Add Expense</p>
-        </button>
-        <button onClick={()=>setAction('budget')}
-          className="flex flex-col items-center gap-2 bg-[#FFB347]/10 border border-[#FFB347]/20 rounded-2xl p-4 active:scale-95 transition-all">
-          <span className="text-2xl">🎯</span>
-          <p className="text-[#FFB347] text-xs font-bold">Set Budget</p>
-        </button>
-        <button onClick={()=>setAction('deps')}
-          className="flex flex-col items-center gap-2 bg-[#A78BFA]/10 border border-[#A78BFA]/20 rounded-2xl p-4 active:scale-95 transition-all">
-          <span className="text-2xl">🔗</span>
-          <p className="text-[#A78BFA] text-xs font-bold">Dependencies</p>
+      {/* Quick action buttons — 3 columns */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          {key:'status',   icon:'⚡', label:'Status',      color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10 border-[#00A2FF]/20'},
+          {key:'expense',  icon:'💸', label:'Add Expense', color:'text-[#00CC88]', bg:'bg-[#00CC88]/10 border-[#00CC88]/20'},
+          {key:'budget',   icon:'🎯', label:'Budget',      color:'text-[#FFB347]', bg:'bg-[#FFB347]/10 border-[#FFB347]/20'},
+          {key:'subtasks', icon:'📋', label:`Sub-tasks${subtasks.length>0?` (${subtasks.length})`:''}`, color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10 border-[#00A2FF]/20'},
+          {key:'deps',     icon:'🔗', label:'Dependencies', color:'text-[#A78BFA]', bg:'bg-[#A78BFA]/10 border-[#A78BFA]/20'},
+        ].map(btn=>(
+          <button key={btn.key} onClick={()=>setAction(btn.key)}
+            className={`flex flex-col items-center gap-1.5 border rounded-2xl p-3 active:scale-95 transition-all ${btn.bg}`}>
+            <span className="text-xl">{btn.icon}</span>
+            <p className={`text-xs font-bold text-center leading-tight ${btn.color}`}>{btn.label}</p>
+          </button>
+        ))}
+        <button onClick={onFullDetail}
+          className="flex flex-col items-center gap-1.5 bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-3 active:scale-95 transition-all">
+          <span className="text-xl">📄</span>
+          <p className="text-xs font-bold text-center leading-tight text-[#8892B0]">Full Detail</p>
         </button>
       </div>
-
-      {/* Full details */}
-      <button onClick={onFullDetail}
-        className="w-full flex items-center justify-between bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3">
-        <span className="text-white text-sm font-semibold">View Full Details</span>
-        <span className="text-[#8892B0]">→</span>
-      </button>
     </div>
   )
 }
