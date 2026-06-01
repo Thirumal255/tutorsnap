@@ -282,9 +282,23 @@ function TaskCard({ task, onClick, onStatusChange }) {
                 {overdue ? ` (${Math.abs(days)}d late)` : days!=null&&days<=3 ? ` (${days}d)` : ''}
               </span>
             )}
-            {task.subtasks?.length>0&&(
-              <span className="text-[#8892B0]">· {task.subtasks.filter(s=>s.status==='completed').length}/{task.subtasks.length} sub</span>
-            )}
+            {task.subtasks?.length>0&&(()=>{
+              const done = task.subtasks.filter(s=>s.status==='completed').length
+              const total = task.subtasks.length
+              const pct = Math.round((done/total)*100)
+              const all_done = done===total
+              return (
+                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${all_done?'bg-[#00CC88]/15 text-[#00CC88]':'bg-[#2D2B5A]/50 text-[#8892B0]'}`}>
+                  <span>{all_done?'✓':done+'/'+total}</span>
+                  <span>{total===1?'subtask':'subtasks'}</span>
+                  {!all_done&&(
+                    <div className="w-10 h-1 bg-[#0F0F23] rounded-full overflow-hidden">
+                      <div className="h-full bg-[#00A2FF] rounded-full" style={{width:`${pct}%`}}/>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
           <span className={`w-2 h-2 rounded-full ${S[task.status]?.dot||'bg-[#8892B0]'}`}/>
         </div>
