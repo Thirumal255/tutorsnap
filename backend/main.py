@@ -5857,17 +5857,8 @@ def _build_digest(db: Session) -> str:
 
     tasks = db.query(AdminTask).filter(AdminTask.parent_id.is_(None)).all()
 
-    overdue       = [t for t in tasks if t.end_date and t.end_date < today and t.status != "completed"]
-    in_progress   = [t for t in tasks if t.status == "in_progress" and t not in overdue]
+    ongoing       = [t for t in tasks if t.status == "in_progress"]
     starting_soon = [t for t in tasks if t.start_date and today <= t.start_date <= in_two and t.status == "not_started"]
-
-    # Build category map (all tasks, for budget summary)
-    by_category: dict = {}
-    for t in tasks:
-        cat = t.category
-        if cat not in by_category:
-            by_category[cat] = []
-        by_category[cat].append(t)
 
     lines = []
 
@@ -5876,79 +5867,34 @@ def _build_digest(db: Session) -> str:
     lines.append(f"_{today.strftime('%A, %d %b %Y')}_")
     lines.append("")
 
-    # ── Overdue ────────────────────────────────────────────────────────────────
-    if overdue:
-        lines.append(f"*\U0001f534 Overdue  ({len(overdue)})*")
-        for t in overdue:
-            due   = t.end_date.strftime('%d %b') if t.end_date else "?"
-            spent = sum(e.amount for e in t.expenses)
-            days_late = (today - t.end_date).days
-            lines.append(f"  • *{t.title}*  _{t.category}_")
-            lines.append(f"    Due {due}  ({days_late}d late)")
-            if t.budget:
-                lines.append(f"    {_fmt_inr(spent)} / {_fmt_inr(t.budget)}  {_tg_bar(spent, t.budget, 10)}")
-            elif spent > 0:
-                lines.append(f"    Spent: {_fmt_inr(spent)}")
+    # ── Ongoing tasks ──────────────────────────────────────────────────────────
+    if ongoing:
+        lines.append(f"*\U0001f504 Ongoing  ({len(ongoing)})*")
+        for t in ongoing:
+            is_late = t.end_date and t.end_date < today
+            if is_late:
+                days_late = (today - t.end_date).days
+                due_str = f"  \U0001f534 Due {t.end_date.strftime('%d %b')} — {days_late}d overdue"
+            elif t.end_date:
+                due_str = f"  · Due {t.end_date.strftime('%d %b')}"
+            else:
+                due_str = ""
+            lines.append(f"  • *{t.title}*  _{t.category}_{due_str}")
         lines.append("")
     else:
-        lines.append("*\U0001f534 Overdue*  ✓ None")
+        lines.append("*\U0001f504 Ongoing*  — none")
         lines.append("")
 
-    # ── In Progress ────────────────────────────────────────────────────────────
-    if in_progress:
-        lines.append(f"*\U0001f504 In Progress  ({len(in_progress)})*")
-        for t in in_progress:
-            due   = f"  · Due {t.end_date.strftime('%d %b')}" if t.end_date else ""
-            spent = sum(e.amount for e in t.expenses)
-            lines.append(f"  • *{t.title}*  _{t.category}_{due}")
-            if t.budget:
-                lines.append(f"    {_fmt_inr(spent)} / {_fmt_inr(t.budget)}  {_tg_bar(spent, t.budget, 10)}")
-            elif spent > 0:
-                lines.append(f"    Spent: {_fmt_inr(spent)}")
-        lines.append("")
-    else:
-        lines.append("*\U0001f504 In Progress*  — none")
-        lines.append("")
-
-    # ── Starting Soon ──────────────────────────────────────────────────────────
+    # ── Coming up ──────────────────────────────────────────────────────────────
     if starting_soon:
-        lines.append(f"*⏰ Starting Soon  ({len(starting_soon)})*")
+        lines.append(f"*\U0001f4c5 Coming Up  ({len(starting_soon)})*")
         for t in starting_soon:
-            start     = t.start_date.strftime('%d %b') if t.start_date else "?"
             days_away = (t.start_date - today).days
-            label     = "today" if days_away == 0 else f"in {days_away}d"
-            lines.append(f"  • *{t.title}*  _{t.category}_  · starts {start} ({label})")
+            label = "today" if days_away == 0 else f"in {days_away}d"
+            lines.append(f"  • *{t.title}*  _{t.category}_  · starts {t.start_date.strftime('%d %b')} ({label})")
         lines.append("")
-
-    # ── Budget Summary — category wise ─────────────────────────────────────────
-    lines.append("*\U0001f4b0 Budget Summary*")
-    lines.append("")
-    total_budget = 0.0
-    total_spent  = 0.0
-    for cat, cat_tasks in sorted(by_category.items()):
-        cat_budget = sum(t.budget or 0 for t in cat_tasks)
-        cat_spent  = sum(sum(e.amount for e in t.expenses) for t in cat_tasks)
-        total_budget += cat_budget
-        total_spent  += cat_spent
-        if cat_budget == 0 and cat_spent == 0:
-            continue
-        remaining = cat_budget - cat_spent
-        lines.append(f"*{cat}*")
-        if cat_budget > 0:
-            lines.append(f"  Allocated: {_fmt_inr(cat_budget)}")
-            lines.append(f"  Spent:     {_fmt_inr(cat_spent)}  {_tg_bar(cat_spent, cat_budget, 12)}")
-            lines.append(f"  Remaining: {_fmt_inr(remaining)}")
-        else:
-            lines.append(f"  Spent: {_fmt_inr(cat_spent)}  (no budget set)")
-        lines.append("")
-
-    # ── Overall totals ─────────────────────────────────────────────────────────
-    if total_budget > 0 or total_spent > 0:
-        lines.append("─" * 20)
-        lines.append(f"*Total Allocated:* {_fmt_inr(total_budget)}")
-        lines.append(f"*Total Spent:*     {_fmt_inr(total_spent)}")
-        if total_budget > 0:
-            lines.append(f"*Total Remaining:* {_fmt_inr(total_budget - total_spent)}  {_tg_bar(total_spent, total_budget, 14)}")
+    else:
+        lines.append("*\U0001f4c5 Coming Up*  — nothing in the next 2 days")
 
     return "\n".join(lines)
 
