@@ -444,62 +444,85 @@ function TaskDetail({ task, allTasks, categories, onUpdate, onClose }) {
             )}
 
             {/* Sub-tasks */}
-            {task.subtasks && task.subtasks.length > 0 && (
-              <div>
-                <p className="text-xs text-[#8892B0] font-semibold mb-2">Sub-tasks ({task.subtasks.length})</p>
-                <div className="space-y-1">
+            <div className="bg-[#0F0F23] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-fredoka font-bold text-white">
+                  📋 Sub-tasks
+                  {task.subtasks?.length > 0 && (
+                    <span className="ml-2 text-xs font-nunito font-semibold text-[#8892B0]">
+                      {task.subtasks.filter(s => s.status === 'completed').length}/{task.subtasks.length} done
+                    </span>
+                  )}
+                </p>
+                <button onClick={() => setShowSubtaskModal(true)}
+                  className="text-xs px-3 py-1.5 bg-[#00A2FF]/15 text-[#00A2FF] hover:bg-[#00A2FF]/25 rounded-xl font-semibold transition-colors">
+                  + Add Sub-task
+                </button>
+              </div>
+              {task.subtasks?.length > 0 ? (
+                <div className="space-y-1.5">
                   {task.subtasks.map(st => (
-                    <div key={st.id} className="flex items-center gap-2 bg-[#0F0F23] rounded-xl px-3 py-2">
+                    <div key={st.id} className="flex items-center gap-2 bg-[#16213E] rounded-xl px-3 py-2.5">
                       <StatusBadge status={st.status} />
-                      <span className="text-white text-xs flex-1">{st.title}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Expenses */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-[#8892B0] font-semibold">Expenses</p>
-                <p className="text-sm font-bold text-[#00CC88]">₹{task.total_expense?.toLocaleString('en-IN') || 0}</p>
-              </div>
-              {task.expenses?.length > 0 ? (
-                <div className="space-y-1">
-                  {task.expenses.map(e => (
-                    <div key={e.id} className="flex items-center gap-2 bg-[#0F0F23] rounded-xl px-3 py-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-xs font-semibold">₹{e.amount?.toLocaleString('en-IN')}</p>
-                        {e.description && <p className="text-[#8892B0] text-xs truncate">{e.description}</p>}
-                      </div>
-                      <p className="text-[#8892B0] text-xs flex-shrink-0">{fmt(e.expense_date)}</p>
-                      <button onClick={() => handleDeleteExpense(e.id)}
-                        className="text-[#FF3333]/50 hover:text-[#FF3333] text-xs transition-colors">✕</button>
+                      <span className={`text-sm flex-1 ${st.status === 'completed' ? 'line-through text-[#8892B0]' : 'text-white'}`}>
+                        {st.title}
+                      </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-[#8892B0] text-xs">No expenses recorded</p>
+                <p className="text-[#8892B0] text-xs text-center py-3">
+                  No sub-tasks yet — click <span className="text-[#00A2FF]">+ Add Sub-task</span> to break this task down
+                </p>
               )}
-              <button onClick={() => setShowExpenseModal(true)}
-                className="mt-2 w-full text-xs text-[#00A2FF] hover:text-white border border-[#00A2FF]/30 hover:border-[#00A2FF] rounded-xl py-2 transition-colors">
-                + Add Expense
-              </button>
+            </div>
+
+            {/* Expenses */}
+            <div className="bg-[#0F0F23] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-fredoka font-bold text-white">💰 Expenses</p>
+                  {task.total_expense > 0 && (
+                    <p className="text-xs text-[#00CC88] font-semibold mt-0.5">
+                      Total: ₹{task.total_expense?.toLocaleString('en-IN')}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setShowExpenseModal(true)}
+                  className="text-xs px-3 py-1.5 bg-[#00CC88]/15 text-[#00CC88] hover:bg-[#00CC88]/25 rounded-xl font-semibold transition-colors">
+                  + Add Expense
+                </button>
+              </div>
+              {task.expenses?.length > 0 ? (
+                <div className="space-y-1.5">
+                  {task.expenses.map(e => (
+                    <div key={e.id} className="flex items-center gap-3 bg-[#16213E] rounded-xl px-3 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-semibold">₹{e.amount?.toLocaleString('en-IN')}</p>
+                        {e.description && <p className="text-[#8892B0] text-xs truncate">{e.description}</p>}
+                      </div>
+                      <p className="text-[#8892B0] text-xs flex-shrink-0 bg-[#0F0F23] px-2 py-1 rounded-lg">{fmt(e.expense_date)}</p>
+                      <button onClick={() => handleDeleteExpense(e.id)}
+                        className="text-[#FF3333]/40 hover:text-[#FF3333] text-sm transition-colors leading-none">✕</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[#8892B0] text-xs text-center py-3">
+                  No expenses yet — click <span className="text-[#00CC88]">+ Add Expense</span> to record one
+                </p>
+              )}
             </div>
           </div>
 
           {/* Footer actions */}
-          <div className="p-5 border-t border-[#2D2B5A] flex gap-2 flex-shrink-0">
-            <button onClick={() => setShowSubtaskModal(true)}
-              className="flex-1 text-xs text-[#8892B0] hover:text-white border border-[#2D2B5A] hover:border-[#8892B0] rounded-xl py-2 transition-colors">
-              + Sub-task
-            </button>
+          <div className="p-4 border-t border-[#2D2B5A] flex gap-2 flex-shrink-0">
             <button onClick={() => setShowEditModal(true)}
-              className="flex-1 text-xs bg-[#00A2FF]/15 text-[#00A2FF] hover:bg-[#00A2FF]/25 rounded-xl py-2 font-semibold transition-colors">
-              Edit
+              className="flex-1 text-xs bg-[#00A2FF]/15 text-[#00A2FF] hover:bg-[#00A2FF]/25 rounded-xl py-2.5 font-semibold transition-colors">
+              Edit Task
             </button>
             <button onClick={handleDelete} disabled={deleting}
-              className="flex-1 text-xs bg-[#FF3333]/10 text-[#FF3333] hover:bg-[#FF3333]/20 rounded-xl py-2 font-semibold transition-colors disabled:opacity-50">
+              className="flex-1 text-xs bg-[#FF3333]/10 text-[#FF3333] hover:bg-[#FF3333]/20 rounded-xl py-2.5 font-semibold transition-colors disabled:opacity-50">
               {deleting ? '...' : 'Delete'}
             </button>
           </div>
