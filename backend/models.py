@@ -352,7 +352,9 @@ class AdminTask(Base):
 
     expenses = relationship("AdminTaskExpense", back_populates="task", cascade="all, delete-orphan")
     subtasks = relationship("AdminTask", foreign_keys="AdminTask.parent_id",
-                            backref="parent", lazy="select")
+                            back_populates="parent", lazy="select")
+    parent = relationship("AdminTask", foreign_keys="AdminTask.parent_id",
+                          remote_side="AdminTask.id", back_populates="subtasks")
     dependencies = relationship("AdminTaskDependency",
                                 foreign_keys="AdminTaskDependency.task_id",
                                 back_populates="task", cascade="all, delete-orphan")
