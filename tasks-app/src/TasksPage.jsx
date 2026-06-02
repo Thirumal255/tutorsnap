@@ -856,21 +856,53 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
   const [deleting, setDeleting] = useState(false)
   const [editingExpId, setEditingExpId] = useState(null)
   const [editingExp, setEditingExp] = useState({})
+  const [catAccounts, setCatAccounts] = useState([])
+
+  useEffect(()=>{
+    if (task.category) {
+      getCategoryAccounts(task.category).then(r=>setCatAccounts(r.data||[])).catch(()=>{})
+    }
+  }, [task.category])
 
   function startEditExp(e) {
     setEditingExpId(e.id)
-    setEditingExp({ amount: String(e.amount), description: e.description||'', expense_date: e.expense_date, status: e.status })
+    setEditingExp({
+      amount: String(e.amount),
+      description: e.description||'',
+      expense_date: e.expense_date,
+      status: e.status,
+      account_id: e.account_id||'',
+    })
   }
+
   async function saveEditExp(expId) {
     const amount = parseFloat(editingExp.amount)
     if (isNaN(amount)||amount<=0) return
+    if (editingExp.status==='paid' && !editingExp.account_id && catAccounts.length>0) {
+      alert('Please select the account this was paid from'); return
+    }
     try {
       await updateTaskExpense(task.id, expId, {
-        amount, description: editingExp.description||null,
-        expense_date: editingExp.expense_date, status: editingExp.status,
+        amount,
+        description: editingExp.description||null,
+        expense_date: editingExp.expense_date,
+        status: editingExp.status,
+        account_id: editingExp.account_id ? parseInt(editingExp.account_id) : null,
       })
       setEditingExpId(null); await onRefresh()
     } catch(e) { alert(e.response?.data?.detail||'Failed') }
+  }
+
+  // When toggling planned→paid via quick tap, open edit form instead
+  // so user can select account. paid→planned is fine to toggle directly.
+  function handleQuickToggle(e) {
+    if (e.status === 'planned') {
+      startEditExp({...e, status: 'paid'})   // open edit pre-set to paid
+    } else {
+      updateTaskExpense(task.id, e.id, { status: 'planned', account_id: null })
+        .then(()=>onRefresh())
+        .catch(err=>alert(err.response?.data?.detail||'Failed'))
+    }
   }
   const overdue = isOverdue(task)
   const spent = task.total_expense||0
@@ -998,7 +1030,7 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
                       {/* Paid/Planned toggle */}
                       <div className="flex gap-2">
                         {['planned','paid'].map(s=>(
-                          <button key={s} onClick={()=>setEditingExp(f=>({...f,status:s}))}
+                          <button key={s} onClick={()=>setEditingExp(f=>({...f,status:s,account_id:s==='planned'?'':f.account_id}))}
                             className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                               editingExp.status===s
                                 ? s==='paid'?'bg-[#00CC88]/20 border-[#00CC88] text-[#00CC88]':'bg-[#FFB347]/20 border-[#FFB347] text-[#FFB347]'
@@ -1008,6 +1040,21 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
                           </button>
                         ))}
                       </div>
+                      {/* Account selector — shown when paid, required if accounts exist */}
+                      {editingExp.status==='paid'&&(
+                        <div>
+                          <select value={editingExp.account_id||''} onChange={ev=>setEditingExp(f=>({...f,account_id:ev.target.value}))}
+                            className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
+                            <option value="">{catAccounts.length>0?'Select account paid from':'No accounts linked to this category'}</option>
+                            {catAccounts.map(a=>(
+                              <option key={a.id} value={a.id}>{a.name} — {fmtINR(a.live_balance||a.current_balance)}</option>
+                            ))}
+                          </select>
+                          {catAccounts.length===0&&(
+                            <p className="text-[#8892B0] text-xs mt-1">Link accounts to "{task.category}" in Finance → Accounts tab</p>
+                          )}
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-2">
                         <input type="number" value={editingExp.amount} onChange={e=>setEditingExp(f=>({...f,amount:e.target.value}))}
                           className="bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"
@@ -1026,7 +1073,8 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
                   ) : (
                     /* View mode */
                     <div className="flex items-center gap-2 px-3 py-2.5">
-                      <button onClick={async()=>{ await updateTaskExpense(task.id,e.id,{status:e.status==='paid'?'planned':'paid'}); await onRefresh() }}
+                      <button onClick={()=>handleQuickToggle(e)}
+                        title={e.status==='planned'?'Tap to mark as paid (select account)':'Tap to revert to planned'}
                         className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-lg transition-all ${
                           e.status==='paid'?'bg-[#00CC88]/20 text-[#00CC88]':'bg-[#FFB347]/20 text-[#FFB347]'
                         }`}>
