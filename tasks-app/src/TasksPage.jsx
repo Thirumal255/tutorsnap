@@ -577,10 +577,13 @@ function SetBudgetForm({ task, allTasks, onSave, onClose }) {
 // ── Quick Action Sheet ─────────────────────────────────────────────────────────
 
 function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) {
-  const [action, setAction] = useState(null) // 'status'|'expense'|'budget'|'deps'|'subtasks'
+  const [action, setAction] = useState(null) // 'status'|'expense'|'deps'|'subtasks'
+  const [selDeps, setSelDeps] = useState(task.dependency_ids||[])
   const overdue = isOverdue(task)
   const spent = task.total_expense || 0
   const subtasks = task.subtasks || []
+  const eligible = allTasks.filter(t=>t.category===task.category && t.id!==task.id && !t.parent_id)
+  const toggleDep = (id) => setSelDeps(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id])
 
   async function handleStatusSelect(newStatus) {
     setAction(null)
@@ -619,51 +622,41 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
     <AddExpenseForm task={task} onSave={async()=>{await onRefresh();setAction(null)}} onClose={()=>setAction(null)}/>
   )
 
-  if (action === 'budget') return (
-    <SetBudgetForm task={task} allTasks={allTasks} onSave={async()=>{await onRefresh();setAction(null)}} onClose={()=>setAction(null)}/>
-  )
-
-  if (action === 'deps') {
-    const activeCat = task.category
-    const eligible = allTasks.filter(t=>t.category===activeCat && t.id!==task.id && !t.parent_id)
-    const [sel, setSel] = useState(task.dependency_ids||[])
-    const toggle = (id) => setSel(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id])
-    return (
-      <div className="p-5 space-y-3">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-white font-bold text-sm">🔗 Link Dependencies</p>
-          <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
-        </div>
-        <p className="text-[#8892B0] text-xs mb-2">{task.category} tasks</p>
-        {eligible.length===0
-          ? <p className="text-[#8892B0] text-xs italic py-4 text-center">No other tasks in this category</p>
-          : <div className="space-y-2 max-h-56 overflow-y-auto">
-              {eligible.map(t=>{
-                const checked = sel.includes(t.id)
-                return (
-                  <div key={t.id} onClick={()=>toggle(t.id)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all border ${
-                      checked?'bg-[#00A2FF]/15 border-[#00A2FF]/30':'bg-[#0F0F23] border-transparent hover:border-[#2D2B5A]'
-                    }`}>
-                    <div className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center ${checked?'bg-[#00A2FF] border-[#00A2FF]':'border-[#2D2B5A]'}`}>
-                      {checked&&<span className="text-white text-xs">✓</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-xs font-semibold truncate">{t.title}</p>
-                      <p className={`text-xs ${S[t.status]?.color}`}>{S[t.status]?.label}</p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-        }
-        <button onClick={()=>saveDeps(sel)}
-          className="w-full bg-[#00A2FF] text-white font-bold py-3 rounded-2xl text-sm">
-          Save Dependencies
-        </button>
+  if (action === 'deps') return (
+    <div className="p-5 space-y-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-white font-bold text-sm">🔗 Dependencies</p>
+        <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
       </div>
-    )
-  }
+      <p className="text-[#8892B0] text-xs mb-2">{task.category} tasks</p>
+      {eligible.length===0
+        ? <p className="text-[#8892B0] text-xs italic py-4 text-center">No other tasks in this category</p>
+        : <div className="space-y-2 max-h-56 overflow-y-auto">
+            {eligible.map(t=>{
+              const checked = selDeps.includes(t.id)
+              return (
+                <div key={t.id} onClick={()=>toggleDep(t.id)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all border ${
+                    checked?'bg-[#00A2FF]/15 border-[#00A2FF]/30':'bg-[#0F0F23] border-transparent hover:border-[#2D2B5A]'
+                  }`}>
+                  <div className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center ${checked?'bg-[#00A2FF] border-[#00A2FF]':'border-[#2D2B5A]'}`}>
+                    {checked&&<span className="text-white text-xs">✓</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-xs font-semibold truncate">{t.title}</p>
+                    <p className={`text-xs ${S[t.status]?.color}`}>{S[t.status]?.label}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+      }
+      <button onClick={()=>saveDeps(selDeps)}
+        className="w-full bg-[#00A2FF] text-white font-bold py-3 rounded-2xl text-sm">
+        Save
+      </button>
+    </div>
+  )
 
   if (action === 'subtasks') return (
     <div className="p-5 space-y-3">
@@ -690,18 +683,17 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
         {task.budget>0&&<BudgetBar budget={task.budget} spent={spent} compact/>}
       </div>
 
-      {/* Quick action buttons — 3 columns */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* Quick action buttons — 2×2 */}
+      <div className="grid grid-cols-2 gap-3">
         {[
-          {key:'status',   icon:'⚡', label:'Status',      color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10 border-[#00A2FF]/20'},
-          {key:'expense',  icon:'💸', label:'Add Expense', color:'text-[#00CC88]', bg:'bg-[#00CC88]/10 border-[#00CC88]/20'},
-          {key:'budget',   icon:'🎯', label:'Budget',      color:'text-[#FFB347]', bg:'bg-[#FFB347]/10 border-[#FFB347]/20'},
+          {key:'status',   icon:'⚡', label:'Change Status', color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10 border-[#00A2FF]/20'},
+          {key:'expense',  icon:'💸', label:'Add Expense',   color:'text-[#00CC88]', bg:'bg-[#00CC88]/10 border-[#00CC88]/20'},
           {key:'subtasks', icon:'📋', label:`Sub-tasks${subtasks.length>0?` (${subtasks.length})`:''}`, color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10 border-[#00A2FF]/20'},
-          {key:'deps',     icon:'🔗', label:'Dependencies', color:'text-[#A78BFA]', bg:'bg-[#A78BFA]/10 border-[#A78BFA]/20'},
+          {key:'deps',     icon:'🔗', label:'Dependencies',  color:'text-[#A78BFA]', bg:'bg-[#A78BFA]/10 border-[#A78BFA]/20'},
         ].map(btn=>(
           <button key={btn.key} onClick={()=>setAction(btn.key)}
-            className={`flex flex-col items-center gap-1.5 border rounded-2xl p-3 active:scale-95 transition-all ${btn.bg}`}>
-            <span className="text-xl">{btn.icon}</span>
+            className={`flex flex-col items-center gap-2 border rounded-2xl p-4 active:scale-95 transition-all ${btn.bg}`}>
+            <span className="text-2xl">{btn.icon}</span>
             <p className={`text-xs font-bold text-center leading-tight ${btn.color}`}>{btn.label}</p>
           </button>
         ))}
