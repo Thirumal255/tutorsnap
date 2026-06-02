@@ -714,6 +714,8 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
   const [input, setInput] = useState('')
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
   const inp = "flex-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
 
   async function addSubtask() {
@@ -722,13 +724,21 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
     setSaving(true)
     try {
       await createAdminTask({ title, category: task.category, status:'not_started', priority:'medium', parent_id: task.id })
-      setInput(''); await onRefresh()
+      setInput(''); setAdding(false); await onRefresh()
     } catch(e) { alert(e.response?.data?.detail||'Failed') }
     finally { setSaving(false) }
   }
 
-  async function toggleStatus(st) {
-    const next = st.status==='completed' ? 'not_started' : 'completed'
+  async function saveEdit(st) {
+    const title = editTitle.trim()
+    if (!title) return
+    try { await updateAdminTask(st.id, {title}); setEditingId(null); await onRefresh() }
+    catch(e) { alert(e.response?.data?.detail||'Failed') }
+  }
+
+  async function cycleStatus(st) {
+    const order = ['not_started','in_progress','completed','on_hold']
+    const next = order[(order.indexOf(st.status)+1) % order.length]
     try { await updateAdminTask(st.id, {status:next}); await onRefresh() }
     catch(e) { alert(e.response?.data?.detail||'Failed') }
   }
@@ -747,7 +757,7 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
         <p className="text-[#8892B0] text-xs font-semibold">
           Sub-tasks {subtasks.length>0&&`(${done}/${subtasks.length} done)`}
         </p>
-        <button onClick={()=>setAdding(a=>!a)}
+        <button onClick={()=>{setAdding(a=>!a);setEditingId(null)}}
           className="text-[#00A2FF] text-xs font-semibold">
           {adding?'Cancel':'+ Add'}
         </button>
@@ -756,17 +766,32 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
       {subtasks.length>0&&(
         <div className="space-y-1.5 mb-2">
           {subtasks.map(st=>(
-            <div key={st.id} className="flex items-center gap-2 bg-[#0F0F23] rounded-xl px-3 py-2">
-              <button onClick={()=>toggleStatus(st)}
-                className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-                  st.status==='completed'?'bg-[#00CC88] border-[#00CC88]':'border-[#2D2B5A]'
-                }`}>
-                {st.status==='completed'&&<span className="text-white text-xs leading-none">✓</span>}
-              </button>
-              <span className={`text-xs flex-1 ${st.status==='completed'?'text-[#8892B0] line-through':'text-white'}`}>
-                {st.title}
-              </span>
-              <button onClick={()=>deleteSubtask(st)} className="text-[#8892B0] hover:text-[#FF3333] text-base leading-none">×</button>
+            <div key={st.id} className="bg-[#0F0F23] rounded-xl px-3 py-2 space-y-1.5">
+              {editingId===st.id ? (
+                <div className="flex gap-2">
+                  <input value={editTitle} onChange={e=>setEditTitle(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter') saveEdit(st); if(e.key==='Escape') setEditingId(null) }}
+                    className={inp} autoFocus/>
+                  <button onClick={()=>saveEdit(st)} className="text-[#00A2FF] text-xs font-bold px-2">Save</button>
+                  <button onClick={()=>setEditingId(null)} className="text-[#8892B0] text-xs px-1">✕</button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {/* Status cycle button */}
+                  <button onClick={()=>cycleStatus(st)}
+                    className={`flex-shrink-0 px-1.5 py-0.5 rounded-md text-xs font-semibold ${S[st.status]?.bg} ${S[st.status]?.color}`}>
+                    {S[st.status]?.label}
+                  </button>
+                  <span className={`text-xs flex-1 truncate ${st.status==='completed'?'text-[#8892B0] line-through':'text-white'}`}>
+                    {st.title}
+                  </span>
+                  {/* Edit */}
+                  <button onClick={()=>{setEditingId(st.id);setEditTitle(st.title);setAdding(false)}}
+                    className="text-[#8892B0] hover:text-[#00A2FF] text-xs px-1">✏️</button>
+                  {/* Delete */}
+                  <button onClick={()=>deleteSubtask(st)} className="text-[#8892B0] hover:text-[#FF3333] text-base leading-none">×</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -795,6 +820,24 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
   const [showExp, setShowExp] = useState(false)
   const [showBudget, setShowBudget] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editingExpId, setEditingExpId] = useState(null)
+  const [editingExp, setEditingExp] = useState({})
+
+  function startEditExp(e) {
+    setEditingExpId(e.id)
+    setEditingExp({ amount: String(e.amount), description: e.description||'', expense_date: e.expense_date, status: e.status })
+  }
+  async function saveEditExp(expId) {
+    const amount = parseFloat(editingExp.amount)
+    if (isNaN(amount)||amount<=0) return
+    try {
+      await updateTaskExpense(task.id, expId, {
+        amount, description: editingExp.description||null,
+        expense_date: editingExp.expense_date, status: editingExp.status,
+      })
+      setEditingExpId(null); await onRefresh()
+    } catch(e) { alert(e.response?.data?.detail||'Failed') }
+  }
   const overdue = isOverdue(task)
   const spent = task.total_expense||0
   const subtasks = task.subtasks || []
@@ -912,21 +955,57 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
           {task.expenses?.length>0 ? (
             <div className="space-y-2">
               {task.expenses.map(e=>(
-                <div key={e.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 border ${
+                <div key={e.id} className={`rounded-xl border overflow-hidden ${
                   e.status==='paid'?'bg-[#00CC88]/5 border-[#00CC88]/20':'bg-[#FFB347]/5 border-[#FFB347]/20'
                 }`}>
-                  {/* Toggle paid/planned */}
-                  <button onClick={async()=>{ await updateTaskExpense(task.id,e.id,{status:e.status==='paid'?'planned':'paid'}); await onRefresh() }}
-                    className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-lg transition-all ${
-                      e.status==='paid'?'bg-[#00CC88]/20 text-[#00CC88]':'bg-[#FFB347]/20 text-[#FFB347]'
-                    }`}>
-                    {e.status==='paid'?'✅ Paid':'🕐 Planned'}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-xs font-semibold">{fmtINR(e.amount)}</p>
-                    <p className="text-[#8892B0] text-xs truncate">{e.description||'—'} · {fmtShort(e.expense_date)}</p>
-                  </div>
-                  <button onClick={()=>handleDeleteExp(e.id)} className="text-[#8892B0] hover:text-[#FF3333] text-xl leading-none flex-shrink-0">×</button>
+                  {editingExpId===e.id ? (
+                    /* Edit mode */
+                    <div className="p-3 space-y-2">
+                      {/* Paid/Planned toggle */}
+                      <div className="flex gap-2">
+                        {['planned','paid'].map(s=>(
+                          <button key={s} onClick={()=>setEditingExp(f=>({...f,status:s}))}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                              editingExp.status===s
+                                ? s==='paid'?'bg-[#00CC88]/20 border-[#00CC88] text-[#00CC88]':'bg-[#FFB347]/20 border-[#FFB347] text-[#FFB347]'
+                                : 'border-[#2D2B5A] text-[#8892B0]'
+                            }`}>
+                            {s==='paid'?'✅ Paid':'🕐 Planned'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" value={editingExp.amount} onChange={e=>setEditingExp(f=>({...f,amount:e.target.value}))}
+                          className="bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"
+                          placeholder="Amount"/>
+                        <input type="date" value={editingExp.expense_date} onChange={e=>setEditingExp(f=>({...f,expense_date:e.target.value}))}
+                          className="bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"/>
+                      </div>
+                      <input value={editingExp.description} onChange={e=>setEditingExp(f=>({...f,description:e.target.value}))}
+                        className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"
+                        placeholder="Description"/>
+                      <div className="flex gap-2">
+                        <button onClick={()=>saveEditExp(e.id)} className="flex-1 bg-[#00A2FF] text-white text-xs font-bold py-1.5 rounded-lg">Save</button>
+                        <button onClick={()=>setEditingExpId(null)} className="px-3 text-[#8892B0] text-xs border border-[#2D2B5A] rounded-lg">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* View mode */
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <button onClick={async()=>{ await updateTaskExpense(task.id,e.id,{status:e.status==='paid'?'planned':'paid'}); await onRefresh() }}
+                        className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-lg transition-all ${
+                          e.status==='paid'?'bg-[#00CC88]/20 text-[#00CC88]':'bg-[#FFB347]/20 text-[#FFB347]'
+                        }`}>
+                        {e.status==='paid'?'✅':'🕐'}
+                      </button>
+                      <div className="flex-1 min-w-0" onClick={()=>startEditExp(e)}>
+                        <p className="text-white text-xs font-semibold">{fmtINR(e.amount)}</p>
+                        <p className="text-[#8892B0] text-xs truncate">{e.description||'—'} · {fmtShort(e.expense_date)}</p>
+                      </div>
+                      <button onClick={()=>startEditExp(e)} className="text-[#8892B0] hover:text-[#00A2FF] text-xs flex-shrink-0">✏️</button>
+                      <button onClick={()=>handleDeleteExp(e.id)} className="text-[#8892B0] hover:text-[#FF3333] text-xl leading-none flex-shrink-0">×</button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
