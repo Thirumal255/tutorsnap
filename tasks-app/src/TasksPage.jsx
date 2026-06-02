@@ -1636,8 +1636,8 @@ function FinanceTab() {
     await deleteFinanceReceipt(id); await load()
   }
 
-  async function saveAlloc(cat, val) {
-    await upsertFinanceAllocation({ category: cat, allocated_amount: parseFloat(val)||0, period })
+  async function saveAlloc(cat, val, acctId) {
+    await upsertFinanceAllocation({ category: cat, allocated_amount: parseFloat(val)||0, period, account_id: acctId||null })
     setAllocEdit(x=>({...x,[cat]:undefined})); await load()
   }
 
@@ -1749,7 +1749,10 @@ function FinanceTab() {
                 return (
                   <div key={c.category} className="space-y-1">
                     <div className="flex justify-between text-xs">
-                      <span className="text-white">{c.category}</span>
+                      <div>
+                        <span className="text-white">{c.category}</span>
+                        {c.account_name&&<span className="text-[#00A2FF] ml-1">· {c.account_name}</span>}
+                      </div>
                       <span className="text-[#FFB347]">{fmtINR(c.spent)}{c.allocated>0&&<span className="text-[#8892B0]"> / {fmtINR(c.allocated)}</span>}</span>
                     </div>
                     {c.allocated>0&&(
@@ -1911,10 +1914,18 @@ function FinanceTab() {
             const over = c.allocated>0&&c.spent>c.allocated
             const color = over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00A2FF]'
             const editing = allocEdit[c.category] !== undefined
+            const editVal = allocEdit[c.category] || {}
             return (
               <div key={c.category} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="text-white font-semibold text-sm">{c.category}</p>
+                  <div>
+                    <p className="text-white font-semibold text-sm">{c.category}</p>
+                    {c.account_name && !editing && (
+                      <p className="text-[#00A2FF] text-xs mt-0.5">
+                        {ACCOUNT_ICONS[accounts.find(a=>a.id===c.account_id)?.type]||'🏦'} Funded by {c.account_name}
+                      </p>
+                    )}
+                  </div>
                   <p className={`text-sm font-bold ${over?'text-[#FF3333]':pct>80?'text-[#FFB347]':'text-[#00CC88]'}`}>
                     {fmtINR(c.spent)}
                   </p>
@@ -1926,23 +1937,38 @@ function FinanceTab() {
                     </div>
                     <div className="flex justify-between text-xs text-[#8892B0]">
                       <span>{pct.toFixed(0)}% used</span>
-                      <span>Budget: {fmtINR(c.allocated)}</span>
+                      <span>Budget: {fmtINR(c.allocated)}{c.account_name&&<span className="text-[#00A2FF]"> · {c.account_name}</span>}</span>
                     </div>
                   </>
                 )}
                 {editing?(
-                  <div className="flex gap-2">
-                    <input type="number" className="flex-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-1.5 text-white text-sm"
-                      value={allocEdit[c.category]} onChange={e=>setAllocEdit(x=>({...x,[c.category]:e.target.value}))}/>
-                    <button onClick={()=>saveAlloc(c.category,allocEdit[c.category])}
-                      className="px-3 py-1.5 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
-                    <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:undefined}))}
-                      className="px-3 py-1.5 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs">Cancel</button>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input type="number" className="flex-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-1.5 text-white text-sm"
+                        placeholder="Budget amount"
+                        value={editVal.amount??''} onChange={e=>setAllocEdit(x=>({...x,[c.category]:{...editVal,amount:e.target.value}}))}/>
+                    </div>
+                    <select className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-1.5 text-white text-sm"
+                      value={editVal.account_id??c.account_id??''}
+                      onChange={e=>setAllocEdit(x=>({...x,[c.category]:{...editVal,account_id:e.target.value||null}}))}>
+                      <option value="">No account linked</option>
+                      {accounts.map(a=>(
+                        <option key={a.id} value={a.id}>
+                          {ACCOUNT_ICONS[a.type]||'🏦'} {a.name} ({fmtINR(a.current_balance)})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <button onClick={()=>saveAlloc(c.category, editVal.amount??c.allocated, editVal.account_id!==undefined?editVal.account_id:c.account_id)}
+                        className="flex-1 py-1.5 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
+                      <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:undefined}))}
+                        className="flex-1 py-1.5 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs">Cancel</button>
+                    </div>
                   </div>
                 ):(
-                  <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:c.allocated||''}))}
+                  <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:{amount:c.allocated||'',account_id:c.account_id??''}}))}
                     className="text-xs text-[#00A2FF] underline-offset-2 underline">
-                    {c.allocated>0?'Edit budget':'Set budget'}
+                    {c.allocated>0?'Edit budget / account':'Set budget & fund account'}
                   </button>
                 )}
               </div>

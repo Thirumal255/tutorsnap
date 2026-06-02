@@ -6021,6 +6021,7 @@ class CategoryAllocationIn(BaseModel):
     category: str
     allocated_amount: float
     period: str  # YYYY-MM
+    account_id: Optional[int] = None
 
 
 @app.get("/api/finance/accounts")
@@ -6131,8 +6132,9 @@ def list_allocations(period: Optional[str] = None, db: Session = Depends(get_db)
     if period:
         q = q.filter(CategoryAllocation.period == period)
     rows = q.order_by(CategoryAllocation.category).all()
-    return [{"id": r.id, "category": r.category,
-             "allocated_amount": r.allocated_amount, "period": r.period} for r in rows]
+    return [{"id": r.id, "category": r.category, "allocated_amount": r.allocated_amount,
+             "period": r.period, "account_id": r.account_id,
+             "account_name": r.account.name if r.account else None} for r in rows]
 
 @app.post("/api/finance/allocations")
 def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6142,13 +6144,18 @@ def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db),
     ).first()
     if existing:
         existing.allocated_amount = body.allocated_amount
-        db.commit()
+        existing.account_id = body.account_id
+        db.commit(); db.refresh(existing)
         return {"id": existing.id, "category": existing.category,
-                "allocated_amount": existing.allocated_amount, "period": existing.period}
+                "allocated_amount": existing.allocated_amount, "period": existing.period,
+                "account_id": existing.account_id,
+                "account_name": existing.account.name if existing.account else None}
     alloc = CategoryAllocation(**body.dict())
     db.add(alloc); db.commit(); db.refresh(alloc)
     return {"id": alloc.id, "category": alloc.category,
-            "allocated_amount": alloc.allocated_amount, "period": alloc.period}
+            "allocated_amount": alloc.allocated_amount, "period": alloc.period,
+            "account_id": alloc.account_id,
+            "account_name": alloc.account.name if alloc.account else None}
 
 @app.delete("/api/finance/allocations/{alloc_id}")
 def delete_allocation(alloc_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6192,7 +6199,7 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
     allocations = (db.query(CategoryAllocation)
                    .filter(CategoryAllocation.period == period)
                    .all())
-    alloc_map = {a.category: a.allocated_amount for a in allocations}
+    alloc_map = {a.category: a for a in allocations}
 
     cat_spend: Dict[str, float] = {}
     for exp in task_expenses:
@@ -6202,7 +6209,14 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
 
     all_cats = sorted(set(list(alloc_map.keys()) + list(cat_spend.keys())))
     category_breakdown = [
-        {"category": cat, "allocated": alloc_map.get(cat, 0), "spent": cat_spend.get(cat, 0)}
+        {
+            "category": cat,
+            "allocated": alloc_map[cat].allocated_amount if cat in alloc_map else 0,
+            "spent": cat_spend.get(cat, 0),
+            "account_id": alloc_map[cat].account_id if cat in alloc_map else None,
+            "account_name": (alloc_map[cat].account.name
+                             if cat in alloc_map and alloc_map[cat].account else None),
+        }
         for cat in all_cats
     ]
 
