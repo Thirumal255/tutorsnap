@@ -5488,6 +5488,13 @@ class ExpenseCreate(BaseModel):
     amount: float
     description: Optional[str] = None
     expense_date: str
+    status: str = 'paid'  # 'planned' | 'paid'
+
+class ExpenseUpdate(BaseModel):
+    status: Optional[str] = None
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    expense_date: Optional[str] = None
 
 
 def _parse_date(s: Optional[str]) -> Optional[_date]:
@@ -5500,9 +5507,16 @@ def _parse_date(s: Optional[str]) -> Optional[_date]:
 
 
 def _task_dict(t: AdminTask, include_subtasks: bool = False) -> dict:
-    own_expense = sum(e.amount for e in t.expenses)
-    sub_expense = sum(sum(e.amount for e in st.expenses) for st in t.subtasks)
-    total_expense = own_expense + sub_expense
+    # paid = actual spend; planned+paid = allocated budget
+    own_paid    = sum(e.amount for e in t.expenses if e.status == 'paid')
+    own_planned = sum(e.amount for e in t.expenses if e.status == 'planned')
+    sub_paid    = sum(sum(e.amount for e in st.expenses if e.status == 'paid') for st in t.subtasks)
+    sub_planned = sum(sum(e.amount for e in st.expenses if e.status == 'planned') for st in t.subtasks)
+    total_paid     = own_paid    + sub_paid
+    total_planned  = own_planned + sub_planned
+    total_allocated = total_paid + total_planned  # auto budget
+    # Fall back to manual budget if no expenses exist
+    budget = total_allocated if (total_paid + total_planned) > 0 else (t.budget or 0)
     d = {
         "id": t.id,
         "title": t.title,
@@ -5512,17 +5526,20 @@ def _task_dict(t: AdminTask, include_subtasks: bool = False) -> dict:
         "category": t.category,
         "start_date": t.start_date.isoformat() if t.start_date else None,
         "end_date": t.end_date.isoformat() if t.end_date else None,
-        "budget": t.budget,
+        "budget": budget,
+        "manual_budget": t.budget,
         "parent_id": t.parent_id,
         "created_at": t.created_at.isoformat(),
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-        "total_expense": total_expense,
+        "total_expense": total_paid,        # spent = paid only
+        "total_allocated": total_allocated, # budget = paid + planned
         "expenses": [
             {
                 "id": e.id,
                 "amount": e.amount,
                 "description": e.description,
                 "expense_date": e.expense_date.isoformat(),
+                "status": e.status,
             }
             for e in sorted(t.expenses, key=lambda e: e.expense_date)
         ],
@@ -5599,8 +5616,10 @@ def tasks_summary(
 ):
     today = _date.today()
     all_tasks = db.query(AdminTask).all()
-    total_expense = db.query(func.sum(AdminTaskExpense.amount)).scalar() or 0.0
-    total_budget = sum(t.budget or 0 for t in all_tasks)
+    total_paid    = db.query(func.sum(AdminTaskExpense.amount)).filter(AdminTaskExpense.status=='paid').scalar() or 0.0
+    total_planned = db.query(func.sum(AdminTaskExpense.amount)).filter(AdminTaskExpense.status=='planned').scalar() or 0.0
+    total_expense = total_paid
+    total_allocated = total_paid + total_planned
 
     by_status: dict = {}
     for t in all_tasks:
@@ -5619,9 +5638,11 @@ def tasks_summary(
             by_category[cat] = {"total": 0, "by_status": {}, "budget": 0.0, "spent": 0.0, "overdue": 0}
         by_category[cat]["total"] += 1
         by_category[cat]["by_status"][t.status] = by_category[cat]["by_status"].get(t.status, 0) + 1
-        by_category[cat]["budget"] += t.budget or 0.0
-        task_spent = sum(e.amount for e in t.expenses)
-        by_category[cat]["spent"] += task_spent
+        task_paid    = sum(e.amount for e in t.expenses if e.status == 'paid')
+        task_planned = sum(e.amount for e in t.expenses if e.status == 'planned')
+        task_allocated = task_paid + task_planned
+        by_category[cat]["budget"] += task_allocated if task_allocated > 0 else (t.budget or 0)
+        by_category[cat]["spent"] += task_paid
         if t.end_date and t.end_date < today and t.status != "completed":
             by_category[cat]["overdue"] += 1
 
@@ -5632,9 +5653,10 @@ def tasks_summary(
         "by_status": by_status,
         "overdue_count": len(overdue),
         "overdue": [_task_dict(t) for t in overdue[:10]],
-        "total_expense": round(total_expense, 2),
-        "total_budget": round(total_budget, 2),
-        "total_spent": round(total_expense, 2),
+        "total_expense": round(total_paid, 2),
+        "total_budget": round(total_allocated, 2),
+        "total_spent": round(total_paid, 2),
+        "total_allocated": round(total_allocated, 2),
         "expense_by_category": expense_by_cat,
         "by_category": {
             cat: {
@@ -5692,6 +5714,7 @@ def create_task(
                 amount=data.expense_amount,
                 description=data.expense_description,
                 expense_date=exp_date,
+                status='paid',
             ))
         _audit_log(db, current_user, action="create_task", target_type="task",
                    target_id=task.id, target_name=task.title, details=data.category)
@@ -5791,21 +5814,54 @@ def add_expense(
     task = db.query(AdminTask).filter(AdminTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    status = data.status if data.status in ('planned', 'paid') else 'paid'
     expense = AdminTaskExpense(
         task_id=task_id,
         amount=data.amount,
         description=data.description,
         expense_date=_parse_date(data.expense_date),
+        status=status,
     )
     db.add(expense)
     _audit_log(db, current_user, action="add_expense", target_type="task",
                target_id=task_id, target_name=task.title,
-               details=f"Rs.{data.amount} on {data.expense_date}")
+               details=f"Rs.{data.amount} [{status}] on {data.expense_date}")
     db.commit()
     db.refresh(expense)
     return {"id": expense.id, "amount": expense.amount,
             "description": expense.description,
-            "expense_date": expense.expense_date.isoformat()}
+            "expense_date": expense.expense_date.isoformat(),
+            "status": expense.status}
+
+
+@app.patch("/api/admin/tasks/{task_id}/expenses/{expense_id}")
+def update_expense(
+    task_id: int,
+    expense_id: int,
+    data: ExpenseUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    expense = db.query(AdminTaskExpense).filter(
+        AdminTaskExpense.id == expense_id,
+        AdminTaskExpense.task_id == task_id,
+    ).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    if data.status and data.status in ('planned', 'paid'):
+        expense.status = data.status
+    if data.amount is not None:
+        expense.amount = data.amount
+    if data.description is not None:
+        expense.description = data.description
+    if data.expense_date:
+        expense.expense_date = _parse_date(data.expense_date)
+    db.commit()
+    db.refresh(expense)
+    return {"id": expense.id, "amount": expense.amount,
+            "description": expense.description,
+            "expense_date": expense.expense_date.isoformat(),
+            "status": expense.status}
 
 
 @app.delete("/api/admin/tasks/{task_id}/expenses/{expense_id}", status_code=204)

@@ -35,4 +35,5 @@ export const createAdminTask       = (data)         => api.post('/admin/tasks', 
 export const updateAdminTask       = (id, data)     => api.put(`/admin/tasks/${id}`, data)
 export const deleteAdminTask       = (id)           => api.delete(`/admin/tasks/${id}`)
 export const addTaskExpense        = (id, data)     => api.post(`/admin/tasks/${id}/expenses`, data)
+export const updateTaskExpense     = (taskId, expId, data) => api.patch(`/admin/tasks/${taskId}/expenses/${expId}`, data)
 export const deleteTaskExpense     = (taskId, expId) => api.delete(`/admin/tasks/${taskId}/expenses/${expId}`)

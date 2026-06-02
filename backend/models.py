@@ -369,6 +369,7 @@ class AdminTaskExpense(Base):
     amount = Column(Float, nullable=False)
     description = Column(String(300), nullable=True)
     expense_date = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False, default='paid')  # 'planned' | 'paid'
     created_at = Column(DateTime, default=datetime.utcnow)
 
     task = relationship("AdminTask", back_populates="expenses")

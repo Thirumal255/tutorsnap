@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   getAdminTasks, getAdminTasksSummary, getAdminTaskCategories,
   createAdminTask, updateAdminTask, deleteAdminTask,
-  addTaskExpense, deleteTaskExpense,
+  addTaskExpense, updateTaskExpense, deleteTaskExpense,
 } from './api/client'
 
 
@@ -480,7 +480,7 @@ function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
 function AddExpenseForm({ task, onSave, onClose }) {
   const inp = "w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
   const lbl = "block text-xs text-[#8892B0] font-semibold mb-1.5"
-  const [form, setForm] = useState({ amount:'', description:'', expense_date: new Date().toISOString().split('T')[0] })
+  const [form, setForm] = useState({ amount:'', description:'', expense_date: new Date().toISOString().split('T')[0], status:'planned' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = (k,v) => setForm(f=>({...f,[k]:v}))
@@ -490,7 +490,7 @@ function AddExpenseForm({ task, onSave, onClose }) {
     if (isNaN(amount)||amount<=0) return setError('Enter a valid amount')
     setSaving(true); setError('')
     try {
-      await addTaskExpense(task.id,{amount,description:form.description||null,expense_date:form.expense_date})
+      await addTaskExpense(task.id,{amount,description:form.description||null,expense_date:form.expense_date,status:form.status})
       await onSave(); onClose()
     } catch(e) { setError(e.response?.data?.detail||'Failed') }
     finally { setSaving(false) }
@@ -502,14 +502,25 @@ function AddExpenseForm({ task, onSave, onClose }) {
         <p className="text-[#8892B0] text-xs">Adding expense to</p>
         <p className="text-white font-semibold text-sm mt-0.5">{task.title}</p>
       </div>
+      {/* Status toggle */}
+      <div className="flex gap-2">
+        {[{key:'planned',label:'🕐 Planned',color:'border-[#FFB347] bg-[#FFB347]/10 text-[#FFB347]'},
+          {key:'paid',   label:'✅ Paid',   color:'border-[#00CC88] bg-[#00CC88]/10 text-[#00CC88]'}].map(s=>(
+          <button key={s.key} onClick={()=>set('status',s.key)}
+            className={`flex-1 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${form.status===s.key?s.color:'border-[#2D2B5A] text-[#8892B0]'}`}>
+            {s.label}
+          </button>
+        ))}
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div><label className={lbl}>Amount (₹) *</label><input type="number" value={form.amount} onChange={e=>set('amount',e.target.value)} className={inp} placeholder="0.00" min="0" autoFocus/></div>
         <div><label className={lbl}>Date</label><input type="date" value={form.expense_date} onChange={e=>set('expense_date',e.target.value)} className={inp}/></div>
       </div>
       <div><label className={lbl}>Description</label><input value={form.description} onChange={e=>set('description',e.target.value)} className={inp} placeholder="What was this for?"/></div>
       {error&&<p className="text-[#FF3333] text-xs">{error}</p>}
-      <button onClick={handleSave} disabled={saving} className="w-full bg-[#00CC88] text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50">
-        {saving?'Adding…':'Add Expense'}
+      <button onClick={handleSave} disabled={saving}
+        className={`w-full text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 ${form.status==='paid'?'bg-[#00CC88]':'bg-[#FFB347]'}`}>
+        {saving?'Adding…':`Add as ${form.status==='paid'?'Paid':'Planned'}`}
       </button>
     </div>
   )
@@ -883,23 +894,47 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
 
         {/* Expenses */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[#8892B0] text-xs font-semibold">
-              Expenses{spent>0?` · ${fmtINR(spent)} total`:''}
-            </p>
-            <button onClick={()=>setShowBudget(true)} className="text-[#00A2FF] text-xs">
-              {task.budget?'Edit Budget':'Set Budget'}
-            </button>
-          </div>
+          {/* Summary row */}
+          {task.expenses?.length>0&&(()=>{
+            const paid    = task.expenses.filter(e=>e.status==='paid').reduce((s,e)=>s+e.amount,0)
+            const planned = task.expenses.filter(e=>e.status==='planned').reduce((s,e)=>s+e.amount,0)
+            return (
+              <div className="bg-[#0F0F23] rounded-2xl p-3 mb-3 grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-[#8892B0] text-xs">Allocated</p>
+                  <p className="text-white font-bold text-sm">{fmtINR(paid+planned)}</p>
+                </div>
+                <div>
+                  <p className="text-[#8892B0] text-xs">Paid</p>
+                  <p className="text-[#00CC88] font-bold text-sm">{fmtINR(paid)}</p>
+                </div>
+                <div>
+                  <p className="text-[#8892B0] text-xs">Planned</p>
+                  <p className="text-[#FFB347] font-bold text-sm">{fmtINR(planned)}</p>
+                </div>
+              </div>
+            )
+          })()}
+
+          <p className="text-[#8892B0] text-xs font-semibold mb-2">Expenses</p>
           {task.expenses?.length>0 ? (
             <div className="space-y-2">
               {task.expenses.map(e=>(
-                <div key={e.id} className="flex items-center gap-3 bg-[#0F0F23] rounded-xl px-3 py-2.5">
+                <div key={e.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 border ${
+                  e.status==='paid'?'bg-[#00CC88]/5 border-[#00CC88]/20':'bg-[#FFB347]/5 border-[#FFB347]/20'
+                }`}>
+                  {/* Toggle paid/planned */}
+                  <button onClick={async()=>{ await updateTaskExpense(task.id,e.id,{status:e.status==='paid'?'planned':'paid'}); await onRefresh() }}
+                    className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-lg transition-all ${
+                      e.status==='paid'?'bg-[#00CC88]/20 text-[#00CC88]':'bg-[#FFB347]/20 text-[#FFB347]'
+                    }`}>
+                    {e.status==='paid'?'✅ Paid':'🕐 Planned'}
+                  </button>
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-xs font-semibold">{fmtINR(e.amount)}</p>
                     <p className="text-[#8892B0] text-xs truncate">{e.description||'—'} · {fmtShort(e.expense_date)}</p>
                   </div>
-                  <button onClick={()=>handleDeleteExp(e.id)} className="text-[#8892B0] hover:text-[#FF3333] text-xl leading-none">×</button>
+                  <button onClick={()=>handleDeleteExp(e.id)} className="text-[#8892B0] hover:text-[#FF3333] text-xl leading-none flex-shrink-0">×</button>
                 </div>
               ))}
             </div>
