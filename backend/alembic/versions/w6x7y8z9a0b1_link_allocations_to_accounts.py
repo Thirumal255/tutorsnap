@@ -23,10 +23,9 @@ def upgrade() -> None:
         import sqlalchemy as sa2
         cols = {c['name'] for c in sa2.inspect(bind).get_columns('category_allocations')}
         if 'account_id' not in cols:
+            # SQLite doesn't support ADD COLUMN with FK constraints — add as plain Integer
             op.add_column('category_allocations',
-                sa.Column('account_id', sa.Integer(),
-                          sa.ForeignKey('payment_accounts.id', ondelete='SET NULL'),
-                          nullable=True))
+                sa.Column('account_id', sa.Integer(), nullable=True))
     else:
         op.execute("""
             ALTER TABLE category_allocations
