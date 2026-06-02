@@ -370,9 +370,11 @@ class AdminTaskExpense(Base):
     description = Column(String(300), nullable=True)
     expense_date = Column(Date, nullable=False)
     status = Column(String(20), nullable=False, default='paid')  # 'planned' | 'paid'
+    account_id = Column(Integer, ForeignKey("payment_accounts.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     task = relationship("AdminTask", back_populates="expenses")
+    account = relationship("PaymentAccount", foreign_keys=[account_id])
 
 
 class AdminTaskDependency(Base):
@@ -395,7 +397,8 @@ class PaymentAccount(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False)
     type = Column(String(20), nullable=False, default="bank")  # bank|cash|credit
-    current_balance = Column(Float, nullable=False, default=0.0)
+    current_balance = Column(Float, nullable=False, default=0.0)   # kept for legacy compat
+    opening_balance = Column(Float, nullable=False, default=0.0)   # balance at account setup
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

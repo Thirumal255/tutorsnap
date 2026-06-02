@@ -56,6 +56,7 @@ export const upsertFinanceAllocation    = (data)                => api.post('/fi
 export const deleteFinanceAllocation    = (id)                  => api.delete(`/finance/allocations/${id}`)
 export const unlinkFinanceAllocation    = (category, period, account_id) =>
   api.delete('/finance/allocations/by-account', { params: { category, period, account_id } })
-export const getFinanceTransfers     = ()           => api.get('/finance/transfers')
-export const createFinanceTransfer   = (data)       => api.post('/finance/transfers', data)
-export const deleteFinanceTransfer   = (id)         => api.delete(`/finance/transfers/${id}`)
+export const getFinanceTransfers       = ()           => api.get('/finance/transfers')
+export const createFinanceTransfer     = (data)       => api.post('/finance/transfers', data)
+export const deleteFinanceTransfer     = (id)         => api.delete(`/finance/transfers/${id}`)
+export const getCategoryAccounts       = (category)   => api.get('/finance/category-accounts', { params: { category } })

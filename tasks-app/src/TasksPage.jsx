@@ -8,6 +8,7 @@ import {
   getFinanceReceipts, createFinanceReceipt, deleteFinanceReceipt,
   getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation, unlinkFinanceAllocation,
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
+  getCategoryAccounts,
 } from './api/client'
 
 
@@ -485,17 +486,29 @@ function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
 function AddExpenseForm({ task, onSave, onClose }) {
   const inp = "w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
   const lbl = "block text-xs text-[#8892B0] font-semibold mb-1.5"
-  const [form, setForm] = useState({ amount:'', description:'', expense_date: new Date().toISOString().split('T')[0], status:'planned' })
+  const [form, setForm] = useState({ amount:'', description:'', expense_date: new Date().toISOString().split('T')[0], status:'planned', account_id:'' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [catAccounts, setCatAccounts] = useState([])
   const set = (k,v) => setForm(f=>({...f,[k]:v}))
+
+  useEffect(()=>{
+    if (task.category) {
+      getCategoryAccounts(task.category).then(r=>setCatAccounts(r.data||[])).catch(()=>{})
+    }
+  }, [task.category])
 
   async function handleSave() {
     const amount = parseFloat(form.amount)
     if (isNaN(amount)||amount<=0) return setError('Enter a valid amount')
+    if (form.status==='paid' && !form.account_id) return setError('Select the account this was paid from')
     setSaving(true); setError('')
     try {
-      await addTaskExpense(task.id,{amount,description:form.description||null,expense_date:form.expense_date,status:form.status})
+      await addTaskExpense(task.id,{
+        amount, description:form.description||null,
+        expense_date:form.expense_date, status:form.status,
+        account_id: form.account_id ? parseInt(form.account_id) : null,
+      })
       await onSave(); onClose()
     } catch(e) { setError(e.response?.data?.detail||'Failed') }
     finally { setSaving(false) }
@@ -506,6 +519,7 @@ function AddExpenseForm({ task, onSave, onClose }) {
       <div className="bg-[#0F0F23] rounded-2xl p-3">
         <p className="text-[#8892B0] text-xs">Adding expense to</p>
         <p className="text-white font-semibold text-sm mt-0.5">{task.title}</p>
+        {task.category&&<p className="text-[#00A2FF] text-xs mt-0.5">Category: {task.category}</p>}
       </div>
       {/* Status toggle */}
       <div className="flex gap-2">
@@ -519,9 +533,24 @@ function AddExpenseForm({ task, onSave, onClose }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div><label className={lbl}>Amount (₹) *</label><input type="number" value={form.amount} onChange={e=>set('amount',e.target.value)} className={inp} placeholder="0.00" min="0" autoFocus/></div>
-        <div><label className={lbl}>Date</label><input type="date" value={form.expense_date} onChange={e=>set('expense_date',e.target.value)} className={inp}/></div>
+        <div><label className={lbl}>Date *</label><input type="date" value={form.expense_date} onChange={e=>set('expense_date',e.target.value)} className={inp}/></div>
       </div>
       <div><label className={lbl}>Description</label><input value={form.description} onChange={e=>set('description',e.target.value)} className={inp} placeholder="What was this for?"/></div>
+      {/* Account selector — shown always, required when paid */}
+      <div>
+        <label className={lbl}>
+          Paid from account {form.status==='paid'&&<span className="text-[#FF3333]">*</span>}
+          {catAccounts.length===0&&task.category&&<span className="text-[#8892B0] font-normal"> (link accounts to "{task.category}" in Finance → Accounts)</span>}
+        </label>
+        <select className={inp} value={form.account_id} onChange={e=>set('account_id',e.target.value)}>
+          <option value="">{form.status==='planned'?'— Not paid yet —':'Select account'}</option>
+          {catAccounts.map(a=>(
+            <option key={a.id} value={a.id}>
+              {a.name} — {fmtINR(a.live_balance||a.current_balance)} available
+            </option>
+          ))}
+        </select>
+      </div>
       {error&&<p className="text-[#FF3333] text-xs">{error}</p>}
       <button onClick={handleSave} disabled={saving}
         className={`w-full text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 ${form.status==='paid'?'bg-[#00CC88]':'bg-[#FFB347]'}`}>
@@ -1005,7 +1034,10 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
                       </button>
                       <div className="flex-1 min-w-0" onClick={()=>startEditExp(e)}>
                         <p className="text-white text-xs font-semibold">{fmtINR(e.amount)}</p>
-                        <p className="text-[#8892B0] text-xs truncate">{e.description||'—'} · {fmtShort(e.expense_date)}</p>
+                        <p className="text-[#8892B0] text-xs truncate">
+                          {e.description||'—'} · {fmtShort(e.expense_date)}
+                          {e.account_name&&<span className="text-[#00A2FF]"> · {e.account_name}</span>}
+                        </p>
                       </div>
                       <button onClick={()=>startEditExp(e)} className="text-[#8892B0] hover:text-[#00A2FF] text-xs flex-shrink-0">✏️</button>
                       <button onClick={()=>handleDeleteExp(e.id)} className="text-[#8892B0] hover:text-[#FF3333] text-xl leading-none flex-shrink-0">×</button>
@@ -1478,11 +1510,15 @@ const ACCOUNT_ICONS = { bank: '🏦', cash: '💵', credit: '💳' }
 const SOURCE_ICONS  = { salary: '💼', rent: '🏠', freelance: '🖥️', other: '💰' }
 
 function AccountForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState({ name: initial?.name||'', type: initial?.type||'bank', current_balance: initial?.current_balance||0 })
+  const [f, setF] = useState({
+    name: initial?.name||'',
+    type: initial?.type||'bank',
+    opening_balance: initial?.opening_balance ?? initial?.current_balance ?? 0,
+  })
   const [saving, setSaving] = useState(false)
   async function submit(e) {
     e.preventDefault(); setSaving(true)
-    try { await onSave({ ...f, current_balance: parseFloat(f.current_balance)||0 }) }
+    try { await onSave({ ...f, opening_balance: parseFloat(f.opening_balance)||0 }) }
     finally { setSaving(false) }
   }
   const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
@@ -1494,8 +1530,11 @@ function AccountForm({ initial, onSave, onClose }) {
         <option value="cash">Cash</option>
         <option value="credit">Credit</option>
       </select>
-      <input required type="number" step="0.01" className={inp} placeholder="Current balance" value={f.current_balance}
-        onChange={e=>setF(x=>({...x,current_balance:e.target.value}))}/>
+      <div>
+        <label className="text-[#8892B0] text-xs mb-1 block">Opening Balance (balance on account setup date)</label>
+        <input required type="number" step="0.001" className={inp} placeholder="Opening balance"
+          value={f.opening_balance} onChange={e=>setF(x=>({...x,opening_balance:e.target.value}))}/>
+      </div>
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
         <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00A2FF] text-white text-sm font-semibold">

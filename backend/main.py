@@ -5490,11 +5490,13 @@ class ExpenseCreate(BaseModel):
     description: Optional[str] = None
     expense_date: str
     status: str = 'paid'  # 'planned' | 'paid'
+    account_id: Optional[int] = None
 
 class ExpenseUpdate(BaseModel):
     status: Optional[str] = None
     amount: Optional[float] = None
     description: Optional[str] = None
+    account_id: Optional[int] = None
     expense_date: Optional[str] = None
 
 
@@ -5541,6 +5543,8 @@ def _task_dict(t: AdminTask, include_subtasks: bool = False) -> dict:
                 "description": e.description,
                 "expense_date": e.expense_date.isoformat(),
                 "status": e.status,
+                "account_id": e.account_id,
+                "account_name": e.account.name if e.account else None,
             }
             for e in sorted(t.expenses, key=lambda e: e.expense_date)
         ],
@@ -5822,6 +5826,7 @@ def add_expense(
         description=data.description,
         expense_date=_parse_date(data.expense_date),
         status=status,
+        account_id=data.account_id,
     )
     db.add(expense)
     _audit_log(db, current_user, action="add_expense", target_type="task",
@@ -5832,7 +5837,9 @@ def add_expense(
     return {"id": expense.id, "amount": expense.amount,
             "description": expense.description,
             "expense_date": expense.expense_date.isoformat(),
-            "status": expense.status}
+            "status": expense.status,
+            "account_id": expense.account_id,
+            "account_name": expense.account.name if expense.account else None}
 
 
 @app.patch("/api/admin/tasks/{task_id}/expenses/{expense_id}")
@@ -5857,12 +5864,16 @@ def update_expense(
         expense.description = data.description
     if data.expense_date:
         expense.expense_date = _parse_date(data.expense_date)
+    if data.account_id is not None:
+        expense.account_id = data.account_id
     db.commit()
     db.refresh(expense)
     return {"id": expense.id, "amount": expense.amount,
             "description": expense.description,
             "expense_date": expense.expense_date.isoformat(),
-            "status": expense.status}
+            "status": expense.status,
+            "account_id": expense.account_id,
+            "account_name": expense.account.name if expense.account else None}
 
 
 @app.delete("/api/admin/tasks/{task_id}/expenses/{expense_id}", status_code=204)
@@ -6001,7 +6012,28 @@ def send_task_digest(
 class PaymentAccountIn(BaseModel):
     name: str
     type: str = "bank"
-    current_balance: float = 0.0
+    opening_balance: float = 0.0
+
+
+def _live_balance(db, acct: "PaymentAccount") -> float:
+    """Compute real-time balance: opening + receipts + transfers_in - transfers_out - paid_expenses."""
+    receipts      = db.query(func.sum(FundReceipt.amount)).filter(FundReceipt.account_id == acct.id).scalar() or 0
+    xfer_in       = db.query(func.sum(FundTransfer.amount)).filter(FundTransfer.to_account_id == acct.id).scalar() or 0
+    xfer_out      = db.query(func.sum(FundTransfer.amount)).filter(FundTransfer.from_account_id == acct.id).scalar() or 0
+    paid_expenses = db.query(func.sum(AdminTaskExpense.amount)).filter(
+        AdminTaskExpense.account_id == acct.id,
+        AdminTaskExpense.status == "paid",
+    ).scalar() or 0
+    ob = acct.opening_balance if acct.opening_balance else (acct.current_balance or 0)
+    return round(ob + receipts + xfer_in - xfer_out - paid_expenses, 3)
+
+
+def _acct_dict(db, acct: "PaymentAccount") -> dict:
+    lb = _live_balance(db, acct)
+    return {"id": acct.id, "name": acct.name, "type": acct.type,
+            "opening_balance": acct.opening_balance or acct.current_balance or 0,
+            "live_balance": lb,
+            "current_balance": lb}   # alias so frontend works unchanged
 
 class FundSourceIn(BaseModel):
     name: str
@@ -6027,24 +6059,26 @@ class CategoryAllocationIn(BaseModel):
 @app.get("/api/finance/accounts")
 def list_accounts(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     rows = db.query(PaymentAccount).order_by(PaymentAccount.name).all()
-    return [{"id": r.id, "name": r.name, "type": r.type,
-             "current_balance": r.current_balance,
-             "updated_at": r.updated_at.isoformat() if r.updated_at else None} for r in rows]
+    return [_acct_dict(db, r) for r in rows]
 
 @app.post("/api/finance/accounts")
 def create_account(body: PaymentAccountIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    acct = PaymentAccount(name=body.name, type=body.type, current_balance=body.current_balance)
+    acct = PaymentAccount(name=body.name, type=body.type,
+                          opening_balance=body.opening_balance,
+                          current_balance=body.opening_balance)
     db.add(acct); db.commit(); db.refresh(acct)
-    return {"id": acct.id, "name": acct.name, "type": acct.type, "current_balance": acct.current_balance}
+    return _acct_dict(db, acct)
 
 @app.put("/api/finance/accounts/{acct_id}")
 def update_account(acct_id: int, body: PaymentAccountIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     acct = db.query(PaymentAccount).filter(PaymentAccount.id == acct_id).first()
     if not acct:
         raise HTTPException(status_code=404, detail="Account not found")
-    acct.name = body.name; acct.type = body.type; acct.current_balance = body.current_balance
+    acct.name = body.name; acct.type = body.type
+    acct.opening_balance = body.opening_balance
+    acct.current_balance = body.opening_balance  # keep in sync
     db.commit()
-    return {"id": acct.id, "name": acct.name, "type": acct.type, "current_balance": acct.current_balance}
+    return _acct_dict(db, acct)
 
 @app.delete("/api/finance/accounts/{acct_id}")
 def delete_account(acct_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6053,6 +6087,22 @@ def delete_account(acct_id: int, db: Session = Depends(get_db), _: User = Depend
         raise HTTPException(status_code=404, detail="Account not found")
     db.delete(acct); db.commit()
     return {"deleted": True}
+
+@app.get("/api/finance/category-accounts")
+def category_accounts(category: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Return accounts linked to a category (for expense account selector)."""
+    links = db.query(CategoryAllocation).filter(
+        CategoryAllocation.category == category,
+        CategoryAllocation.account_id.isnot(None),
+    ).all()
+    result = []
+    for lnk in links:
+        acct = db.query(PaymentAccount).filter(PaymentAccount.id == lnk.account_id).first()
+        if acct:
+            d = _acct_dict(db, acct)
+            d["allocated"] = lnk.allocated_amount
+            result.append(d)
+    return result
 
 
 @app.get("/api/finance/sources")
@@ -6196,9 +6246,10 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         period = _dt2.utcnow().strftime("%Y-%m")
 
     accounts = db.query(PaymentAccount).order_by(PaymentAccount.type, PaymentAccount.name).all()
-    total_bank = sum(a.current_balance for a in accounts if a.type == "bank")
-    total_cash = sum(a.current_balance for a in accounts if a.type == "cash")
-    total_balance = sum(a.current_balance for a in accounts)
+    live_balances = {a.id: _live_balance(db, a) for a in accounts}
+    total_bank    = sum(live_balances[a.id] for a in accounts if a.type == "bank")
+    total_cash    = sum(live_balances[a.id] for a in accounts if a.type == "cash")
+    total_balance = sum(live_balances.values())
 
     from calendar import monthrange as _mr
     from datetime import date as _d2
@@ -6245,7 +6296,7 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
             cat_spent[cat] = cat_spent.get(cat, 0) + exp.amount
 
     # account balance lookup
-    acct_balance: Dict[int, float] = {a.id: a.current_balance for a in accounts}
+    acct_balance: Dict[int, float] = {a.id: _live_balance(db, a) for a in accounts}
 
     all_cats = sorted(set(list(alloc_by_cat.keys()) + list(cat_budget.keys())))
     category_breakdown = []
@@ -6282,8 +6333,7 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
 
     return {
         "period": period,
-        "accounts": [{"id": a.id, "name": a.name, "type": a.type,
-                      "current_balance": a.current_balance} for a in accounts],
+        "accounts": [_acct_dict(db, a) for a in accounts],
         "total_bank": total_bank,
         "total_cash": total_cash,
         "total_balance": total_balance,
