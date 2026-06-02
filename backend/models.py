@@ -370,74 +370,9 @@ class AdminTaskExpense(Base):
     description = Column(String(300), nullable=True)
     expense_date = Column(Date, nullable=False)
     status = Column(String(20), nullable=False, default='paid')  # 'planned' | 'paid'
-    account_id = Column(Integer, ForeignKey("payment_accounts.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     task = relationship("AdminTask", back_populates="expenses")
-    account = relationship("PaymentAccount", back_populates="expenses")
-
-
-class PaymentAccount(Base):
-    """Bank or cash account used to track actual money flow."""
-    __tablename__ = "payment_accounts"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    type = Column(String(20), nullable=False, default='bank')  # bank | cash
-    opening_balance = Column(Float, nullable=False, default=0)
-    color = Column(String(20), nullable=True)
-    notes = Column(String(300), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    receipts = relationship("FundReceipt", back_populates="account")
-    expenses = relationship("AdminTaskExpense", back_populates="account")
-
-
-class FundSource(Base):
-    """Loan, personal savings, or other money source."""
-    __tablename__ = "fund_sources"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    type = Column(String(30), nullable=False, default='loan')  # loan | savings | income | other
-    total_sanctioned = Column(Float, nullable=True)
-    notes = Column(String(300), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    receipts = relationship("FundReceipt", back_populates="source")
-    allocations = relationship("CategoryAllocation", back_populates="source")
-
-
-class FundReceipt(Base):
-    """Actual tranche of money received from a fund source into an account."""
-    __tablename__ = "fund_receipts"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    source_id = Column(Integer, ForeignKey("fund_sources.id"), nullable=False)
-    account_id = Column(Integer, ForeignKey("payment_accounts.id"), nullable=True)
-    amount = Column(Float, nullable=False)
-    date = Column(Date, nullable=False)
-    notes = Column(String(300), nullable=True)
-    ref_number = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    source = relationship("FundSource", back_populates="receipts")
-    account = relationship("PaymentAccount", back_populates="receipts")
-
-
-class CategoryAllocation(Base):
-    """How much money is allocated to each project/category."""
-    __tablename__ = "category_allocations"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    category = Column(String(100), nullable=False)
-    amount = Column(Float, nullable=False)
-    date = Column(Date, nullable=False)
-    notes = Column(String(300), nullable=True)
-    source_id = Column(Integer, ForeignKey("fund_sources.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    source = relationship("FundSource", back_populates="allocations")
 
 
 class AdminTaskDependency(Base):
