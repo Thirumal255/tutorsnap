@@ -389,6 +389,61 @@ class AdminTaskDependency(Base):
     depends_on = relationship("AdminTask", foreign_keys=[depends_on_id])
 
 
+class PaymentAccount(Base):
+    __tablename__ = "payment_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    type = Column(String(20), nullable=False, default="bank")  # bank|cash|credit
+    current_balance = Column(Float, nullable=False, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    receipts = relationship("FundReceipt", back_populates="account")
+
+
+class FundSource(Base):
+    __tablename__ = "fund_sources"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    type = Column(String(30), nullable=False, default="other")  # salary|rent|freelance|other
+    expected_amount = Column(Float, nullable=True)
+    frequency = Column(String(20), nullable=False, default="monthly")  # monthly|one-time
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    receipts = relationship("FundReceipt", back_populates="source")
+
+
+class FundReceipt(Base):
+    __tablename__ = "fund_receipts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(Integer, ForeignKey("fund_sources.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(Integer, ForeignKey("payment_accounts.id", ondelete="SET NULL"), nullable=True)
+    amount = Column(Float, nullable=False)
+    description = Column(String(300), nullable=True)
+    received_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    source = relationship("FundSource", back_populates="receipts")
+    account = relationship("PaymentAccount", back_populates="receipts")
+
+
+class CategoryAllocation(Base):
+    __tablename__ = "category_allocations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    category = Column(String(100), nullable=False)
+    allocated_amount = Column(Float, nullable=False, default=0.0)
+    period = Column(String(7), nullable=False)  # YYYY-MM
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("category", "period"),)
+
+
 class StudentGoal(Base):
     """Weekly learning goal set by the student."""
     __tablename__ = "student_goals"

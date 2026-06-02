@@ -3,6 +3,10 @@ import {
   getAdminTasks, getAdminTasksSummary, getAdminTaskCategories,
   createAdminTask, updateAdminTask, deleteAdminTask,
   addTaskExpense, updateTaskExpense, deleteTaskExpense,
+  getFinanceSummary, getFinanceAccounts, createFinanceAccount, updateFinanceAccount, deleteFinanceAccount,
+  getFinanceSources, createFinanceSource, updateFinanceSource, deleteFinanceSource,
+  getFinanceReceipts, createFinanceReceipt, deleteFinanceReceipt,
+  getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation,
 } from './api/client'
 
 
@@ -1467,102 +1471,387 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
   )
 }
 
-// ── Expenses Tab ───────────────────────────────────────────────────────────────
+// ── Finance Tab ────────────────────────────────────────────────────────────────
 
-function ExpensesTab({ tasks, summary }) {
-  const [expanded, setExpanded] = useState({})
-  const root = tasks.filter(t=>!t.parent_id)
-  const totalBudget = summary.total_budget||0
-  const totalSpent  = summary.total_spent||0
-  const byCategory = {}
-  root.forEach(t=>{ if(!byCategory[t.category]) byCategory[t.category]=[]; byCategory[t.category].push(t) })
+const ACCOUNT_ICONS = { bank: '🏦', cash: '💵', credit: '💳' }
+const SOURCE_ICONS  = { salary: '💼', rent: '🏠', freelance: '🖥️', other: '💰' }
+
+function AccountForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState({ name: initial?.name||'', type: initial?.type||'bank', current_balance: initial?.current_balance||0 })
+  const [saving, setSaving] = useState(false)
+  async function submit(e) {
+    e.preventDefault(); setSaving(true)
+    try { await onSave({ ...f, current_balance: parseFloat(f.current_balance)||0 }) }
+    finally { setSaving(false) }
+  }
+  const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
+  return (
+    <form onSubmit={submit} className="space-y-3 p-1">
+      <input required className={inp} placeholder="Account name" value={f.name} onChange={e=>setF(x=>({...x,name:e.target.value}))}/>
+      <select className={inp} value={f.type} onChange={e=>setF(x=>({...x,type:e.target.value}))}>
+        <option value="bank">Bank</option>
+        <option value="cash">Cash</option>
+        <option value="credit">Credit</option>
+      </select>
+      <input required type="number" step="0.01" className={inp} placeholder="Current balance" value={f.current_balance}
+        onChange={e=>setF(x=>({...x,current_balance:e.target.value}))}/>
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
+        <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00A2FF] text-white text-sm font-semibold">
+          {saving?'Saving…':'Save'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function ReceiptForm({ sources, accounts, period, onSave, onClose }) {
+  const today = new Date().toISOString().split('T')[0]
+  const [f, setF] = useState({ source_id: '', account_id: '', amount: '', description: '', received_date: today })
+  const [saving, setSaving] = useState(false)
+  async function submit(e) {
+    e.preventDefault(); setSaving(true)
+    try { await onSave({ ...f, source_id: f.source_id||null, account_id: f.account_id||null, amount: parseFloat(f.amount) }) }
+    finally { setSaving(false) }
+  }
+  const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
+  return (
+    <form onSubmit={submit} className="space-y-3 p-1">
+      <select className={inp} value={f.source_id} onChange={e=>setF(x=>({...x,source_id:e.target.value}))}>
+        <option value="">-- Source (optional) --</option>
+        {sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      <select className={inp} value={f.account_id} onChange={e=>setF(x=>({...x,account_id:e.target.value}))}>
+        <option value="">-- Account (optional) --</option>
+        {accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+      </select>
+      <input required type="number" step="0.01" className={inp} placeholder="Amount" value={f.amount}
+        onChange={e=>setF(x=>({...x,amount:e.target.value}))}/>
+      <input className={inp} placeholder="Description (optional)" value={f.description}
+        onChange={e=>setF(x=>({...x,description:e.target.value}))}/>
+      <input required type="date" className={inp} value={f.received_date}
+        onChange={e=>setF(x=>({...x,received_date:e.target.value}))}/>
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
+        <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00CC88] text-white text-sm font-semibold">
+          {saving?'Saving…':'Add'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function FinanceTab() {
+  const now = new Date()
+  const curPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+  const [period, setPeriod] = useState(curPeriod)
+  const [summary, setSummary] = useState(null)
+  const [sources, setSources] = useState([])
+  const [receipts, setReceipts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [section, setSection] = useState('overview')  // overview | accounts | income | breakdown
+  const [showAccountForm, setShowAccountForm] = useState(false)
+  const [editAccount, setEditAccount] = useState(null)
+  const [showReceiptForm, setShowReceiptForm] = useState(false)
+  const [allocEdit, setAllocEdit] = useState({})  // category -> draft value
+
+  async function load() {
+    setLoading(true)
+    try {
+      const [s, sr, rc] = await Promise.all([
+        getFinanceSummary(period),
+        getFinanceSources(),
+        getFinanceReceipts(period),
+      ])
+      setSummary(s.data); setSources(sr.data); setReceipts(rc.data)
+    } finally { setLoading(false) }
+  }
+
+  useEffect(()=>{ load() }, [period])
+
+  async function saveAccount(data) {
+    if (editAccount) { await updateFinanceAccount(editAccount.id, data) }
+    else { await createFinanceAccount(data) }
+    setShowAccountForm(false); setEditAccount(null); await load()
+  }
+
+  async function removeAccount(id) {
+    if (!window.confirm('Delete this account?')) return
+    await deleteFinanceAccount(id); await load()
+  }
+
+  async function addReceipt(data) {
+    await createFinanceReceipt(data); setShowReceiptForm(false); await load()
+  }
+
+  async function removeReceipt(id) {
+    await deleteFinanceReceipt(id); await load()
+  }
+
+  async function saveAlloc(cat, val) {
+    await upsertFinanceAllocation({ category: cat, allocated_amount: parseFloat(val)||0, period })
+    setAllocEdit(x=>({...x,[cat]:undefined})); await load()
+  }
+
+  if (loading || !summary) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin"/>
+    </div>
+  )
+
+  const { total_balance, total_bank, total_cash, total_income, total_expenses, net, accounts, category_breakdown } = summary
+
+  // Period nav
+  function shiftPeriod(delta) {
+    const [y,m] = period.split('-').map(Number)
+    const d = new Date(y, m-1+delta, 1)
+    setPeriod(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`)
+  }
+  const periodLabel = new Date(period+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'})
+
+  const SECTIONS = [
+    { key:'overview', label:'Overview' },
+    { key:'accounts', label:'Accounts' },
+    { key:'income',   label:'Income' },
+    { key:'breakdown',label:'By Category' },
+  ]
 
   return (
-    <div className="p-4 pb-28 space-y-5">
-      {/* Summary card */}
-      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-5 space-y-4">
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div>
-            <p className="text-[#8892B0] text-xs">Spent</p>
-            <p className="text-[#FFB347] font-fredoka font-bold text-xl mt-0.5">{fmtINR(totalSpent)}</p>
-          </div>
-          <div>
-            <p className="text-[#8892B0] text-xs">Budget</p>
-            <p className="text-white font-fredoka font-bold text-xl mt-0.5">{totalBudget>0?fmtINR(totalBudget):'—'}</p>
-          </div>
-          <div>
-            <p className="text-[#8892B0] text-xs">Left</p>
-            <p className={`font-fredoka font-bold text-xl mt-0.5 ${totalBudget>0?(totalBudget-totalSpent<0?'text-[#FF3333]':'text-[#00CC88]'):'text-[#8892B0]'}`}>
-              {totalBudget>0?fmtINR(totalBudget-totalSpent):'—'}
-            </p>
-          </div>
-        </div>
-        {totalBudget>0&&<BudgetBar budget={totalBudget} spent={totalSpent}/>}
+    <div className="p-4 pb-28 space-y-4">
+      {/* Period picker */}
+      <div className="flex items-center justify-between bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3">
+        <button onClick={()=>shiftPeriod(-1)} className="text-[#8892B0] text-lg px-1">‹</button>
+        <p className="text-white font-semibold text-sm">{periodLabel}</p>
+        <button onClick={()=>shiftPeriod(1)} className={`text-lg px-1 ${period>=curPeriod?'text-[#2D2B5A]':'text-[#8892B0]'}`}
+          disabled={period>=curPeriod}>›</button>
       </div>
 
-      {/* Category sections */}
-      {Object.entries(byCategory).sort().map(([cat,catTasks])=>{
-        const catBudget = catTasks.reduce((s,t)=>s+(t.budget||0),0)
-        const catSpent  = catTasks.reduce((s,t)=>s+(t.total_expense||0),0)
-        if (catSpent===0&&catBudget===0) return null
-        const pct = catBudget>0?Math.min(catSpent/catBudget*100,100):100
-        const isOpen = expanded[cat]
-        const barColor = pct>=100?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00CC88]'
+      {/* Section tabs */}
+      <div className="flex gap-1 bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-1">
+        {SECTIONS.map(s=>(
+          <button key={s.key} onClick={()=>setSection(s.key)}
+            className={`flex-1 text-xs py-1.5 rounded-xl font-semibold transition-all ${section===s.key?'bg-[#00A2FF] text-white':'text-[#8892B0]'}`}>
+            {s.label}
+          </button>
+        ))}
+      </div>
 
-        return (
-          <div key={cat} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-            <button className="w-full p-4 text-left space-y-3" onClick={()=>setExpanded(e=>({...e,[cat]:!e[cat]}))}>
-              <div className="flex items-center justify-between">
-                <p className="text-white font-semibold text-sm">{cat}</p>
-                <span className="text-[#8892B0] text-xs">{isOpen?'▲':'▼'}</span>
+      {/* OVERVIEW */}
+      {section==='overview'&&(
+        <div className="space-y-3">
+          {/* Tier 1: Balances */}
+          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
+            <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Total Balance</p>
+            <p className="text-white font-fredoka font-bold text-3xl">{fmtINR(total_balance)}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-[#0F0F23] rounded-xl p-3">
+                <p className="text-[#8892B0] text-xs">Bank</p>
+                <p className="text-[#00A2FF] font-bold mt-0.5">{fmtINR(total_bank)}</p>
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-white font-bold text-base">{fmtINR(catSpent)}</p>
-                  {catBudget>0&&<p className="text-[#8892B0] text-xs">of {fmtINR(catBudget)}</p>}
-                </div>
-                {catBudget>0&&(
-                  <p className={`text-sm font-semibold ${pct>=100?'text-[#FF3333]':pct>80?'text-[#FFB347]':'text-[#00CC88]'}`}>
-                    {pct.toFixed(0)}% used
-                  </p>
-                )}
+              <div className="bg-[#0F0F23] rounded-xl p-3">
+                <p className="text-[#8892B0] text-xs">Cash</p>
+                <p className="text-[#00CC88] font-bold mt-0.5">{fmtINR(total_cash)}</p>
               </div>
-              {catBudget>0&&(
+            </div>
+          </div>
+
+          {/* Tier 2: This month */}
+          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
+            <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">{periodLabel}</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p className="text-[#8892B0] text-xs">Income</p>
+                <p className="text-[#00CC88] font-bold text-base mt-0.5">{fmtINR(total_income)}</p>
+              </div>
+              <div>
+                <p className="text-[#8892B0] text-xs">Spent</p>
+                <p className="text-[#FFB347] font-bold text-base mt-0.5">{fmtINR(total_expenses)}</p>
+              </div>
+              <div>
+                <p className="text-[#8892B0] text-xs">Net</p>
+                <p className={`font-bold text-base mt-0.5 ${net>=0?'text-[#00CC88]':'text-[#FF3333]'}`}>{fmtINR(net)}</p>
+              </div>
+            </div>
+            {total_income>0&&(
+              <div className="space-y-1">
                 <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${barColor}`} style={{width:`${pct}%`}}/>
+                  <div className={`h-full rounded-full ${total_expenses>total_income?'bg-[#FF3333]':'bg-[#00A2FF]'}`}
+                    style={{width:`${Math.min(total_income>0?total_expenses/total_income*100:0,100)}%`}}/>
                 </div>
-              )}
-            </button>
-            {isOpen&&(
-              <div className="border-t border-[#2D2B5A]">
-                {catTasks.filter(t=>(t.total_expense||0)>0||t.budget>0).map(t=>{
-                  const ts = t.total_expense||0
-                  const tp = t.budget>0?Math.min(ts/t.budget*100,100):0
-                  return (
-                    <div key={t.id} className="px-4 py-3 border-b border-[#2D2B5A]/50 last:border-0">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <p className="text-white text-xs font-semibold flex-1 mr-2 truncate">{t.title}</p>
-                        <p className="text-[#FFB347] text-xs font-semibold">{fmtINR(ts)}</p>
-                      </div>
-                      {t.budget>0&&(
-                        <div className="space-y-1">
-                          <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${tp>=100?'bg-[#FF3333]':tp>80?'bg-[#FFB347]':'bg-[#00CC88]'}`} style={{width:`${tp}%`}}/>
-                          </div>
-                          <p className="text-[#8892B0] text-xs">{fmtINR(t.budget)} budget · {fmtINR(t.budget-ts)} left</p>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {catTasks.filter(t=>(t.total_expense||0)>0||t.budget>0).length===0&&(
-                  <p className="px-4 py-3 text-[#8892B0] text-xs italic">No expenses</p>
-                )}
+                <p className="text-[#8892B0] text-xs text-right">
+                  {total_income>0?(total_expenses/total_income*100).toFixed(0):0}% of income spent
+                </p>
               </div>
             )}
           </div>
-        )
-      })}
+
+          {/* Tier 3: Category breakdown (compact) */}
+          {category_breakdown.length>0&&(
+            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-2">
+              <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Category Spend</p>
+              {category_breakdown.map(c=>{
+                const pct = c.allocated>0?Math.min(c.spent/c.allocated*100,100):0
+                const color = c.allocated>0&&c.spent>c.allocated?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00A2FF]'
+                return (
+                  <div key={c.category} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-white">{c.category}</span>
+                      <span className="text-[#FFB347]">{fmtINR(c.spent)}{c.allocated>0&&<span className="text-[#8892B0]"> / {fmtINR(c.allocated)}</span>}</span>
+                    </div>
+                    {c.allocated>0&&(
+                      <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${color}`} style={{width:`${pct}%`}}/>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ACCOUNTS */}
+      {section==='accounts'&&(
+        <div className="space-y-3">
+          {accounts.map(a=>(
+            <div key={a.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{ACCOUNT_ICONS[a.type]||'💳'}</span>
+                <div>
+                  <p className="text-white font-semibold text-sm">{a.name}</p>
+                  <p className="text-[#8892B0] text-xs capitalize">{a.type}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <p className="text-[#00A2FF] font-bold text-base">{fmtINR(a.current_balance)}</p>
+                <button onClick={()=>{ setEditAccount(a); setShowAccountForm(true) }}
+                  className="text-[#8892B0] text-xs px-2 py-1 rounded-lg border border-[#2D2B5A]">Edit</button>
+                <button onClick={()=>removeAccount(a.id)}
+                  className="text-[#FF3333] text-xs px-2 py-1 rounded-lg border border-[#FF3333]/20">Del</button>
+              </div>
+            </div>
+          ))}
+          <button onClick={()=>{ setEditAccount(null); setShowAccountForm(true) }}
+            className="w-full py-3 rounded-2xl border border-dashed border-[#2D2B5A] text-[#8892B0] text-sm">
+            + Add Account
+          </button>
+
+          {showAccountForm&&(
+            <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}}
+                onClick={()=>{ setShowAccountForm(false); setEditAccount(null) }}/>
+              <div style={{position:'relative',width:'100%',maxWidth:672,background:'#16213E',border:'1px solid #2D2B5A',
+                borderRadius:'20px 20px 0 0',padding:20,zIndex:1}}>
+                <p className="text-white font-bold text-sm mb-4">{editAccount?'Edit Account':'New Account'}</p>
+                <AccountForm initial={editAccount} onSave={saveAccount}
+                  onClose={()=>{ setShowAccountForm(false); setEditAccount(null) }}/>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* INCOME */}
+      {section==='income'&&(
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[#8892B0] text-xs font-semibold">Income receipts — {periodLabel}</p>
+            <button onClick={()=>setShowReceiptForm(true)}
+              className="text-xs bg-[#00CC88] text-white px-3 py-1.5 rounded-xl font-semibold">+ Add</button>
+          </div>
+
+          {receipts.length===0&&(
+            <div className="text-center py-8 text-[#8892B0] text-sm">No income recorded for this period</div>
+          )}
+
+          {receipts.map(r=>(
+            <div key={r.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-white text-sm font-semibold">{r.description||r.source_name||'Receipt'}</p>
+                <p className="text-[#8892B0] text-xs">
+                  {fmtDate(r.received_date)}{r.account_name&&<span> · {r.account_name}</span>}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <p className="text-[#00CC88] font-bold">{fmtINR(r.amount)}</p>
+                <button onClick={()=>removeReceipt(r.id)}
+                  className="text-[#FF3333] text-xs px-2 py-1 rounded-lg border border-[#FF3333]/20">Del</button>
+              </div>
+            </div>
+          ))}
+
+          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3 flex justify-between">
+            <p className="text-[#8892B0] text-sm">Total income</p>
+            <p className="text-[#00CC88] font-bold">{fmtINR(total_income)}</p>
+          </div>
+
+          {showReceiptForm&&(
+            <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}}
+                onClick={()=>setShowReceiptForm(false)}/>
+              <div style={{position:'relative',width:'100%',maxWidth:672,background:'#16213E',border:'1px solid #2D2B5A',
+                borderRadius:'20px 20px 0 0',padding:20,zIndex:1}}>
+                <p className="text-white font-bold text-sm mb-4">Add Income Receipt</p>
+                <ReceiptForm sources={sources} accounts={accounts} period={period}
+                  onSave={addReceipt} onClose={()=>setShowReceiptForm(false)}/>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* BY CATEGORY */}
+      {section==='breakdown'&&(
+        <div className="space-y-3">
+          <p className="text-[#8892B0] text-xs font-semibold">Allocation vs spend — {periodLabel}</p>
+          {category_breakdown.length===0&&(
+            <div className="text-center py-8 text-[#8892B0] text-sm">No data for this period</div>
+          )}
+          {category_breakdown.map(c=>{
+            const pct = c.allocated>0?Math.min(c.spent/c.allocated*100,100):0
+            const over = c.allocated>0&&c.spent>c.allocated
+            const color = over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00A2FF]'
+            const editing = allocEdit[c.category] !== undefined
+            return (
+              <div key={c.category} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-white font-semibold text-sm">{c.category}</p>
+                  <p className={`text-sm font-bold ${over?'text-[#FF3333]':pct>80?'text-[#FFB347]':'text-[#00CC88]'}`}>
+                    {fmtINR(c.spent)}
+                  </p>
+                </div>
+                {c.allocated>0&&(
+                  <>
+                    <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${color}`} style={{width:`${pct}%`}}/>
+                    </div>
+                    <div className="flex justify-between text-xs text-[#8892B0]">
+                      <span>{pct.toFixed(0)}% used</span>
+                      <span>Budget: {fmtINR(c.allocated)}</span>
+                    </div>
+                  </>
+                )}
+                {editing?(
+                  <div className="flex gap-2">
+                    <input type="number" className="flex-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-1.5 text-white text-sm"
+                      value={allocEdit[c.category]} onChange={e=>setAllocEdit(x=>({...x,[c.category]:e.target.value}))}/>
+                    <button onClick={()=>saveAlloc(c.category,allocEdit[c.category])}
+                      className="px-3 py-1.5 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
+                    <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:undefined}))}
+                      className="px-3 py-1.5 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs">Cancel</button>
+                  </div>
+                ):(
+                  <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:c.allocated||''}))}
+                    className="text-xs text-[#00A2FF] underline-offset-2 underline">
+                    {c.allocated>0?'Edit budget':'Set budget'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -1636,7 +1925,7 @@ export default function TasksPage({ onLogout }) {
   const NAV = [
     {key:'home',    icon:'🏠', label:'Home', badge: overdueCount},
     {key:'tasks',   icon:'📋', label:'Tasks'},
-    {key:'expenses',icon:'💰', label:'Expenses'},
+    {key:'finance', icon:'💰', label:'Finance'},
   ]
 
   return (
@@ -1650,7 +1939,7 @@ export default function TasksPage({ onLogout }) {
           <p className="text-[#8892B0] text-xs mt-0.5">Personal task tracker</p>
         </div>
         <div className="flex items-center gap-1.5">
-          {(tab==='tasks'||tab==='home')&&(
+          {(tab==='tasks'||tab==='home') && (
             <button onClick={()=>setShowCreate(true)} className="bg-[#00A2FF] text-white text-xs font-bold px-3 py-2 rounded-xl">
               + New
             </button>
@@ -1674,7 +1963,7 @@ export default function TasksPage({ onLogout }) {
           onStatusChange={handleStatusChange}
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
           filterCat={filterCat} setFilterCat={setFilterCat}/>}
-        {tab==='expenses'&&<ExpensesTab tasks={tasks} summary={summary}/>}
+        {tab==='finance'&&<FinanceTab/>}
       </div>
 
       {/* Bottom nav */}

@@ -27,6 +27,7 @@ from models import (
     WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
     AIUsageLog, AdminAuditLog, StudentGoal,
     AdminTask, AdminTaskExpense, AdminTaskDependency,
+    PaymentAccount, FundSource, FundReceipt, CategoryAllocation,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -5993,3 +5994,218 @@ def send_task_digest(
         raise HTTPException(status_code=500, detail=f"Telegram error: {result}")
 
     return {"sent": True, "message_length": len(message)}
+
+
+# -- Finance Endpoints --------------------------------------------------------
+
+class PaymentAccountIn(BaseModel):
+    name: str
+    type: str = "bank"
+    current_balance: float = 0.0
+
+class FundSourceIn(BaseModel):
+    name: str
+    type: str = "other"
+    expected_amount: Optional[float] = None
+    frequency: str = "monthly"
+    is_active: bool = True
+
+class FundReceiptIn(BaseModel):
+    source_id: Optional[int] = None
+    account_id: Optional[int] = None
+    amount: float
+    description: Optional[str] = None
+    received_date: str  # YYYY-MM-DD
+
+class CategoryAllocationIn(BaseModel):
+    category: str
+    allocated_amount: float
+    period: str  # YYYY-MM
+
+
+@app.get("/api/finance/accounts")
+def list_accounts(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    rows = db.query(PaymentAccount).order_by(PaymentAccount.name).all()
+    return [{"id": r.id, "name": r.name, "type": r.type,
+             "current_balance": r.current_balance,
+             "updated_at": r.updated_at.isoformat() if r.updated_at else None} for r in rows]
+
+@app.post("/api/finance/accounts")
+def create_account(body: PaymentAccountIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    acct = PaymentAccount(name=body.name, type=body.type, current_balance=body.current_balance)
+    db.add(acct); db.commit(); db.refresh(acct)
+    return {"id": acct.id, "name": acct.name, "type": acct.type, "current_balance": acct.current_balance}
+
+@app.put("/api/finance/accounts/{acct_id}")
+def update_account(acct_id: int, body: PaymentAccountIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    acct = db.query(PaymentAccount).filter(PaymentAccount.id == acct_id).first()
+    if not acct:
+        raise HTTPException(status_code=404, detail="Account not found")
+    acct.name = body.name; acct.type = body.type; acct.current_balance = body.current_balance
+    db.commit()
+    return {"id": acct.id, "name": acct.name, "type": acct.type, "current_balance": acct.current_balance}
+
+@app.delete("/api/finance/accounts/{acct_id}")
+def delete_account(acct_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    acct = db.query(PaymentAccount).filter(PaymentAccount.id == acct_id).first()
+    if not acct:
+        raise HTTPException(status_code=404, detail="Account not found")
+    db.delete(acct); db.commit()
+    return {"deleted": True}
+
+
+@app.get("/api/finance/sources")
+def list_sources(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    rows = db.query(FundSource).order_by(FundSource.name).all()
+    return [{"id": r.id, "name": r.name, "type": r.type,
+             "expected_amount": r.expected_amount, "frequency": r.frequency,
+             "is_active": r.is_active} for r in rows]
+
+@app.post("/api/finance/sources")
+def create_source(body: FundSourceIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    src = FundSource(**body.dict())
+    db.add(src); db.commit(); db.refresh(src)
+    return {"id": src.id, "name": src.name, "type": src.type,
+            "expected_amount": src.expected_amount, "frequency": src.frequency, "is_active": src.is_active}
+
+@app.put("/api/finance/sources/{src_id}")
+def update_source(src_id: int, body: FundSourceIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    src = db.query(FundSource).filter(FundSource.id == src_id).first()
+    if not src:
+        raise HTTPException(status_code=404, detail="Source not found")
+    for k, v in body.dict().items():
+        setattr(src, k, v)
+    db.commit()
+    return {"id": src.id, "name": src.name, "type": src.type,
+            "expected_amount": src.expected_amount, "frequency": src.frequency, "is_active": src.is_active}
+
+@app.delete("/api/finance/sources/{src_id}")
+def delete_source(src_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    src = db.query(FundSource).filter(FundSource.id == src_id).first()
+    if not src:
+        raise HTTPException(status_code=404, detail="Source not found")
+    db.delete(src); db.commit()
+    return {"deleted": True}
+
+
+@app.get("/api/finance/receipts")
+def list_receipts(period: Optional[str] = None, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    q = db.query(FundReceipt).order_by(FundReceipt.received_date.desc())
+    if period:
+        q = q.filter(FundReceipt.received_date.like(f"{period}%"))
+    rows = q.all()
+    return [{"id": r.id, "source_id": r.source_id, "account_id": r.account_id,
+             "amount": r.amount, "description": r.description,
+             "received_date": str(r.received_date),
+             "source_name": r.source.name if r.source else None,
+             "account_name": r.account.name if r.account else None} for r in rows]
+
+@app.post("/api/finance/receipts")
+def create_receipt(body: FundReceiptIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    from datetime import date as _date2
+    rec = FundReceipt(
+        source_id=body.source_id, account_id=body.account_id,
+        amount=body.amount, description=body.description,
+        received_date=_date2.fromisoformat(body.received_date),
+    )
+    db.add(rec); db.commit(); db.refresh(rec)
+    return {"id": rec.id, "amount": rec.amount, "received_date": str(rec.received_date)}
+
+@app.delete("/api/finance/receipts/{rec_id}")
+def delete_receipt(rec_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    rec = db.query(FundReceipt).filter(FundReceipt.id == rec_id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    db.delete(rec); db.commit()
+    return {"deleted": True}
+
+
+@app.get("/api/finance/allocations")
+def list_allocations(period: Optional[str] = None, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    q = db.query(CategoryAllocation)
+    if period:
+        q = q.filter(CategoryAllocation.period == period)
+    rows = q.order_by(CategoryAllocation.category).all()
+    return [{"id": r.id, "category": r.category,
+             "allocated_amount": r.allocated_amount, "period": r.period} for r in rows]
+
+@app.post("/api/finance/allocations")
+def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    existing = db.query(CategoryAllocation).filter(
+        CategoryAllocation.category == body.category,
+        CategoryAllocation.period == body.period,
+    ).first()
+    if existing:
+        existing.allocated_amount = body.allocated_amount
+        db.commit()
+        return {"id": existing.id, "category": existing.category,
+                "allocated_amount": existing.allocated_amount, "period": existing.period}
+    alloc = CategoryAllocation(**body.dict())
+    db.add(alloc); db.commit(); db.refresh(alloc)
+    return {"id": alloc.id, "category": alloc.category,
+            "allocated_amount": alloc.allocated_amount, "period": alloc.period}
+
+@app.delete("/api/finance/allocations/{alloc_id}")
+def delete_allocation(alloc_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    alloc = db.query(CategoryAllocation).filter(CategoryAllocation.id == alloc_id).first()
+    if not alloc:
+        raise HTTPException(status_code=404, detail="Allocation not found")
+    db.delete(alloc); db.commit()
+    return {"deleted": True}
+
+
+@app.get("/api/finance/summary")
+def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    from datetime import datetime as _dt2
+    from sqlalchemy import extract
+    if not period:
+        period = _dt2.utcnow().strftime("%Y-%m")
+
+    accounts = db.query(PaymentAccount).order_by(PaymentAccount.type, PaymentAccount.name).all()
+    total_bank = sum(a.current_balance for a in accounts if a.type == "bank")
+    total_cash = sum(a.current_balance for a in accounts if a.type == "cash")
+    total_balance = sum(a.current_balance for a in accounts)
+
+    receipts = (db.query(FundReceipt)
+                .filter(FundReceipt.received_date.like(f"{period}%"))
+                .all())
+    total_income = sum(r.amount for r in receipts)
+
+    period_year, period_month = int(period[:4]), int(period[5:7])
+    task_expenses = (db.query(AdminTaskExpense)
+                     .filter(
+                         AdminTaskExpense.status == "paid",
+                         extract("year", AdminTaskExpense.expense_date) == period_year,
+                         extract("month", AdminTaskExpense.expense_date) == period_month,
+                     ).all())
+    total_expenses = sum(e.amount for e in task_expenses)
+
+    allocations = (db.query(CategoryAllocation)
+                   .filter(CategoryAllocation.period == period)
+                   .all())
+    alloc_map = {a.category: a.allocated_amount for a in allocations}
+
+    cat_spend: Dict[str, float] = {}
+    for exp in task_expenses:
+        task = db.query(AdminTask).filter(AdminTask.id == exp.task_id).first()
+        cat = task.category if task else "Uncategorized"
+        cat_spend[cat] = cat_spend.get(cat, 0) + exp.amount
+
+    all_cats = sorted(set(list(alloc_map.keys()) + list(cat_spend.keys())))
+    category_breakdown = [
+        {"category": cat, "allocated": alloc_map.get(cat, 0), "spent": cat_spend.get(cat, 0)}
+        for cat in all_cats
+    ]
+
+    return {
+        "period": period,
+        "accounts": [{"id": a.id, "name": a.name, "type": a.type,
+                      "current_balance": a.current_balance} for a in accounts],
+        "total_bank": total_bank,
+        "total_cash": total_cash,
+        "total_balance": total_balance,
+        "total_income": total_income,
+        "total_expenses": total_expenses,
+        "net": total_income - total_expenses,
+        "category_breakdown": category_breakdown,
+    }
