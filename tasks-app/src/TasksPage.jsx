@@ -1639,6 +1639,7 @@ function FinanceTab() {
   const [showReceiptForm, setShowReceiptForm] = useState(false)
   const [showTransferForm, setShowTransferForm] = useState(false)
   const [expandedAccount, setExpandedAccount] = useState(null)  // account id being managed
+  const [editAllocAmount, setEditAllocAmount] = useState({})   // `${acctId}_${cat}` -> draft amount
   const [assignDraft, setAssignDraft] = useState({})  // {accountId_category: amount}
 
   async function load() {
@@ -1814,12 +1815,13 @@ function FinanceTab() {
             const linked = category_breakdown.filter(c=>
               (c.account_links||[]).some(l=>l.account_id===a.id)
             )
-            const totalAllocated = linked.reduce((s,c)=>{
+            const totalAllocated = a.total_allocated || linked.reduce((s,c)=>{
               const link = (c.account_links||[]).find(l=>l.account_id===a.id)
               return s + (link?.allocated || 0)
             }, 0)
             const totalSpent     = linked.reduce((s,c)=>s+(c.spent||0),0)
-            const free = a.current_balance - totalAllocated
+            const free = a.free_balance ?? (a.current_balance - totalAllocated)
+            const overAllocated  = a.overallocated || free < 0
             const isExpanded = expandedAccount===a.id
             // categories NOT yet linked to THIS account (can still be linked to others)
             const unlinked = taskCats.filter(cat=>
@@ -1827,7 +1829,7 @@ function FinanceTab() {
             )
 
             return (
-              <div key={a.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+              <div key={a.id} className={`bg-[#16213E] rounded-2xl overflow-hidden border ${overAllocated?'border-[#FF3333]/50':'border-[#2D2B5A]'}`}>
                 {/* Account header row */}
                 <button className="w-full px-4 py-3 flex items-center justify-between"
                   onClick={()=>setExpandedAccount(isExpanded?null:a.id)}>
@@ -1843,7 +1845,11 @@ function FinanceTab() {
                   <div className="flex items-center gap-2">
                     <div className="text-right">
                       <p className="text-[#00A2FF] font-bold text-sm">{fmtINR(a.current_balance)}</p>
-                      {totalAllocated>0&&<p className="text-[#8892B0] text-xs">{fmtINR(free)} free</p>}
+                      {totalAllocated>0&&(
+                        <p className={`text-xs ${overAllocated?'text-[#FF3333] font-semibold':'text-[#8892B0]'}`}>
+                          {overAllocated?`⚠ over by ${fmtINR(Math.abs(free))}` : `${fmtINR(free)} free`}
+                        </p>
+                      )}
                     </div>
                     <span className="text-[#8892B0] text-xs ml-1">{isExpanded?'▲':'▼'}</span>
                   </div>
@@ -1870,13 +1876,39 @@ function FinanceTab() {
 
                     {/* Linked categories */}
                     {linked.map(c=>{
+                      const link = (c.account_links||[]).find(l=>l.account_id===a.id)
+                      const allocKey = `${a.id}_${c.category}`
+                      const editingAmt = editAllocAmount[allocKey] !== undefined
                       return (
-                        <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40 flex items-center justify-between">
-                          <p className="text-white text-xs font-semibold">{c.category}</p>
-                          <button onClick={async()=>{
-                            await unlinkFinanceAllocation(c.category, period, a.id)
-                            await load()
-                          }} className="text-[#8892B0] text-xs px-1.5 py-0.5 rounded border border-[#2D2B5A]" title="Unlink">✕</button>
+                        <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40">
+                          {editingAmt ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-white text-xs font-semibold flex-1">{c.category}</span>
+                              <input type="number" min="0" step="0.001" autoFocus
+                                value={editAllocAmount[allocKey]}
+                                onChange={e=>setEditAllocAmount(x=>({...x,[allocKey]:e.target.value}))}
+                                className="w-28 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-2 py-1 text-white text-xs"/>
+                              <button onClick={async()=>{
+                                await upsertFinanceAllocation({category:c.category, allocated_amount:parseFloat(editAllocAmount[allocKey])||0, account_id:a.id})
+                                setEditAllocAmount(x=>({...x,[allocKey]:undefined})); await load()
+                              }} className="px-2 py-1 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
+                              <button onClick={()=>setEditAllocAmount(x=>({...x,[allocKey]:undefined}))}
+                                className="text-[#8892B0] text-xs px-1">✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-white text-xs font-semibold">{c.category}</p>
+                                {(link?.allocated||0)>0 && <p className="text-[#00A2FF] text-xs">{fmtINR(link.allocated)} allocated</p>}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <button onClick={()=>setEditAllocAmount(x=>({...x,[allocKey]:link?.allocated||''}))}
+                                  className="text-[#8892B0] text-xs px-2 py-0.5 rounded border border-[#2D2B5A]">Edit ₹</button>
+                                <button onClick={async()=>{ await unlinkFinanceAllocation(c.category, a.id); await load() }}
+                                  className="text-[#FF3333] text-xs px-1.5 py-0.5 rounded border border-[#FF3333]/20">✕</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -1904,7 +1936,7 @@ function FinanceTab() {
                                   />
                                   <button onClick={async()=>{
                                     const amt = parseFloat(draft)||0
-                                    await upsertFinanceAllocation({category:cat, allocated_amount:amt, period, account_id:a.id})
+                                    await upsertFinanceAllocation({category:cat, allocated_amount:amt, account_id:a.id})
                                     setAssignDraft(x=>({...x,[draftKey]:undefined}))
                                     await load()
                                   }} className="px-2 py-1 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
@@ -2003,7 +2035,10 @@ function FinanceTab() {
       {section==='income'&&(
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-[#8892B0] text-xs font-semibold">Income receipts — {periodLabel}</p>
+            <div>
+              <p className="text-[#8892B0] text-xs font-semibold">Income receipts — {periodLabel}</p>
+              <p className="text-[#8892B0] text-xs mt-0.5 opacity-60">Period applies to income only. Category budgets use all-time expenses.</p>
+            </div>
             <button onClick={()=>setShowReceiptForm(true)}
               className="text-xs bg-[#00CC88] text-white px-3 py-1.5 rounded-xl font-semibold">+ Add</button>
           </div>
@@ -2060,6 +2095,7 @@ function FinanceTab() {
             const available    = c.amount_available||0
             const budgetReq    = c.budget_required||0
             const spent        = c.spent||0
+            const pending      = c.pending||0
             const deficit      = c.deficit||0
             const hasDeficit   = deficit > 0
             const spentPct     = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
@@ -2081,27 +2117,31 @@ function FinanceTab() {
                   }
                 </div>
 
-                {/* 4 key numbers */}
+                {/* 5 key numbers in 2 rows */}
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
-                    <p className="text-[#8892B0] text-xs">Available</p>
-                    <p className="text-[#00A2FF] font-bold text-sm mt-0.5">{fmtINR(available)}</p>
+                    <p className="text-[#8892B0] text-xs">Available (allocated)</p>
+                    <p className="text-[#00A2FF] font-bold text-sm mt-0.5">{available>0?fmtINR(available):'Not set'}</p>
                   </div>
                   <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
-                    <p className="text-[#8892B0] text-xs">Budget Required</p>
+                    <p className="text-[#8892B0] text-xs">Total Budget</p>
                     <p className="text-white font-bold text-sm mt-0.5">{fmtINR(budgetReq)}</p>
                   </div>
                   <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
-                    <p className="text-[#8892B0] text-xs">Spent (paid)</p>
+                    <p className="text-[#8892B0] text-xs">Paid</p>
                     <p className="text-[#FFB347] font-bold text-sm mt-0.5">{fmtINR(spent)}</p>
                   </div>
-                  <div className={`rounded-xl px-3 py-2 ${hasDeficit?'bg-[#FF3333]/10':'bg-[#0F0F23]'}`}>
-                    <p className="text-[#8892B0] text-xs">Deficit</p>
-                    <p className={`font-bold text-sm mt-0.5 ${hasDeficit?'text-[#FF3333]':'text-[#00CC88]'}`}>
-                      {hasDeficit ? fmtINR(deficit) : '—'}
-                    </p>
+                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
+                    <p className="text-[#8892B0] text-xs">Pending (planned)</p>
+                    <p className="text-[#A78BFA] font-bold text-sm mt-0.5">{pending>0?fmtINR(pending):'—'}</p>
                   </div>
                 </div>
+                {hasDeficit&&(
+                  <div className="bg-[#FF3333]/10 border border-[#FF3333]/20 rounded-xl px-3 py-2 flex items-center justify-between">
+                    <p className="text-[#8892B0] text-xs">Deficit (pending − available)</p>
+                    <p className="text-[#FF3333] font-bold text-sm">{fmtINR(deficit)}</p>
+                  </div>
+                )}
 
                 {/* Spend progress bar */}
                 {budgetReq>0&&(

@@ -440,12 +440,12 @@ class CategoryAllocation(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     category = Column(String(100), nullable=False)
     allocated_amount = Column(Float, nullable=False, default=0.0)
-    period = Column(String(7), nullable=False)  # YYYY-MM
+    period = Column(String(7), nullable=True)   # legacy — no longer used for uniqueness
     account_id = Column(Integer, ForeignKey("payment_accounts.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    __table_args__ = (UniqueConstraint("category", "period", "account_id"),)
+    __table_args__ = (UniqueConstraint("category", "account_id"),)
 
     account = relationship("PaymentAccount", foreign_keys=[account_id])
 

@@ -6015,25 +6015,62 @@ class PaymentAccountIn(BaseModel):
     opening_balance: float = 0.0
 
 
-def _live_balance(db, acct: "PaymentAccount") -> float:
-    """Compute real-time balance: opening + receipts + transfers_in - transfers_out - paid_expenses."""
-    receipts      = db.query(func.sum(FundReceipt.amount)).filter(FundReceipt.account_id == acct.id).scalar() or 0
-    xfer_in       = db.query(func.sum(FundTransfer.amount)).filter(FundTransfer.to_account_id == acct.id).scalar() or 0
-    xfer_out      = db.query(func.sum(FundTransfer.amount)).filter(FundTransfer.from_account_id == acct.id).scalar() or 0
-    paid_expenses = db.query(func.sum(AdminTaskExpense.amount)).filter(
-        AdminTaskExpense.account_id == acct.id,
-        AdminTaskExpense.status == "paid",
-    ).scalar() or 0
-    ob = acct.opening_balance if acct.opening_balance else (acct.current_balance or 0)
-    return round(ob + receipts + xfer_in - xfer_out - paid_expenses, 3)
+def _batch_live_balances(db, accounts: list) -> Dict[int, float]:
+    """
+    Compute live balances for all accounts in 4 queries (not 4N).
+    Formula per account: opening_balance + receipts_in + transfers_in
+                         - transfers_out - paid_expenses
+    """
+    if not accounts:
+        return {}
+    ids = [a.id for a in accounts]
+
+    receipts = dict(
+        db.query(FundReceipt.account_id, func.sum(FundReceipt.amount))
+        .filter(FundReceipt.account_id.in_(ids))
+        .group_by(FundReceipt.account_id).all()
+    )
+    xfer_in = dict(
+        db.query(FundTransfer.to_account_id, func.sum(FundTransfer.amount))
+        .filter(FundTransfer.to_account_id.in_(ids))
+        .group_by(FundTransfer.to_account_id).all()
+    )
+    xfer_out = dict(
+        db.query(FundTransfer.from_account_id, func.sum(FundTransfer.amount))
+        .filter(FundTransfer.from_account_id.in_(ids))
+        .group_by(FundTransfer.from_account_id).all()
+    )
+    paid_exp = dict(
+        db.query(AdminTaskExpense.account_id, func.sum(AdminTaskExpense.amount))
+        .filter(AdminTaskExpense.account_id.in_(ids), AdminTaskExpense.status == "paid")
+        .group_by(AdminTaskExpense.account_id).all()
+    )
+
+    result: Dict[int, float] = {}
+    for a in accounts:
+        ob = (a.opening_balance or 0) if (a.opening_balance or 0) != 0 else (a.current_balance or 0)
+        result[a.id] = round(
+            ob
+            + (receipts.get(a.id) or 0)
+            + (xfer_in.get(a.id) or 0)
+            - (xfer_out.get(a.id) or 0)
+            - (paid_exp.get(a.id) or 0),
+            3
+        )
+    return result
 
 
-def _acct_dict(db, acct: "PaymentAccount") -> dict:
-    lb = _live_balance(db, acct)
-    return {"id": acct.id, "name": acct.name, "type": acct.type,
-            "opening_balance": acct.opening_balance or acct.current_balance or 0,
-            "live_balance": lb,
-            "current_balance": lb}   # alias so frontend works unchanged
+def _acct_dict(acct: "PaymentAccount", live_bal: float, total_allocated: float = 0) -> dict:
+    free = round(live_bal - total_allocated, 3)
+    return {
+        "id": acct.id, "name": acct.name, "type": acct.type,
+        "opening_balance": acct.opening_balance or acct.current_balance or 0,
+        "live_balance": live_bal,
+        "current_balance": live_bal,   # alias — frontend uses this
+        "total_allocated": total_allocated,
+        "free_balance": free,
+        "overallocated": free < 0,
+    }
 
 class FundSourceIn(BaseModel):
     name: str
@@ -6052,14 +6089,28 @@ class FundReceiptIn(BaseModel):
 class CategoryAllocationIn(BaseModel):
     category: str
     allocated_amount: float
-    period: str  # YYYY-MM
+    period: Optional[str] = None   # legacy — no longer used for uniqueness
     account_id: Optional[int] = None
+
+
+def _allocated_per_account(db, account_ids: list) -> Dict[int, float]:
+    """Sum of all category allocations per account."""
+    if not account_ids:
+        return {}
+    rows = (
+        db.query(CategoryAllocation.account_id, func.sum(CategoryAllocation.allocated_amount))
+        .filter(CategoryAllocation.account_id.in_(account_ids))
+        .group_by(CategoryAllocation.account_id).all()
+    )
+    return {aid: float(total or 0) for aid, total in rows}
 
 
 @app.get("/api/finance/accounts")
 def list_accounts(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     rows = db.query(PaymentAccount).order_by(PaymentAccount.name).all()
-    return [_acct_dict(db, r) for r in rows]
+    live = _batch_live_balances(db, rows)
+    alloc = _allocated_per_account(db, [r.id for r in rows])
+    return [_acct_dict(r, live[r.id], alloc.get(r.id, 0)) for r in rows]
 
 @app.post("/api/finance/accounts")
 def create_account(body: PaymentAccountIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6067,7 +6118,8 @@ def create_account(body: PaymentAccountIn, db: Session = Depends(get_db), _: Use
                           opening_balance=body.opening_balance,
                           current_balance=body.opening_balance)
     db.add(acct); db.commit(); db.refresh(acct)
-    return _acct_dict(db, acct)
+    live = _batch_live_balances(db, [acct])
+    return _acct_dict(acct, live[acct.id])
 
 @app.put("/api/finance/accounts/{acct_id}")
 def update_account(acct_id: int, body: PaymentAccountIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6076,9 +6128,11 @@ def update_account(acct_id: int, body: PaymentAccountIn, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Account not found")
     acct.name = body.name; acct.type = body.type
     acct.opening_balance = body.opening_balance
-    acct.current_balance = body.opening_balance  # keep in sync
+    acct.current_balance = body.opening_balance
     db.commit()
-    return _acct_dict(db, acct)
+    live = _batch_live_balances(db, [acct])
+    alloc = _allocated_per_account(db, [acct.id])
+    return _acct_dict(acct, live[acct.id], alloc.get(acct.id, 0))
 
 @app.delete("/api/finance/accounts/{acct_id}")
 def delete_account(acct_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6091,15 +6145,21 @@ def delete_account(acct_id: int, db: Session = Depends(get_db), _: User = Depend
 @app.get("/api/finance/category-accounts")
 def category_accounts(category: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     """Return accounts linked to a category (for expense account selector)."""
-    links = db.query(CategoryAllocation).filter(
-        CategoryAllocation.category == category,
-        CategoryAllocation.account_id.isnot(None),
-    ).all()
+    links = (db.query(CategoryAllocation)
+             .filter(CategoryAllocation.category == category,
+                     CategoryAllocation.account_id.isnot(None))
+             .all())
+    if not links:
+        return []
+    accts = {a.id: a for a in
+             db.query(PaymentAccount).filter(
+                 PaymentAccount.id.in_([l.account_id for l in links])).all()}
+    live = _batch_live_balances(db, list(accts.values()))
     result = []
     for lnk in links:
-        acct = db.query(PaymentAccount).filter(PaymentAccount.id == lnk.account_id).first()
+        acct = accts.get(lnk.account_id)
         if acct:
-            d = _acct_dict(db, acct)
+            d = _acct_dict(acct, live[acct.id])
             d["allocated"] = lnk.allocated_amount
             result.append(d)
     return result
@@ -6188,11 +6248,8 @@ def list_allocations(period: Optional[str] = None, db: Session = Depends(get_db)
 
 @app.post("/api/finance/allocations")
 def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    # Unique key is now (category, period, account_id) — same category can link to many accounts
-    q = db.query(CategoryAllocation).filter(
-        CategoryAllocation.category == body.category,
-        CategoryAllocation.period == body.period,
-    )
+    # Permanent mapping: unique on (category, account_id) — period is ignored
+    q = db.query(CategoryAllocation).filter(CategoryAllocation.category == body.category)
     if body.account_id is not None:
         q = q.filter(CategoryAllocation.account_id == body.account_id)
     else:
@@ -6202,26 +6259,30 @@ def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db),
         existing.allocated_amount = body.allocated_amount
         db.commit(); db.refresh(existing)
         return {"id": existing.id, "category": existing.category,
-                "allocated_amount": existing.allocated_amount, "period": existing.period,
+                "allocated_amount": existing.allocated_amount,
                 "account_id": existing.account_id,
                 "account_name": existing.account.name if existing.account else None}
-    alloc = CategoryAllocation(**body.dict())
+    alloc = CategoryAllocation(
+        category=body.category,
+        allocated_amount=body.allocated_amount,
+        account_id=body.account_id,
+    )
     db.add(alloc); db.commit(); db.refresh(alloc)
     return {"id": alloc.id, "category": alloc.category,
-            "allocated_amount": alloc.allocated_amount, "period": alloc.period,
+            "allocated_amount": alloc.allocated_amount,
             "account_id": alloc.account_id,
             "account_name": alloc.account.name if alloc.account else None}
 
 
 @app.delete("/api/finance/allocations/by-account")
 def delete_allocation_by_account(
-    category: str, period: str, account_id: int,
+    category: str, account_id: int,
+    period: Optional[str] = None,  # kept for backwards compat, ignored
     db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
-    """Unlink a specific category-account pair."""
+    """Unlink a specific category-account pair (permanent allocation)."""
     alloc = db.query(CategoryAllocation).filter(
         CategoryAllocation.category == category,
-        CategoryAllocation.period == period,
         CategoryAllocation.account_id == account_id,
     ).first()
     if not alloc:
@@ -6242,104 +6303,98 @@ def delete_allocation(alloc_id: int, db: Session = Depends(get_db), _: User = De
 def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     from datetime import datetime as _dt2
     from sqlalchemy import extract
+    from calendar import monthrange as _mr
+    from datetime import date as _d2
     if not period:
         period = _dt2.utcnow().strftime("%Y-%m")
 
-    accounts = db.query(PaymentAccount).order_by(PaymentAccount.type, PaymentAccount.name).all()
-    live_balances = {a.id: _live_balance(db, a) for a in accounts}
-    total_bank    = sum(live_balances[a.id] for a in accounts if a.type == "bank")
-    total_cash    = sum(live_balances[a.id] for a in accounts if a.type == "cash")
-    total_balance = sum(live_balances.values())
+    # ── Accounts + live balances (4 queries total, not 4N) ───────────────────
+    accounts  = db.query(PaymentAccount).order_by(PaymentAccount.type, PaymentAccount.name).all()
+    live_bal  = _batch_live_balances(db, accounts)          # single batch
+    alloc_per = _allocated_per_account(db, [a.id for a in accounts])
 
-    from calendar import monthrange as _mr
-    from datetime import date as _d2
+    total_bank    = sum(live_bal[a.id] for a in accounts if a.type == "bank")
+    total_cash    = sum(live_bal[a.id] for a in accounts if a.type == "cash")
+    total_balance = sum(live_bal.values())
+
+    # ── Income this period (fund_receipts) ───────────────────────────────────
     _ry, _rm = int(period[:4]), int(period[5:7])
     receipts = (db.query(FundReceipt)
                 .filter(FundReceipt.received_date.between(
-                    _d2(_ry, _rm, 1), _d2(_ry, _rm, _mr(_ry, _rm)[1])
-                )).all())
+                    _d2(_ry, _rm, 1), _d2(_ry, _rm, _mr(_ry, _rm)[1])))
+                .all())
     total_income = sum(r.amount for r in receipts)
 
-    period_year, period_month = int(period[:4]), int(period[5:7])
-    task_expenses = (db.query(AdminTaskExpense)
-                     .filter(
-                         AdminTaskExpense.status == "paid",
-                         extract("year", AdminTaskExpense.expense_date) == period_year,
-                         extract("month", AdminTaskExpense.expense_date) == period_month,
-                     ).all())
-    total_expenses = sum(e.amount for e in task_expenses)
+    # ── Expenses this period (for overview net figure only) ──────────────────
+    task_exp_period = (db.query(AdminTaskExpense)
+                       .filter(AdminTaskExpense.status == "paid",
+                               extract("year",  AdminTaskExpense.expense_date) == _ry,
+                               extract("month", AdminTaskExpense.expense_date) == _rm)
+                       .all())
+    total_expenses = sum(e.amount for e in task_exp_period)
 
-    allocations = (db.query(CategoryAllocation)
-                   .filter(CategoryAllocation.period == period)
-                   .all())
-    # category -> list of account allocations
+    # ── Category allocations — permanent, no period filter ───────────────────
+    allocations = db.query(CategoryAllocation).all()
     alloc_by_cat: Dict[str, list] = {}
     for a in allocations:
         alloc_by_cat.setdefault(a.category, []).append(a)
 
-    # ALL expenses across ALL time for category budget/spend — no date filter.
-    # Tasks are long-running projects; filtering by month would miss most expenses.
-    # JOIN to AdminTask to get category in one query, exclude subtasks (parent_id IS NULL root tasks only for category).
+    # ── ALL task expenses across all time (for category budget/spent) ────────
+    # Single JOIN query — avoid N+1
     all_cat_expenses = (
         db.query(AdminTaskExpense, AdminTask)
         .join(AdminTask, AdminTask.id == AdminTaskExpense.task_id)
         .all()
     )
-
-    # Build per-category lookups
     cat_spent: Dict[str, float] = {}   # paid only
     cat_budget: Dict[str, float] = {}  # planned + paid
+    cat_budget_paid: Dict[str, float] = {}   # paid planned split for UI
     for exp, task in all_cat_expenses:
         cat = task.category if task else "Uncategorized"
         cat_budget[cat] = cat_budget.get(cat, 0) + exp.amount
         if exp.status == "paid":
             cat_spent[cat] = cat_spent.get(cat, 0) + exp.amount
 
-    # account balance lookup
-    acct_balance: Dict[int, float] = {a.id: _live_balance(db, a) for a in accounts}
-
+    # ── Build category breakdown ──────────────────────────────────────────────
     all_cats = sorted(set(list(alloc_by_cat.keys()) + list(cat_budget.keys())))
     category_breakdown = []
     for cat in all_cats:
         rows = alloc_by_cat.get(cat, [])
         account_links = [
-            {"account_id": r.account_id,
-             "account_name": r.account.name if r.account else None,
-             "allocated": r.allocated_amount,
-             "account_balance": acct_balance.get(r.account_id, 0) if r.account_id else 0,
-             "alloc_id": r.id}
+            {"account_id":      r.account_id,
+             "account_name":    r.account.name if r.account else None,
+             "allocated":       r.allocated_amount,
+             "account_balance": live_bal.get(r.account_id, 0) if r.account_id else 0,
+             "alloc_id":        r.id}
             for r in rows if r.account_id is not None
         ]
-        # amount_available = what has been explicitly allocated from each account to this category
-        # (NOT the full account balance — that would be double-counting across categories)
         amount_available = sum(l["allocated"] for l in account_links)
         budget_required  = cat_budget.get(cat, 0)
         spent            = cat_spent.get(cat, 0)
-        # Deficit = what remains unpaid vs what's available
-        # (budget_required - spent) = still to be paid; subtract available funds
-        deficit = max(0.0, round((budget_required - spent) - amount_available, 2))
+        pending          = round(budget_required - spent, 3)   # planned not yet paid
+        deficit          = round(max(0.0, pending - amount_available), 3)
         category_breakdown.append({
-            "category":        cat,
+            "category":         cat,
             "amount_available": amount_available,
-            "budget_required":  budget_required,
-            "spent":            spent,
+            "budget_required":  round(budget_required, 3),
+            "spent":            round(spent, 3),
+            "pending":          round(pending, 3),
             "deficit":          deficit,
-            # legacy fields kept for overview section
-            "allocated": sum(r.allocated_amount for r in rows),
-            "account_id":   account_links[0]["account_id"]   if account_links else None,
-            "account_name": account_links[0]["account_name"] if account_links else None,
-            "account_links": account_links,
+            "allocated":        sum(r.allocated_amount for r in rows),
+            "account_id":       account_links[0]["account_id"]   if account_links else None,
+            "account_name":     account_links[0]["account_name"] if account_links else None,
+            "account_links":    account_links,
         })
 
     return {
-        "period": period,
-        "accounts": [_acct_dict(db, a) for a in accounts],
-        "total_bank": total_bank,
-        "total_cash": total_cash,
+        "period":        period,
+        "accounts":      [_acct_dict(a, live_bal[a.id], alloc_per.get(a.id, 0)) for a in accounts],
+        "total_bank":    total_bank,
+        "total_cash":    total_cash,
         "total_balance": total_balance,
-        "total_income": total_income,
+        "total_income":  total_income,
         "total_expenses": total_expenses,
-        "net": total_income - total_expenses,
+        "net":           total_income - total_expenses,
         "category_breakdown": category_breakdown,
     }
 
@@ -6382,9 +6437,8 @@ def create_transfer(body: FundTransferIn, db: Session = Depends(get_db), _: User
     if not frm or not to:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    frm.current_balance -= body.amount
-    to.current_balance  += body.amount
-
+    # DO NOT mutate current_balance — _batch_live_balances computes balance
+    # dynamically from fund_transfers rows. Mutating current_balance would double-count.
     xfer = FundTransfer(
         from_account_id=body.from_account_id,
         to_account_id=body.to_account_id,
@@ -6395,12 +6449,14 @@ def create_transfer(body: FundTransferIn, db: Session = Depends(get_db), _: User
     db.add(xfer)
     db.commit()
     db.refresh(xfer)
+    # Return live balances after transfer
+    live = _batch_live_balances(db, [frm, to])
     return {
         "id": xfer.id,
         "amount": xfer.amount,
         "transfer_date": str(xfer.transfer_date),
-        "from_balance": frm.current_balance,
-        "to_balance": to.current_balance,
+        "from_balance": live[frm.id],
+        "to_balance": live[to.id],
     }
 
 
@@ -6409,15 +6465,8 @@ def delete_transfer(xfer_id: int, db: Session = Depends(get_db), _: User = Depen
     xfer = db.query(FundTransfer).filter(FundTransfer.id == xfer_id).first()
     if not xfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
-
-    # Reverse the balance change
-    frm = db.query(PaymentAccount).filter(PaymentAccount.id == xfer.from_account_id).first()
-    to  = db.query(PaymentAccount).filter(PaymentAccount.id == xfer.to_account_id).first()
-    if frm:
-        frm.current_balance += xfer.amount
-    if to:
-        to.current_balance  -= xfer.amount
-
+    # Just delete the row — _batch_live_balances will automatically reflect the change.
+    # DO NOT mutate current_balance here (would double the reversal).
     db.delete(xfer)
     db.commit()
     return {"deleted": True}
