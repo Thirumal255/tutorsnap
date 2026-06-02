@@ -7,6 +7,7 @@ import {
   getFinanceSources, createFinanceSource, updateFinanceSource, deleteFinanceSource,
   getFinanceReceipts, createFinanceReceipt, deleteFinanceReceipt,
   getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation,
+  getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
 } from './api/client'
 
 
@@ -1505,6 +1506,47 @@ function AccountForm({ initial, onSave, onClose }) {
   )
 }
 
+function TransferForm({ accounts, onSave, onClose }) {
+  const today = new Date().toISOString().split('T')[0]
+  const [f, setF] = useState({ from_account_id: '', to_account_id: '', amount: '', description: '', transfer_date: today })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState(null)
+  async function submit(e) {
+    e.preventDefault()
+    if (f.from_account_id === f.to_account_id) { setErr('Cannot transfer to the same account'); return }
+    setSaving(true); setErr(null)
+    try { await onSave({ ...f, from_account_id: parseInt(f.from_account_id), to_account_id: parseInt(f.to_account_id), amount: parseFloat(f.amount) }) }
+    catch(e) { setErr(e?.response?.data?.detail || 'Transfer failed') }
+    finally { setSaving(false) }
+  }
+  const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
+  return (
+    <form onSubmit={submit} className="space-y-3 p-1">
+      {err && <p className="text-[#FF3333] text-xs">{err}</p>}
+      <select required className={inp} value={f.from_account_id} onChange={e=>setF(x=>({...x,from_account_id:e.target.value}))}>
+        <option value="">From account</option>
+        {accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({fmtINR(a.current_balance)})</option>)}
+      </select>
+      <select required className={inp} value={f.to_account_id} onChange={e=>setF(x=>({...x,to_account_id:e.target.value}))}>
+        <option value="">To account</option>
+        {accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({fmtINR(a.current_balance)})</option>)}
+      </select>
+      <input required type="number" step="0.01" min="0.01" className={inp} placeholder="Amount"
+        value={f.amount} onChange={e=>setF(x=>({...x,amount:e.target.value}))}/>
+      <input className={inp} placeholder="Note (optional)" value={f.description}
+        onChange={e=>setF(x=>({...x,description:e.target.value}))}/>
+      <input required type="date" className={inp} value={f.transfer_date}
+        onChange={e=>setF(x=>({...x,transfer_date:e.target.value}))}/>
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
+        <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00A2FF] text-white text-sm font-semibold">
+          {saving ? 'Transferring…' : 'Transfer'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 function ReceiptForm({ sources, accounts, period, onSave, onClose }) {
   const today = new Date().toISOString().split('T')[0]
   const [f, setF] = useState({ source_id: '', account_id: '', amount: '', description: '', received_date: today })
@@ -1548,23 +1590,26 @@ function FinanceTab() {
   const [summary, setSummary] = useState(null)
   const [sources, setSources] = useState([])
   const [receipts, setReceipts] = useState([])
+  const [transfers, setTransfers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [section, setSection] = useState('overview')  // overview | accounts | income | breakdown
   const [showAccountForm, setShowAccountForm] = useState(false)
   const [editAccount, setEditAccount] = useState(null)
   const [showReceiptForm, setShowReceiptForm] = useState(false)
+  const [showTransferForm, setShowTransferForm] = useState(false)
   const [allocEdit, setAllocEdit] = useState({})  // category -> draft value
 
   async function load() {
     setLoading(true); setError(null)
     try {
-      const [s, sr, rc] = await Promise.all([
+      const [s, sr, rc, tr] = await Promise.all([
         getFinanceSummary(period),
         getFinanceSources(),
         getFinanceReceipts(period),
+        getFinanceTransfers(),
       ])
-      setSummary(s.data); setSources(sr.data); setReceipts(rc.data)
+      setSummary(s.data); setSources(sr.data); setReceipts(rc.data); setTransfers(tr.data)
     } catch(e) {
       setError(e?.response?.data?.detail || e?.message || 'Failed to load finance data')
     } finally { setLoading(false) }
@@ -1741,10 +1786,40 @@ function FinanceTab() {
               </div>
             </div>
           ))}
-          <button onClick={()=>{ setEditAccount(null); setShowAccountForm(true) }}
-            className="w-full py-3 rounded-2xl border border-dashed border-[#2D2B5A] text-[#8892B0] text-sm">
-            + Add Account
-          </button>
+          <div className="flex gap-2">
+            <button onClick={()=>{ setEditAccount(null); setShowAccountForm(true) }}
+              className="flex-1 py-3 rounded-2xl border border-dashed border-[#2D2B5A] text-[#8892B0] text-sm">
+              + Add Account
+            </button>
+            {accounts.length >= 2 && (
+              <button onClick={()=>setShowTransferForm(true)}
+                className="flex-1 py-3 rounded-2xl border border-dashed border-[#00A2FF]/40 text-[#00A2FF] text-sm font-semibold">
+                ⇄ Transfer
+              </button>
+            )}
+          </div>
+
+          {/* Recent transfers */}
+          {transfers.length > 0 && (
+            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+              <p className="text-[#8892B0] text-xs font-semibold px-4 pt-3 pb-2">Recent transfers</p>
+              {transfers.slice(0, 10).map(t=>(
+                <div key={t.id} className="px-4 py-2.5 border-t border-[#2D2B5A]/50 flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-xs font-semibold">
+                      {t.from_account_name} → {t.to_account_name}
+                    </p>
+                    <p className="text-[#8892B0] text-xs">{fmtDate(t.transfer_date)}{t.description && ` · ${t.description}`}</p>
+                  </div>
+                  <div className="flex items-center gap-2 ml-2">
+                    <p className="text-[#00A2FF] font-bold text-sm">{fmtINR(t.amount)}</p>
+                    <button onClick={async()=>{ await deleteFinanceTransfer(t.id); await load() }}
+                      className="text-[#FF3333] text-xs px-2 py-1 rounded-lg border border-[#FF3333]/20">Del</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {showAccountForm&&(
             <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
@@ -1755,6 +1830,20 @@ function FinanceTab() {
                 <p className="text-white font-bold text-sm mb-4">{editAccount?'Edit Account':'New Account'}</p>
                 <AccountForm initial={editAccount} onSave={saveAccount}
                   onClose={()=>{ setShowAccountForm(false); setEditAccount(null) }}/>
+              </div>
+            </div>
+          )}
+
+          {showTransferForm&&(
+            <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}}
+                onClick={()=>setShowTransferForm(false)}/>
+              <div style={{position:'relative',width:'100%',maxWidth:672,background:'#16213E',border:'1px solid #2D2B5A',
+                borderRadius:'20px 20px 0 0',padding:20,zIndex:1}}>
+                <p className="text-white font-bold text-sm mb-4">Transfer Between Accounts</p>
+                <TransferForm accounts={accounts}
+                  onSave={async(data)=>{ await createFinanceTransfer(data); setShowTransferForm(false); await load() }}
+                  onClose={()=>setShowTransferForm(false)}/>
               </div>
             </div>
           )}

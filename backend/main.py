@@ -27,7 +27,7 @@ from models import (
     WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
     AIUsageLog, AdminAuditLog, StudentGoal,
     AdminTask, AdminTaskExpense, AdminTaskDependency,
-    PaymentAccount, FundSource, FundReceipt, CategoryAllocation,
+    PaymentAccount, FundSource, FundReceipt, CategoryAllocation, FundTransfer,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -6218,3 +6218,82 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         "net": total_income - total_expenses,
         "category_breakdown": category_breakdown,
     }
+
+
+# Fund Transfers
+
+class FundTransferIn(BaseModel):
+    from_account_id: int
+    to_account_id: int
+    amount: float
+    description: Optional[str] = None
+    transfer_date: str  # YYYY-MM-DD
+
+
+@app.get("/api/finance/transfers")
+def list_transfers(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    rows = db.query(FundTransfer).order_by(FundTransfer.transfer_date.desc()).limit(100).all()
+    return [{
+        "id": r.id,
+        "from_account_id": r.from_account_id,
+        "to_account_id": r.to_account_id,
+        "from_account_name": r.from_account.name if r.from_account else None,
+        "to_account_name": r.to_account.name if r.to_account else None,
+        "amount": r.amount,
+        "description": r.description,
+        "transfer_date": str(r.transfer_date),
+    } for r in rows]
+
+
+@app.post("/api/finance/transfers")
+def create_transfer(body: FundTransferIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    from datetime import date as _date3
+    if body.from_account_id == body.to_account_id:
+        raise HTTPException(status_code=400, detail="Cannot transfer to the same account")
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    frm = db.query(PaymentAccount).filter(PaymentAccount.id == body.from_account_id).first()
+    to  = db.query(PaymentAccount).filter(PaymentAccount.id == body.to_account_id).first()
+    if not frm or not to:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    frm.current_balance -= body.amount
+    to.current_balance  += body.amount
+
+    xfer = FundTransfer(
+        from_account_id=body.from_account_id,
+        to_account_id=body.to_account_id,
+        amount=body.amount,
+        description=body.description,
+        transfer_date=_date3.fromisoformat(body.transfer_date),
+    )
+    db.add(xfer)
+    db.commit()
+    db.refresh(xfer)
+    return {
+        "id": xfer.id,
+        "amount": xfer.amount,
+        "transfer_date": str(xfer.transfer_date),
+        "from_balance": frm.current_balance,
+        "to_balance": to.current_balance,
+    }
+
+
+@app.delete("/api/finance/transfers/{xfer_id}")
+def delete_transfer(xfer_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    xfer = db.query(FundTransfer).filter(FundTransfer.id == xfer_id).first()
+    if not xfer:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    # Reverse the balance change
+    frm = db.query(PaymentAccount).filter(PaymentAccount.id == xfer.from_account_id).first()
+    to  = db.query(PaymentAccount).filter(PaymentAccount.id == xfer.to_account_id).first()
+    if frm:
+        frm.current_balance += xfer.amount
+    if to:
+        to.current_balance  -= xfer.amount
+
+    db.delete(xfer)
+    db.commit()
+    return {"deleted": True}

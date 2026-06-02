@@ -444,6 +444,21 @@ class CategoryAllocation(Base):
     __table_args__ = (UniqueConstraint("category", "period"),)
 
 
+class FundTransfer(Base):
+    __tablename__ = "fund_transfers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    from_account_id = Column(Integer, ForeignKey("payment_accounts.id", ondelete="SET NULL"), nullable=True)
+    to_account_id   = Column(Integer, ForeignKey("payment_accounts.id", ondelete="SET NULL"), nullable=True)
+    amount = Column(Float, nullable=False)
+    description = Column(String(300), nullable=True)
+    transfer_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    from_account = relationship("PaymentAccount", foreign_keys=[from_account_id])
+    to_account   = relationship("PaymentAccount", foreign_keys=[to_account_id])
+
+
 class StudentGoal(Base):
     """Weekly learning goal set by the student."""
     __tablename__ = "student_goals"
