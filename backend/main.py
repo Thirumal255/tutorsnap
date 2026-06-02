@@ -6013,6 +6013,7 @@ class PaymentAccountIn(BaseModel):
     name: str
     type: str = "bank"
     opening_balance: float = 0.0
+    reconcile_to: Optional[float] = None   # if set, back-calculates opening_balance so live == this value
 
 
 def _batch_live_balances(db, accounts: list) -> Dict[int, float]:
@@ -6127,12 +6128,48 @@ def update_account(acct_id: int, body: PaymentAccountIn, db: Session = Depends(g
     if not acct:
         raise HTTPException(status_code=404, detail="Account not found")
     acct.name = body.name; acct.type = body.type
-    acct.opening_balance = body.opening_balance
-    acct.current_balance = body.opening_balance
+
+    if body.reconcile_to is not None:
+        # Back-calculate opening_balance so live_balance == reconcile_to
+        # live = opening + receipts + xfer_in - xfer_out - paid_expenses
+        # => opening = reconcile_to - (receipts + xfer_in - xfer_out - paid_expenses)
+        tmp_live = _batch_live_balances(db, [acct])
+        current_ob = (acct.opening_balance or acct.current_balance or 0)
+        transactions_effect = tmp_live[acct.id] - current_ob   # receipts+xfer_in-xfer_out-paid
+        new_ob = body.reconcile_to - transactions_effect
+        acct.opening_balance = round(new_ob, 3)
+        acct.current_balance = round(new_ob, 3)
+    else:
+        acct.opening_balance = body.opening_balance
+        acct.current_balance = body.opening_balance
+
     db.commit()
     live = _batch_live_balances(db, [acct])
     alloc = _allocated_per_account(db, [acct.id])
     return _acct_dict(acct, live[acct.id], alloc.get(acct.id, 0))
+
+@app.get("/api/finance/accounts/{acct_id}/breakdown")
+def account_breakdown(acct_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Return line-by-line balance breakdown for an account."""
+    acct = db.query(PaymentAccount).filter(PaymentAccount.id == acct_id).first()
+    if not acct:
+        raise HTTPException(status_code=404, detail="Account not found")
+    ob = (acct.opening_balance or 0) if (acct.opening_balance or 0) != 0 else (acct.current_balance or 0)
+    receipts   = db.query(func.sum(FundReceipt.amount)).filter(FundReceipt.account_id == acct_id).scalar() or 0
+    xfer_in    = db.query(func.sum(FundTransfer.amount)).filter(FundTransfer.to_account_id == acct_id).scalar() or 0
+    xfer_out   = db.query(func.sum(FundTransfer.amount)).filter(FundTransfer.from_account_id == acct_id).scalar() or 0
+    paid_exp   = db.query(func.sum(AdminTaskExpense.amount)).filter(
+                    AdminTaskExpense.account_id == acct_id,
+                    AdminTaskExpense.status == "paid").scalar() or 0
+    live = round(ob + receipts + xfer_in - xfer_out - paid_exp, 3)
+    return {
+        "opening_balance": round(ob, 3),
+        "receipts_in":     round(receipts, 3),
+        "transfers_in":    round(xfer_in, 3),
+        "transfers_out":   round(xfer_out, 3),
+        "paid_expenses":   round(paid_exp, 3),
+        "live_balance":    live,
+    }
 
 @app.delete("/api/finance/accounts/{acct_id}")
 def delete_account(acct_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):

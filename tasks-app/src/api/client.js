@@ -60,3 +60,4 @@ export const getFinanceTransfers       = ()           => api.get('/finance/trans
 export const createFinanceTransfer     = (data)       => api.post('/finance/transfers', data)
 export const deleteFinanceTransfer     = (id)         => api.delete(`/finance/transfers/${id}`)
 export const getCategoryAccounts       = (category)   => api.get('/finance/category-accounts', { params: { category } })
+export const getAccountBreakdown       = (id)         => api.get(`/finance/accounts/${id}/breakdown`)

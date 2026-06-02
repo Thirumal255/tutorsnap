@@ -8,7 +8,7 @@ import {
   getFinanceReceipts, createFinanceReceipt, deleteFinanceReceipt,
   getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation, unlinkFinanceAllocation,
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
-  getCategoryAccounts,
+  getCategoryAccounts, getAccountBreakdown,
 } from './api/client'
 
 
@@ -1515,12 +1515,26 @@ function AccountForm({ initial, onSave, onClose }) {
     type: initial?.type||'bank',
     opening_balance: initial?.opening_balance ?? initial?.current_balance ?? 0,
   })
+  const [reconcileVal, setReconcileVal] = useState('')
+  const [useReconcile, setUseReconcile] = useState(false)
+  const [breakdown, setBreakdown] = useState(null)
   const [saving, setSaving] = useState(false)
+
+  useEffect(()=>{
+    if (initial?.id) {
+      getAccountBreakdown(initial.id).then(r=>setBreakdown(r.data)).catch(()=>{})
+    }
+  }, [initial?.id])
+
   async function submit(e) {
     e.preventDefault(); setSaving(true)
-    try { await onSave({ ...f, opening_balance: parseFloat(f.opening_balance)||0 }) }
-    finally { setSaving(false) }
+    try {
+      const payload = { name: f.name, type: f.type, opening_balance: parseFloat(f.opening_balance)||0 }
+      if (useReconcile && reconcileVal !== '') payload.reconcile_to = parseFloat(reconcileVal)
+      await onSave(payload)
+    } finally { setSaving(false) }
   }
+
   const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
   return (
     <form onSubmit={submit} className="space-y-3 p-1">
@@ -1530,11 +1544,58 @@ function AccountForm({ initial, onSave, onClose }) {
         <option value="cash">Cash</option>
         <option value="credit">Credit</option>
       </select>
-      <div>
-        <label className="text-[#8892B0] text-xs mb-1 block">Opening Balance (balance on account setup date)</label>
-        <input required type="number" step="0.001" className={inp} placeholder="Opening balance"
-          value={f.opening_balance} onChange={e=>setF(x=>({...x,opening_balance:e.target.value}))}/>
-      </div>
+
+      {/* Balance breakdown (edit mode only) */}
+      {breakdown&&(
+        <div className="bg-[#0F0F23] rounded-xl p-3 space-y-1 text-xs">
+          <p className="text-[#8892B0] font-semibold mb-1.5">How balance is calculated:</p>
+          {[
+            ['Opening balance', breakdown.opening_balance, 'text-white'],
+            ['+ Receipts in',   breakdown.receipts_in,    'text-[#00CC88]'],
+            ['+ Transfers in',  breakdown.transfers_in,   'text-[#00A2FF]'],
+            ['− Transfers out', breakdown.transfers_out,  'text-[#FFB347]'],
+            ['− Paid expenses', breakdown.paid_expenses,  'text-[#FF3333]'],
+          ].map(([label, val, color])=>(
+            <div key={label} className="flex justify-between">
+              <span className="text-[#8892B0]">{label}</span>
+              <span className={color}>{fmtINR(val)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between border-t border-[#2D2B5A] pt-1 mt-1">
+            <span className="text-white font-semibold">= Live balance</span>
+            <span className="text-[#00A2FF] font-bold">{fmtINR(breakdown.live_balance)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Reconcile toggle */}
+      {initial?.id&&(
+        <div className="space-y-2">
+          <button type="button" onClick={()=>setUseReconcile(v=>!v)}
+            className={`w-full py-2 rounded-xl text-xs font-semibold border transition-all ${
+              useReconcile?'bg-[#FFB347]/10 border-[#FFB347] text-[#FFB347]':'border-[#2D2B5A] text-[#8892B0]'}`}>
+            {useReconcile ? '✓ Set current real balance (reconcile)' : 'My balance is wrong — set actual balance'}
+          </button>
+          {useReconcile&&(
+            <div>
+              <label className="text-[#8892B0] text-xs mb-1 block">
+                Enter actual balance right now — opening balance will be back-calculated automatically
+              </label>
+              <input type="number" step="0.001" className={inp} placeholder="e.g. 74000"
+                value={reconcileVal} onChange={e=>setReconcileVal(e.target.value)} autoFocus/>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!initial?.id&&(
+        <div>
+          <label className="text-[#8892B0] text-xs mb-1 block">Opening Balance (balance when you start tracking this account)</label>
+          <input required type="number" step="0.001" className={inp} placeholder="Opening balance"
+            value={f.opening_balance} onChange={e=>setF(x=>({...x,opening_balance:e.target.value}))}/>
+        </div>
+      )}
+
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
         <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00A2FF] text-white text-sm font-semibold">
