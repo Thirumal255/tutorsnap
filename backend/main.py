@@ -6226,28 +6226,57 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
     for a in allocations:
         alloc_by_cat.setdefault(a.category, []).append(a)
 
-    cat_spend: Dict[str, float] = {}
-    for exp in task_expenses:
-        task = db.query(AdminTask).filter(AdminTask.id == exp.task_id).first()
-        cat = task.category if task else "Uncategorized"
-        cat_spend[cat] = cat_spend.get(cat, 0) + exp.amount
+    # All expenses for the period (paid + planned) for budget_required
+    all_task_expenses = (db.query(AdminTaskExpense)
+                         .filter(
+                             extract("year",  AdminTaskExpense.expense_date) == period_year,
+                             extract("month", AdminTaskExpense.expense_date) == period_month,
+                         ).all())
 
-    all_cats = sorted(set(list(alloc_by_cat.keys()) + list(cat_spend.keys())))
+    # Build per-category lookups
+    cat_spent: Dict[str, float] = {}        # paid only
+    cat_budget: Dict[str, float] = {}       # planned + paid
+    # cache tasks to avoid N+1
+    task_cache: Dict[int, AdminTask] = {}
+    for exp in all_task_expenses:
+        if exp.task_id not in task_cache:
+            task_cache[exp.task_id] = db.query(AdminTask).filter(AdminTask.id == exp.task_id).first()
+        task = task_cache[exp.task_id]
+        cat = task.category if task else "Uncategorized"
+        cat_budget[cat] = cat_budget.get(cat, 0) + exp.amount
+        if exp.status == "paid":
+            cat_spent[cat] = cat_spent.get(cat, 0) + exp.amount
+
+    # account balance lookup
+    acct_balance: Dict[int, float] = {a.id: a.current_balance for a in accounts}
+
+    all_cats = sorted(set(list(alloc_by_cat.keys()) + list(cat_budget.keys())))
     category_breakdown = []
     for cat in all_cats:
         rows = alloc_by_cat.get(cat, [])
-        total_alloc = sum(r.allocated_amount for r in rows)
         account_links = [
-            {"account_id": r.account_id, "account_name": r.account.name if r.account else None,
-             "allocated": r.allocated_amount, "alloc_id": r.id}
+            {"account_id": r.account_id,
+             "account_name": r.account.name if r.account else None,
+             "allocated": r.allocated_amount,
+             "balance": acct_balance.get(r.account_id, 0) if r.account_id else 0,
+             "alloc_id": r.id}
             for r in rows if r.account_id is not None
         ]
+        amount_available = sum(l["balance"] for l in account_links)
+        budget_required  = cat_budget.get(cat, 0)
+        spent            = cat_spent.get(cat, 0)
+        # Deficit = what remains unpaid vs what's available
+        # (budget_required - spent) = still to be paid; subtract available funds
+        deficit = max(0.0, round((budget_required - spent) - amount_available, 2))
         category_breakdown.append({
-            "category": cat,
-            "allocated": total_alloc,
-            "spent": cat_spend.get(cat, 0),
-            # keep single account_id/name for backwards compat (first linked account)
-            "account_id": account_links[0]["account_id"] if account_links else None,
+            "category":        cat,
+            "amount_available": amount_available,
+            "budget_required":  budget_required,
+            "spent":            spent,
+            "deficit":          deficit,
+            # legacy fields kept for overview section
+            "allocated": sum(r.allocated_amount for r in rows),
+            "account_id":   account_links[0]["account_id"]   if account_links else None,
             "account_name": account_links[0]["account_name"] if account_links else None,
             "account_links": account_links,
         })

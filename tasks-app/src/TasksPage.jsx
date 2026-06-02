@@ -2008,51 +2008,87 @@ function FinanceTab() {
             <div className="text-center py-8 text-[#8892B0] text-sm">No expenses recorded for this period</div>
           )}
           {category_breakdown.map(c=>{
-            const links = c.account_links||[]
-            const totalAlloc = links.reduce((s,l)=>s+(l.allocated||0),0)
-            const spent = c.spent||0
-            const pct = totalAlloc>0?Math.min(spent/totalAlloc*100,100):0
-            const over = totalAlloc>0&&spent>totalAlloc
-            const barColor = over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00CC88]'
+            const links        = c.account_links||[]
+            const available    = c.amount_available||0
+            const budgetReq    = c.budget_required||0
+            const spent        = c.spent||0
+            const deficit      = c.deficit||0
+            const hasDeficit   = deficit > 0
+            const spentPct     = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
+            const availPct     = budgetReq>0 ? Math.min(available/budgetReq*100,100) : 0
             return (
-              <div key={c.category} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-2.5">
-                {/* Row 1: name + spend */}
+              <div key={c.category}
+                className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${hasDeficit?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
+
+                {/* Category name + deficit badge */}
                 <div className="flex items-center justify-between">
                   <p className="text-white font-semibold text-sm">{c.category}</p>
-                  <p className={`font-bold text-sm ${over?'text-[#FF3333]':spent>0?'text-[#FFB347]':'text-[#8892B0]'}`}>
-                    {fmtINR(spent)}
-                  </p>
+                  {hasDeficit
+                    ? <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#FF3333]/15 text-[#FF3333]">
+                        ⚠ Deficit {fmtINR(deficit)}
+                      </span>
+                    : budgetReq>0
+                      ? <span className="text-xs font-semibold text-[#00CC88]">✓ Funded</span>
+                      : null
+                  }
                 </div>
 
-                {/* Row 2: funding account chips */}
+                {/* 4 key numbers */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
+                    <p className="text-[#8892B0] text-xs">Available</p>
+                    <p className="text-[#00A2FF] font-bold text-sm mt-0.5">{fmtINR(available)}</p>
+                  </div>
+                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
+                    <p className="text-[#8892B0] text-xs">Budget Required</p>
+                    <p className="text-white font-bold text-sm mt-0.5">{fmtINR(budgetReq)}</p>
+                  </div>
+                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
+                    <p className="text-[#8892B0] text-xs">Spent (paid)</p>
+                    <p className="text-[#FFB347] font-bold text-sm mt-0.5">{fmtINR(spent)}</p>
+                  </div>
+                  <div className={`rounded-xl px-3 py-2 ${hasDeficit?'bg-[#FF3333]/10':'bg-[#0F0F23]'}`}>
+                    <p className="text-[#8892B0] text-xs">Deficit</p>
+                    <p className={`font-bold text-sm mt-0.5 ${hasDeficit?'text-[#FF3333]':'text-[#00CC88]'}`}>
+                      {hasDeficit ? fmtINR(deficit) : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Spend progress bar */}
+                {budgetReq>0&&(
+                  <div className="space-y-1">
+                    <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden relative">
+                      {/* available band */}
+                      <div className="absolute inset-y-0 left-0 bg-[#00A2FF]/20 rounded-full"
+                        style={{width:`${availPct}%`}}/>
+                      {/* spent fill */}
+                      <div className={`absolute inset-y-0 left-0 rounded-full ${spentPct>=100?'bg-[#FF3333]':spentPct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`}
+                        style={{width:`${spentPct}%`}}/>
+                    </div>
+                    <div className="flex justify-between text-xs text-[#8892B0]">
+                      <span>{spentPct.toFixed(0)}% of budget spent</span>
+                      <span>{fmtINR(budgetReq - spent)} pending</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Funding account chips */}
                 {links.length>0?(
                   <div className="flex flex-wrap gap-1.5">
                     {links.map(l=>{
                       const acct = accounts.find(a=>a.id===l.account_id)
                       return (
                         <span key={l.account_id}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#00A2FF]/10 border border-[#00A2FF]/20 text-[#00A2FF] text-xs">
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#00A2FF]/10 border border-[#00A2FF]/20 text-[#00A2FF] text-xs">
                           {ACCOUNT_ICONS[acct?.type]||'🏦'} {l.account_name}
-                          {l.allocated>0&&<span className="text-[#8892B0]">· {fmtINR(l.allocated)}</span>}
+                          <span className="text-white font-semibold">{fmtINR(l.balance)}</span>
                         </span>
                       )
                     })}
                   </div>
                 ):(
                   <p className="text-[#8892B0] text-xs italic">No account linked — assign from Accounts tab</p>
-                )}
-
-                {/* Row 3: spend bar vs total allocation */}
-                {totalAlloc>0&&(
-                  <div className="space-y-1">
-                    <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${barColor}`} style={{width:`${pct}%`}}/>
-                    </div>
-                    <div className="flex justify-between text-xs text-[#8892B0]">
-                      <span>{fmtINR(spent)} spent</span>
-                      <span>{fmtINR(totalAlloc - spent)} remaining</span>
-                    </div>
-                  </div>
                 )}
               </div>
             )
