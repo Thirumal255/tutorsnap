@@ -122,9 +122,9 @@ function StatusPicker({ task, onSelect, onClose }) {
 
 function fmtINR(v) {
   if (!v && v !== 0) return '₹0'
-  if (v >= 1_00_00_000) return `₹${parseFloat((v/1_00_00_000).toFixed(2))}Cr`
-  if (v >= 1_00_000)    return `₹${parseFloat((v/1_00_000).toFixed(2))}L`
-  return `₹${v.toLocaleString('en-IN')}`
+  if (v >= 1_00_00_000) return `₹${parseFloat((v/1_00_00_000).toFixed(3))}Cr`
+  if (v >= 1_00_000)    return `₹${parseFloat((v/1_00_000).toFixed(3))}L`
+  return `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 3 })}`
 }
 function fmtDate(d) {
   if (!d) return '—'
