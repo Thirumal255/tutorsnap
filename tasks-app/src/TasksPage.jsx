@@ -1549,6 +1549,7 @@ function FinanceTab() {
   const [sources, setSources] = useState([])
   const [receipts, setReceipts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [section, setSection] = useState('overview')  // overview | accounts | income | breakdown
   const [showAccountForm, setShowAccountForm] = useState(false)
   const [editAccount, setEditAccount] = useState(null)
@@ -1556,7 +1557,7 @@ function FinanceTab() {
   const [allocEdit, setAllocEdit] = useState({})  // category -> draft value
 
   async function load() {
-    setLoading(true)
+    setLoading(true); setError(null)
     try {
       const [s, sr, rc] = await Promise.all([
         getFinanceSummary(period),
@@ -1564,6 +1565,8 @@ function FinanceTab() {
         getFinanceReceipts(period),
       ])
       setSummary(s.data); setSources(sr.data); setReceipts(rc.data)
+    } catch(e) {
+      setError(e?.response?.data?.detail || e?.message || 'Failed to load finance data')
     } finally { setLoading(false) }
   }
 
@@ -1593,9 +1596,15 @@ function FinanceTab() {
     setAllocEdit(x=>({...x,[cat]:undefined})); await load()
   }
 
-  if (loading || !summary) return (
+  if (loading) return (
     <div className="flex items-center justify-center py-20">
       <div className="w-6 h-6 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin"/>
+    </div>
+  )
+  if (error) return (
+    <div className="p-6 text-center space-y-3">
+      <p className="text-[#FF3333] text-sm">{error}</p>
+      <button onClick={load} className="text-[#00A2FF] text-sm underline">Retry</button>
     </div>
   )
 
