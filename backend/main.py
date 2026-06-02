@@ -6092,7 +6092,12 @@ def delete_source(src_id: int, db: Session = Depends(get_db), _: User = Depends(
 def list_receipts(period: Optional[str] = None, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     q = db.query(FundReceipt).order_by(FundReceipt.received_date.desc())
     if period:
-        q = q.filter(FundReceipt.received_date.like(f"{period}%"))
+        from calendar import monthrange as _mr
+        from datetime import date as _d
+        _y, _m = int(period[:4]), int(period[5:7])
+        q = q.filter(FundReceipt.received_date.between(
+            _d(_y, _m, 1), _d(_y, _m, _mr(_y, _m)[1])
+        ))
     rows = q.all()
     return [{"id": r.id, "source_id": r.source_id, "account_id": r.account_id,
              "amount": r.amount, "description": r.description,
@@ -6166,9 +6171,13 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
     total_cash = sum(a.current_balance for a in accounts if a.type == "cash")
     total_balance = sum(a.current_balance for a in accounts)
 
+    from calendar import monthrange as _mr
+    from datetime import date as _d2
+    _ry, _rm = int(period[:4]), int(period[5:7])
     receipts = (db.query(FundReceipt)
-                .filter(FundReceipt.received_date.like(f"{period}%"))
-                .all())
+                .filter(FundReceipt.received_date.between(
+                    _d2(_ry, _rm, 1), _d2(_ry, _rm, _mr(_ry, _rm)[1])
+                )).all())
     total_income = sum(r.amount for r in receipts)
 
     period_year, period_month = int(period[:4]), int(period[5:7])
