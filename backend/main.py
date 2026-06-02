@@ -6255,11 +6255,13 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
             {"account_id": r.account_id,
              "account_name": r.account.name if r.account else None,
              "allocated": r.allocated_amount,
-             "balance": acct_balance.get(r.account_id, 0) if r.account_id else 0,
+             "account_balance": acct_balance.get(r.account_id, 0) if r.account_id else 0,
              "alloc_id": r.id}
             for r in rows if r.account_id is not None
         ]
-        amount_available = sum(l["balance"] for l in account_links)
+        # amount_available = what has been explicitly allocated from each account to this category
+        # (NOT the full account balance — that would be double-counting across categories)
+        amount_available = sum(l["allocated"] for l in account_links)
         budget_required  = cat_budget.get(cat, 0)
         spent            = cat_spent.get(cat, 0)
         # Deficit = what remains unpaid vs what's available

@@ -1600,6 +1600,7 @@ function FinanceTab() {
   const [showReceiptForm, setShowReceiptForm] = useState(false)
   const [showTransferForm, setShowTransferForm] = useState(false)
   const [expandedAccount, setExpandedAccount] = useState(null)  // account id being managed
+  const [assignDraft, setAssignDraft] = useState({})  // {accountId_category: amount}
 
   async function load() {
     setLoading(true); setError(null)
@@ -1776,7 +1777,7 @@ function FinanceTab() {
             )
             const totalAllocated = linked.reduce((s,c)=>{
               const link = (c.account_links||[]).find(l=>l.account_id===a.id)
-              return s + (link?.allocated||0)
+              return s + (link?.allocated || 0)
             }, 0)
             const totalSpent     = linked.reduce((s,c)=>s+(c.spent||0),0)
             const free = a.current_balance - totalAllocated
@@ -1841,20 +1842,45 @@ function FinanceTab() {
                       )
                     })}
 
-                    {/* Assign a category */}
+                    {/* Assign a category with amount */}
                     {unlinked.length>0&&(
-                      <div className="px-4 py-3 border-t border-[#2D2B5A]/40">
-                        <p className="text-[#8892B0] text-xs mb-2">Assign category to this account:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {unlinked.map(cat=>(
-                            <button key={cat} onClick={async()=>{
-                              await upsertFinanceAllocation({category:cat, allocated_amount:0, period, account_id:a.id})
-                              await load()
-                            }} className="text-xs px-3 py-1.5 rounded-xl bg-[#0F0F23] border border-[#2D2B5A] text-[#8892B0] hover:border-[#00A2FF] hover:text-[#00A2FF] transition-colors">
-                              + {cat}
-                            </button>
-                          ))}
-                        </div>
+                      <div className="px-4 py-3 border-t border-[#2D2B5A]/40 space-y-2">
+                        <p className="text-[#8892B0] text-xs">Assign category + allocate amount:</p>
+                        {unlinked.map(cat=>{
+                          const draftKey = `${a.id}_${cat}`
+                          const draft = assignDraft[draftKey]
+                          const isEditing = draft !== undefined
+                          return (
+                            <div key={cat}>
+                              {isEditing ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white text-xs font-semibold flex-1">{cat}</span>
+                                  <input
+                                    type="number" min="0" step="0.001"
+                                    placeholder="Amount (₹)"
+                                    value={draft}
+                                    onChange={e=>setAssignDraft(x=>({...x,[draftKey]:e.target.value}))}
+                                    className="w-32 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-2 py-1 text-white text-xs"
+                                    autoFocus
+                                  />
+                                  <button onClick={async()=>{
+                                    const amt = parseFloat(draft)||0
+                                    await upsertFinanceAllocation({category:cat, allocated_amount:amt, period, account_id:a.id})
+                                    setAssignDraft(x=>({...x,[draftKey]:undefined}))
+                                    await load()
+                                  }} className="px-2 py-1 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
+                                  <button onClick={()=>setAssignDraft(x=>({...x,[draftKey]:undefined}))}
+                                    className="text-[#8892B0] text-xs">✕</button>
+                                </div>
+                              ) : (
+                                <button onClick={()=>setAssignDraft(x=>({...x,[draftKey]:''}))}
+                                  className="text-xs px-3 py-1.5 rounded-xl bg-[#0F0F23] border border-[#2D2B5A] text-[#8892B0] hover:border-[#00A2FF] hover:text-[#00A2FF] transition-colors">
+                                  + {cat}
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
 
@@ -2065,7 +2091,7 @@ function FinanceTab() {
                         <span key={l.account_id}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#00A2FF]/10 border border-[#00A2FF]/20 text-[#00A2FF] text-xs">
                           {ACCOUNT_ICONS[acct?.type]||'🏦'} {l.account_name}
-                          <span className="text-white font-semibold">{fmtINR(l.balance)}</span>
+                          {l.allocated>0 && <span className="text-white font-semibold">· {fmtINR(l.allocated)} allocated</span>}
                         </span>
                       )
                     })}
