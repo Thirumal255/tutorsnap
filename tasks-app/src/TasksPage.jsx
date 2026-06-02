@@ -1600,7 +1600,6 @@ function FinanceTab() {
   const [showReceiptForm, setShowReceiptForm] = useState(false)
   const [showTransferForm, setShowTransferForm] = useState(false)
   const [expandedAccount, setExpandedAccount] = useState(null)  // account id being managed
-  const [allocEdit, setAllocEdit] = useState({})  // category -> draft value
 
   async function load() {
     setLoading(true); setError(null)
@@ -1638,11 +1637,6 @@ function FinanceTab() {
 
   async function removeReceipt(id) {
     await deleteFinanceReceipt(id); await load()
-  }
-
-  async function saveAlloc(cat, val, acctId) {
-    await upsertFinanceAllocation({ category: cat, allocated_amount: parseFloat(val)||0, period, account_id: acctId||null })
-    setAllocEdit(x=>({...x,[cat]:undefined})); await load()
   }
 
   if (loading) return (
@@ -2009,71 +2003,56 @@ function FinanceTab() {
       {/* BY CATEGORY */}
       {section==='breakdown'&&(
         <div className="space-y-3">
-          <p className="text-[#8892B0] text-xs font-semibold">Allocation vs spend — {periodLabel}</p>
+          <p className="text-[#8892B0] text-xs font-semibold">Spend by category — {periodLabel}</p>
           {category_breakdown.length===0&&(
-            <div className="text-center py-8 text-[#8892B0] text-sm">No data for this period</div>
+            <div className="text-center py-8 text-[#8892B0] text-sm">No expenses recorded for this period</div>
           )}
           {category_breakdown.map(c=>{
-            const pct = c.allocated>0?Math.min(c.spent/c.allocated*100,100):0
-            const over = c.allocated>0&&c.spent>c.allocated
-            const color = over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00A2FF]'
-            const editing = allocEdit[c.category] !== undefined
-            const editVal = allocEdit[c.category] || {}
+            const links = c.account_links||[]
+            const totalAlloc = links.reduce((s,l)=>s+(l.allocated||0),0)
+            const spent = c.spent||0
+            const pct = totalAlloc>0?Math.min(spent/totalAlloc*100,100):0
+            const over = totalAlloc>0&&spent>totalAlloc
+            const barColor = over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00CC88]'
             return (
-              <div key={c.category} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-2">
+              <div key={c.category} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-2.5">
+                {/* Row 1: name + spend */}
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white font-semibold text-sm">{c.category}</p>
-                    {c.account_name && !editing && (
-                      <p className="text-[#00A2FF] text-xs mt-0.5">
-                        {ACCOUNT_ICONS[accounts.find(a=>a.id===c.account_id)?.type]||'🏦'} Funded by {c.account_name}
-                      </p>
-                    )}
-                  </div>
-                  <p className={`text-sm font-bold ${over?'text-[#FF3333]':pct>80?'text-[#FFB347]':'text-[#00CC88]'}`}>
-                    {fmtINR(c.spent)}
+                  <p className="text-white font-semibold text-sm">{c.category}</p>
+                  <p className={`font-bold text-sm ${over?'text-[#FF3333]':spent>0?'text-[#FFB347]':'text-[#8892B0]'}`}>
+                    {fmtINR(spent)}
                   </p>
                 </div>
-                {c.allocated>0&&(
-                  <>
-                    <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${color}`} style={{width:`${pct}%`}}/>
-                    </div>
-                    <div className="flex justify-between text-xs text-[#8892B0]">
-                      <span>{pct.toFixed(0)}% used</span>
-                      <span>Budget: {fmtINR(c.allocated)}{c.account_name&&<span className="text-[#00A2FF]"> · {c.account_name}</span>}</span>
-                    </div>
-                  </>
-                )}
-                {editing?(
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <input type="number" className="flex-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-1.5 text-white text-sm"
-                        placeholder="Budget amount"
-                        value={editVal.amount??''} onChange={e=>setAllocEdit(x=>({...x,[c.category]:{...editVal,amount:e.target.value}}))}/>
-                    </div>
-                    <select className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-1.5 text-white text-sm"
-                      value={editVal.account_id??c.account_id??''}
-                      onChange={e=>setAllocEdit(x=>({...x,[c.category]:{...editVal,account_id:e.target.value||null}}))}>
-                      <option value="">No account linked</option>
-                      {accounts.map(a=>(
-                        <option key={a.id} value={a.id}>
-                          {ACCOUNT_ICONS[a.type]||'🏦'} {a.name} ({fmtINR(a.current_balance)})
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex gap-2">
-                      <button onClick={()=>saveAlloc(c.category, editVal.amount??c.allocated, editVal.account_id!==undefined?editVal.account_id:c.account_id)}
-                        className="flex-1 py-1.5 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
-                      <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:undefined}))}
-                        className="flex-1 py-1.5 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs">Cancel</button>
-                    </div>
+
+                {/* Row 2: funding account chips */}
+                {links.length>0?(
+                  <div className="flex flex-wrap gap-1.5">
+                    {links.map(l=>{
+                      const acct = accounts.find(a=>a.id===l.account_id)
+                      return (
+                        <span key={l.account_id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#00A2FF]/10 border border-[#00A2FF]/20 text-[#00A2FF] text-xs">
+                          {ACCOUNT_ICONS[acct?.type]||'🏦'} {l.account_name}
+                          {l.allocated>0&&<span className="text-[#8892B0]">· {fmtINR(l.allocated)}</span>}
+                        </span>
+                      )
+                    })}
                   </div>
                 ):(
-                  <button onClick={()=>setAllocEdit(x=>({...x,[c.category]:{amount:c.allocated||'',account_id:c.account_id??''}}))}
-                    className="text-xs text-[#00A2FF] underline-offset-2 underline">
-                    {c.allocated>0?'Edit budget / account':'Set budget & fund account'}
-                  </button>
+                  <p className="text-[#8892B0] text-xs italic">No account linked — assign from Accounts tab</p>
+                )}
+
+                {/* Row 3: spend bar vs total allocation */}
+                {totalAlloc>0&&(
+                  <div className="space-y-1">
+                    <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${barColor}`} style={{width:`${pct}%`}}/>
+                    </div>
+                    <div className="flex justify-between text-xs text-[#8892B0]">
+                      <span>{fmtINR(spent)} spent</span>
+                      <span>{fmtINR(totalAlloc - spent)} remaining</span>
+                    </div>
+                  </div>
                 )}
               </div>
             )
