@@ -6,7 +6,7 @@ import {
   getFinanceSummary, getFinanceAccounts, createFinanceAccount, updateFinanceAccount, deleteFinanceAccount,
   getFinanceSources, createFinanceSource, updateFinanceSource, deleteFinanceSource,
   getFinanceReceipts, createFinanceReceipt, deleteFinanceReceipt,
-  getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation,
+  getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation, unlinkFinanceAllocation,
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
 } from './api/client'
 
@@ -1776,14 +1776,21 @@ function FinanceTab() {
       {section==='accounts'&&(
         <div className="space-y-3">
           {accounts.map(a=>{
-            // categories currently linked to this account for this period
-            const linked = category_breakdown.filter(c=>c.account_id===a.id)
-            const totalAllocated = linked.reduce((s,c)=>s+(c.allocated||0),0)
+            // categories that have THIS account in their account_links
+            const linked = category_breakdown.filter(c=>
+              (c.account_links||[]).some(l=>l.account_id===a.id)
+            )
+            const totalAllocated = linked.reduce((s,c)=>{
+              const link = (c.account_links||[]).find(l=>l.account_id===a.id)
+              return s + (link?.allocated||0)
+            }, 0)
             const totalSpent     = linked.reduce((s,c)=>s+(c.spent||0),0)
             const free = a.current_balance - totalAllocated
             const isExpanded = expandedAccount===a.id
-            // categories not yet linked to ANY account (available to assign)
-            const unlinked = taskCats.filter(cat=>!category_breakdown.some(c=>c.category===cat&&c.account_id))
+            // categories NOT yet linked to THIS account (can still be linked to others)
+            const unlinked = taskCats.filter(cat=>
+              !linked.some(c=>c.category===cat)
+            )
 
             return (
               <div key={a.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
@@ -1829,23 +1836,25 @@ function FinanceTab() {
 
                     {/* Linked categories */}
                     {linked.map(c=>{
-                      const pct = c.allocated>0?Math.min(c.spent/c.allocated*100,100):0
-                      const over = c.spent>c.allocated&&c.allocated>0
+                      const link = (c.account_links||[]).find(l=>l.account_id===a.id)
+                      const allocAmt = link?.allocated||0
+                      const pct = allocAmt>0?Math.min(c.spent/allocAmt*100,100):0
+                      const over = c.spent>allocAmt&&allocAmt>0
                       return (
                         <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40">
                           <div className="flex items-center justify-between mb-1">
                             <p className="text-white text-xs font-semibold">{c.category}</p>
                             <div className="flex items-center gap-2">
                               <p className="text-[#FFB347] text-xs">{fmtINR(c.spent)}
-                                {c.allocated>0&&<span className="text-[#8892B0]"> / {fmtINR(c.allocated)}</span>}
+                                {allocAmt>0&&<span className="text-[#8892B0]"> / {fmtINR(allocAmt)}</span>}
                               </p>
                               <button onClick={async()=>{
-                                await upsertFinanceAllocation({category:c.category, allocated_amount:c.allocated||0, period, account_id:null})
+                                await unlinkFinanceAllocation(c.category, period, a.id)
                                 await load()
                               }} className="text-[#8892B0] text-xs px-1.5 py-0.5 rounded border border-[#2D2B5A]" title="Unlink">✕</button>
                             </div>
                           </div>
-                          {c.allocated>0&&(
+                          {allocAmt>0&&(
                             <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
                               <div className={`h-full rounded-full ${over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`}
                                 style={{width:`${pct}%`}}/>

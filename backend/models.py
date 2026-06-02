@@ -442,7 +442,7 @@ class CategoryAllocation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    __table_args__ = (UniqueConstraint("category", "period"),)
+    __table_args__ = (UniqueConstraint("category", "period", "account_id"),)
 
     account = relationship("PaymentAccount", foreign_keys=[account_id])
 

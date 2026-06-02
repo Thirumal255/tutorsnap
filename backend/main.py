@@ -6138,13 +6138,18 @@ def list_allocations(period: Optional[str] = None, db: Session = Depends(get_db)
 
 @app.post("/api/finance/allocations")
 def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    existing = db.query(CategoryAllocation).filter(
+    # Unique key is now (category, period, account_id) — same category can link to many accounts
+    q = db.query(CategoryAllocation).filter(
         CategoryAllocation.category == body.category,
         CategoryAllocation.period == body.period,
-    ).first()
+    )
+    if body.account_id is not None:
+        q = q.filter(CategoryAllocation.account_id == body.account_id)
+    else:
+        q = q.filter(CategoryAllocation.account_id.is_(None))
+    existing = q.first()
     if existing:
         existing.allocated_amount = body.allocated_amount
-        existing.account_id = body.account_id
         db.commit(); db.refresh(existing)
         return {"id": existing.id, "category": existing.category,
                 "allocated_amount": existing.allocated_amount, "period": existing.period,
@@ -6156,6 +6161,23 @@ def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db),
             "allocated_amount": alloc.allocated_amount, "period": alloc.period,
             "account_id": alloc.account_id,
             "account_name": alloc.account.name if alloc.account else None}
+
+
+@app.delete("/api/finance/allocations/by-account")
+def delete_allocation_by_account(
+    category: str, period: str, account_id: int,
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    """Unlink a specific category-account pair."""
+    alloc = db.query(CategoryAllocation).filter(
+        CategoryAllocation.category == category,
+        CategoryAllocation.period == period,
+        CategoryAllocation.account_id == account_id,
+    ).first()
+    if not alloc:
+        raise HTTPException(status_code=404, detail="Allocation not found")
+    db.delete(alloc); db.commit()
+    return {"deleted": True}
 
 @app.delete("/api/finance/allocations/{alloc_id}")
 def delete_allocation(alloc_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6199,7 +6221,10 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
     allocations = (db.query(CategoryAllocation)
                    .filter(CategoryAllocation.period == period)
                    .all())
-    alloc_map = {a.category: a for a in allocations}
+    # category -> list of account allocations
+    alloc_by_cat: Dict[str, list] = {}
+    for a in allocations:
+        alloc_by_cat.setdefault(a.category, []).append(a)
 
     cat_spend: Dict[str, float] = {}
     for exp in task_expenses:
@@ -6207,18 +6232,25 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         cat = task.category if task else "Uncategorized"
         cat_spend[cat] = cat_spend.get(cat, 0) + exp.amount
 
-    all_cats = sorted(set(list(alloc_map.keys()) + list(cat_spend.keys())))
-    category_breakdown = [
-        {
+    all_cats = sorted(set(list(alloc_by_cat.keys()) + list(cat_spend.keys())))
+    category_breakdown = []
+    for cat in all_cats:
+        rows = alloc_by_cat.get(cat, [])
+        total_alloc = sum(r.allocated_amount for r in rows)
+        account_links = [
+            {"account_id": r.account_id, "account_name": r.account.name if r.account else None,
+             "allocated": r.allocated_amount, "alloc_id": r.id}
+            for r in rows if r.account_id is not None
+        ]
+        category_breakdown.append({
             "category": cat,
-            "allocated": alloc_map[cat].allocated_amount if cat in alloc_map else 0,
+            "allocated": total_alloc,
             "spent": cat_spend.get(cat, 0),
-            "account_id": alloc_map[cat].account_id if cat in alloc_map else None,
-            "account_name": (alloc_map[cat].account.name
-                             if cat in alloc_map and alloc_map[cat].account else None),
-        }
-        for cat in all_cats
-    ]
+            # keep single account_id/name for backwards compat (first linked account)
+            "account_id": account_links[0]["account_id"] if account_links else None,
+            "account_name": account_links[0]["account_name"] if account_links else None,
+            "account_links": account_links,
+        })
 
     return {
         "period": period,
