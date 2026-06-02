@@ -1591,6 +1591,7 @@ function FinanceTab() {
   const [sources, setSources] = useState([])
   const [receipts, setReceipts] = useState([])
   const [transfers, setTransfers] = useState([])
+  const [taskCats, setTaskCats] = useState([])   // all task categories for assignment
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [section, setSection] = useState('overview')  // overview | accounts | income | breakdown
@@ -1598,18 +1599,21 @@ function FinanceTab() {
   const [editAccount, setEditAccount] = useState(null)
   const [showReceiptForm, setShowReceiptForm] = useState(false)
   const [showTransferForm, setShowTransferForm] = useState(false)
+  const [expandedAccount, setExpandedAccount] = useState(null)  // account id being managed
   const [allocEdit, setAllocEdit] = useState({})  // category -> draft value
 
   async function load() {
     setLoading(true); setError(null)
     try {
-      const [s, sr, rc, tr] = await Promise.all([
+      const [s, sr, rc, tr, tc] = await Promise.all([
         getFinanceSummary(period),
         getFinanceSources(),
         getFinanceReceipts(period),
         getFinanceTransfers(),
+        getAdminTaskCategories(),
       ])
-      setSummary(s.data); setSources(sr.data); setReceipts(rc.data); setTransfers(tr.data)
+      setSummary(s.data); setSources(sr.data); setReceipts(rc.data)
+      setTransfers(tr.data); setTaskCats(tc.data || [])
     } catch(e) {
       setError(e?.response?.data?.detail || e?.message || 'Failed to load finance data')
     } finally { setLoading(false) }
@@ -1771,24 +1775,115 @@ function FinanceTab() {
       {/* ACCOUNTS */}
       {section==='accounts'&&(
         <div className="space-y-3">
-          {accounts.map(a=>(
-            <div key={a.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{ACCOUNT_ICONS[a.type]||'💳'}</span>
-                <div>
-                  <p className="text-white font-semibold text-sm">{a.name}</p>
-                  <p className="text-[#8892B0] text-xs capitalize">{a.type}</p>
-                </div>
+          {accounts.map(a=>{
+            // categories currently linked to this account for this period
+            const linked = category_breakdown.filter(c=>c.account_id===a.id)
+            const totalAllocated = linked.reduce((s,c)=>s+(c.allocated||0),0)
+            const totalSpent     = linked.reduce((s,c)=>s+(c.spent||0),0)
+            const free = a.current_balance - totalAllocated
+            const isExpanded = expandedAccount===a.id
+            // categories not yet linked to ANY account (available to assign)
+            const unlinked = taskCats.filter(cat=>!category_breakdown.some(c=>c.category===cat&&c.account_id))
+
+            return (
+              <div key={a.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+                {/* Account header row */}
+                <button className="w-full px-4 py-3 flex items-center justify-between"
+                  onClick={()=>setExpandedAccount(isExpanded?null:a.id)}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{ACCOUNT_ICONS[a.type]||'💳'}</span>
+                    <div className="text-left">
+                      <p className="text-white font-semibold text-sm">{a.name}</p>
+                      <p className="text-[#8892B0] text-xs capitalize">{a.type}
+                        {linked.length>0&&<span className="ml-1 text-[#00A2FF]">· {linked.length} categor{linked.length===1?'y':'ies'}</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <p className="text-[#00A2FF] font-bold text-sm">{fmtINR(a.current_balance)}</p>
+                      {totalAllocated>0&&<p className="text-[#8892B0] text-xs">{fmtINR(free)} free</p>}
+                    </div>
+                    <span className="text-[#8892B0] text-xs ml-1">{isExpanded?'▲':'▼'}</span>
+                  </div>
+                </button>
+
+                {/* Expanded panel */}
+                {isExpanded&&(
+                  <div className="border-t border-[#2D2B5A]">
+                    {/* Allocation bar */}
+                    {totalAllocated>0&&a.current_balance>0&&(
+                      <div className="px-4 pt-3 pb-2 space-y-1">
+                        <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full bg-[#00A2FF]/40 relative">
+                            <div className="h-full rounded-full bg-[#00A2FF]"
+                              style={{width:`${Math.min(totalAllocated/a.current_balance*100,100)}%`}}/>
+                          </div>
+                        </div>
+                        <div className="flex justify-between text-xs text-[#8892B0]">
+                          <span>{fmtINR(totalAllocated)} allocated</span>
+                          <span>{fmtINR(totalSpent)} spent · {fmtINR(free)} free</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Linked categories */}
+                    {linked.map(c=>{
+                      const pct = c.allocated>0?Math.min(c.spent/c.allocated*100,100):0
+                      const over = c.spent>c.allocated&&c.allocated>0
+                      return (
+                        <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40">
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-white text-xs font-semibold">{c.category}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-[#FFB347] text-xs">{fmtINR(c.spent)}
+                                {c.allocated>0&&<span className="text-[#8892B0]"> / {fmtINR(c.allocated)}</span>}
+                              </p>
+                              <button onClick={async()=>{
+                                await upsertFinanceAllocation({category:c.category, allocated_amount:c.allocated||0, period, account_id:null})
+                                await load()
+                              }} className="text-[#8892B0] text-xs px-1.5 py-0.5 rounded border border-[#2D2B5A]" title="Unlink">✕</button>
+                            </div>
+                          </div>
+                          {c.allocated>0&&(
+                            <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`}
+                                style={{width:`${pct}%`}}/>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {/* Assign a category */}
+                    {unlinked.length>0&&(
+                      <div className="px-4 py-3 border-t border-[#2D2B5A]/40">
+                        <p className="text-[#8892B0] text-xs mb-2">Assign category to this account:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {unlinked.map(cat=>(
+                            <button key={cat} onClick={async()=>{
+                              await upsertFinanceAllocation({category:cat, allocated_amount:0, period, account_id:a.id})
+                              await load()
+                            }} className="text-xs px-3 py-1.5 rounded-xl bg-[#0F0F23] border border-[#2D2B5A] text-[#8892B0] hover:border-[#00A2FF] hover:text-[#00A2FF] transition-colors">
+                              + {cat}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Edit / Delete account */}
+                    <div className="px-4 py-3 border-t border-[#2D2B5A]/40 flex gap-2">
+                      <button onClick={()=>{ setEditAccount(a); setShowAccountForm(true) }}
+                        className="flex-1 py-1.5 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs">Edit account</button>
+                      <button onClick={()=>removeAccount(a.id)}
+                        className="px-4 py-1.5 rounded-xl border border-[#FF3333]/30 text-[#FF3333] text-xs">Delete</button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <p className="text-[#00A2FF] font-bold text-base">{fmtINR(a.current_balance)}</p>
-                <button onClick={()=>{ setEditAccount(a); setShowAccountForm(true) }}
-                  className="text-[#8892B0] text-xs px-2 py-1 rounded-lg border border-[#2D2B5A]">Edit</button>
-                <button onClick={()=>removeAccount(a.id)}
-                  className="text-[#FF3333] text-xs px-2 py-1 rounded-lg border border-[#FF3333]/20">Del</button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
           <div className="flex gap-2">
             <button onClick={()=>{ setEditAccount(null); setShowAccountForm(true) }}
               className="flex-1 py-3 rounded-2xl border border-dashed border-[#2D2B5A] text-[#8892B0] text-sm">
