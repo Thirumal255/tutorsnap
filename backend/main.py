@@ -6226,22 +6226,19 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
     for a in allocations:
         alloc_by_cat.setdefault(a.category, []).append(a)
 
-    # All expenses for the period (paid + planned) for budget_required
-    all_task_expenses = (db.query(AdminTaskExpense)
-                         .filter(
-                             extract("year",  AdminTaskExpense.expense_date) == period_year,
-                             extract("month", AdminTaskExpense.expense_date) == period_month,
-                         ).all())
+    # ALL expenses across ALL time for category budget/spend — no date filter.
+    # Tasks are long-running projects; filtering by month would miss most expenses.
+    # JOIN to AdminTask to get category in one query, exclude subtasks (parent_id IS NULL root tasks only for category).
+    all_cat_expenses = (
+        db.query(AdminTaskExpense, AdminTask)
+        .join(AdminTask, AdminTask.id == AdminTaskExpense.task_id)
+        .all()
+    )
 
     # Build per-category lookups
-    cat_spent: Dict[str, float] = {}        # paid only
-    cat_budget: Dict[str, float] = {}       # planned + paid
-    # cache tasks to avoid N+1
-    task_cache: Dict[int, AdminTask] = {}
-    for exp in all_task_expenses:
-        if exp.task_id not in task_cache:
-            task_cache[exp.task_id] = db.query(AdminTask).filter(AdminTask.id == exp.task_id).first()
-        task = task_cache[exp.task_id]
+    cat_spent: Dict[str, float] = {}   # paid only
+    cat_budget: Dict[str, float] = {}  # planned + paid
+    for exp, task in all_cat_expenses:
         cat = task.category if task else "Uncategorized"
         cat_budget[cat] = cat_budget.get(cat, 0) + exp.amount
         if exp.status == "paid":
