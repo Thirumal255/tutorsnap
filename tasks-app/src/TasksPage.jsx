@@ -1830,30 +1830,13 @@ function FinanceTab() {
 
                     {/* Linked categories */}
                     {linked.map(c=>{
-                      const link = (c.account_links||[]).find(l=>l.account_id===a.id)
-                      const allocAmt = link?.allocated||0
-                      const pct = allocAmt>0?Math.min(c.spent/allocAmt*100,100):0
-                      const over = c.spent>allocAmt&&allocAmt>0
                       return (
-                        <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40">
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-white text-xs font-semibold">{c.category}</p>
-                            <div className="flex items-center gap-2">
-                              <p className="text-[#FFB347] text-xs">{fmtINR(c.spent)}
-                                {allocAmt>0&&<span className="text-[#8892B0]"> / {fmtINR(allocAmt)}</span>}
-                              </p>
-                              <button onClick={async()=>{
-                                await unlinkFinanceAllocation(c.category, period, a.id)
-                                await load()
-                              }} className="text-[#8892B0] text-xs px-1.5 py-0.5 rounded border border-[#2D2B5A]" title="Unlink">✕</button>
-                            </div>
-                          </div>
-                          {allocAmt>0&&(
-                            <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`}
-                                style={{width:`${pct}%`}}/>
-                            </div>
-                          )}
+                        <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40 flex items-center justify-between">
+                          <p className="text-white text-xs font-semibold">{c.category}</p>
+                          <button onClick={async()=>{
+                            await unlinkFinanceAllocation(c.category, period, a.id)
+                            await load()
+                          }} className="text-[#8892B0] text-xs px-1.5 py-0.5 rounded border border-[#2D2B5A]" title="Unlink">✕</button>
                         </div>
                       )
                     })}
