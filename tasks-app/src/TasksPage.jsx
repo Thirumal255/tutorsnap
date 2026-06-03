@@ -1748,6 +1748,9 @@ function FinanceTab() {
   const [showReceiptForm, setShowReceiptForm] = useState(false)
   const [showTransferForm, setShowTransferForm] = useState(false)
   const [expandedAccount, setExpandedAccount] = useState(null)  // account id being managed
+  const [expandedBalanceAcc, setExpandedBalanceAcc] = useState(null) // overview left drill-down
+  const [expandedPeriodCat, setExpandedPeriodCat] = useState(null)   // overview right drill-down
+  const [expandedByCat, setExpandedByCat] = useState(null)           // by-category drill-down
   const [editAllocAmount, setEditAllocAmount] = useState({})   // `${acctId}_${cat}` -> draft amount
   const [assignDraft, setAssignDraft] = useState({})  // {accountId_category: amount}
 
@@ -1858,28 +1861,47 @@ function FinanceTab() {
             <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
               <div className="grid grid-cols-2 divide-x divide-[#2D2B5A]">
 
-                {/* LEFT — Account Balances */}
+                {/* LEFT — Account Balances (drill-down per account) */}
                 <div className="p-3 space-y-2.5">
                   <div>
                     <p className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">Balances</p>
                     <p className="text-white font-fredoka font-bold text-lg leading-tight">{fmtINR(total_balance)}</p>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     {accounts.map(a=>{
                       const over = a.overallocated
+                      const isOpen = expandedBalanceAcc === a.id
                       return (
-                        <div key={a.id}>
-                          <div className="flex items-center justify-between">
+                        <div key={a.id} className={`rounded-lg overflow-hidden ${isOpen?'bg-[#0F0F23]':''}`}>
+                          <button className="w-full flex items-center justify-between py-1 px-1.5 text-left"
+                            onClick={()=>setExpandedBalanceAcc(isOpen?null:a.id)}>
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="text-sm flex-shrink-0">{ACCOUNT_ICONS[a.type]||'💳'}</span>
                               <p className="text-white text-xs font-semibold truncate">{a.name}</p>
                             </div>
-                            <p className="text-[#00A2FF] text-xs font-bold ml-1 flex-shrink-0">{fmtINR(a.current_balance)}</p>
-                          </div>
-                          {(a.total_allocated||0)>0&&(
-                            <p className={`text-[10px] ml-5 ${over?'text-[#FF3333]':'text-[#8892B0]'}`}>
-                              {over?`⚠ over ${fmtINR(Math.abs(a.free_balance||0))}`:`${fmtINR(a.free_balance||0)} free`}
-                            </p>
+                            <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                              <p className="text-[#00A2FF] text-xs font-bold">{fmtINR(a.current_balance)}</p>
+                              <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
+                            </div>
+                          </button>
+                          {isOpen&&(
+                            <div className="px-2 pb-2 space-y-0.5">
+                              {(a.total_allocated||0)>0&&(
+                                <>
+                                  <div className="flex justify-between text-[10px]">
+                                    <span className="text-[#8892B0]">Allocated</span>
+                                    <span className="text-white">{fmtINR(a.total_allocated)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-[10px]">
+                                    <span className={over?'text-[#FF3333]':'text-[#8892B0]'}>{over?'⚠ Over-allocated':'Free'}</span>
+                                    <span className={over?'text-[#FF3333] font-bold':'text-[#00CC88]'}>{fmtINR(Math.abs(a.free_balance||0))}</span>
+                                  </div>
+                                </>
+                              )}
+                              {(a.total_allocated||0)===0&&(
+                                <p className="text-[#8892B0] text-[10px]">No categories linked</p>
+                              )}
+                            </div>
                           )}
                         </div>
                       )
@@ -1927,31 +1949,40 @@ function FinanceTab() {
                         )}
                       </div>
 
-                      {/* Per-category with deficit */}
-                      <div className="space-y-2">
+                      {/* Per-category drill-down */}
+                      <div className="space-y-1">
                         {periodCats.map(c=>{
                           const budget = c.paid + c.planned
+                          const isOpen = expandedPeriodCat === c.category
                           return (
-                            <div key={c.category} className={c.deficit>0?'bg-[#FF3333]/5 rounded-lg p-1.5 -mx-1':c.planned>0?'rounded-lg p-1.5 -mx-1':''}>
-                              <p className="text-white text-[10px] font-semibold truncate">{c.category}</p>
-                              <div className="text-[10px] space-y-0.5 mt-0.5">
-                                <div className="flex justify-between">
-                                  <span className="text-[#8892B0]">Budget</span>
-                                  <span className="text-white">{fmtINR(budget)}</span>
+                            <div key={c.category} className={`rounded-lg overflow-hidden ${c.deficit>0?'bg-[#FF3333]/5':isOpen?'bg-[#0F0F23]':''}`}>
+                              <button className="w-full flex items-center justify-between py-1 px-1.5 text-left"
+                                onClick={()=>setExpandedPeriodCat(isOpen?null:c.category)}>
+                                <p className="text-white text-[10px] font-semibold truncate flex-1">{c.category}</p>
+                                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                                  {c.deficit>0
+                                    ? <span className="text-[#FF3333] text-[9px] font-bold">⚠</span>
+                                    : null}
+                                  <span className="text-white text-[10px] font-semibold">{fmtINR(budget)}</span>
+                                  <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
                                 </div>
-                                {c.paid>0&&<div className="flex justify-between">
-                                  <span className="text-[#8892B0]">✅ Paid</span>
-                                  <span className="text-[#00CC88]">{fmtINR(c.paid)}</span>
-                                </div>}
-                                {c.planned>0&&<div className="flex justify-between">
-                                  <span className="text-[#8892B0]">🕐 Pending</span>
-                                  <span className="text-[#A78BFA]">{fmtINR(c.planned)}</span>
-                                </div>}
-                                {c.deficit>0&&<div className="flex justify-between border-t border-[#FF3333]/30 pt-0.5 mt-0.5">
-                                  <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
-                                  <span className="text-[#FF3333] font-bold">{fmtINR(c.deficit)}</span>
-                                </div>}
-                              </div>
+                              </button>
+                              {isOpen&&(
+                                <div className="px-1.5 pb-1.5 space-y-0.5">
+                                  {c.paid>0&&<div className="flex justify-between text-[10px]">
+                                    <span className="text-[#8892B0]">✅ Paid</span>
+                                    <span className="text-[#00CC88]">{fmtINR(c.paid)}</span>
+                                  </div>}
+                                  {c.planned>0&&<div className="flex justify-between text-[10px]">
+                                    <span className="text-[#8892B0]">🕐 Pending</span>
+                                    <span className="text-[#A78BFA]">{fmtINR(c.planned)}</span>
+                                  </div>}
+                                  {c.deficit>0&&<div className="flex justify-between text-[10px] border-t border-[#FF3333]/30 pt-0.5 mt-0.5">
+                                    <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
+                                    <span className="text-[#FF3333] font-bold">{fmtINR(c.deficit)}</span>
+                                  </div>}
+                                </div>
+                              )}
                             </div>
                           )
                         })}
@@ -1966,7 +1997,7 @@ function FinanceTab() {
             {/* ── Commitments ─────────────────────────────────── */}
             {totalBudget>0&&(
               <div className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${hasShortfall?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
-                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Commitments</p>
+                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Total Commitments</p>
 
                 <div className="flex items-end justify-between">
                   <div>
@@ -1997,51 +2028,6 @@ function FinanceTab() {
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#A78BFA] inline-block"/>Pending {fmtINR(totalPending)}</span>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* ── Category Summary ─────────────────────────────── */}
-            {category_breakdown.length>0&&(
-              <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider px-4 pt-3 pb-2">By Category</p>
-                {category_breakdown.map((c,i)=>{
-                  const paidPct = (c.budget_required||0)>0
-                    ? Math.min((c.spent||0)/(c.budget_required)*100,100) : 0
-                  const catDeficit = Math.max(0, (c.pending||0) - (c.amount_available||0))
-                  return (
-                    <div key={c.category}
-                      className={`px-4 py-3 ${i>0?'border-t border-[#2D2B5A]/50':''} ${catDeficit>0?'bg-[#FF3333]/5':''}`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div>
-                          <p className="text-white text-xs font-semibold">{c.category}</p>
-                          {(c.account_links||[]).length>0&&(
-                            <p className="text-[#00A2FF] text-xs">
-                              {c.account_links.map(l=>l.account_name).join(' · ')}
-                            </p>
-                          )}
-                        </div>
-                        <p className="text-white text-xs font-semibold">{fmtINR(c.budget_required||0)}</p>
-                      </div>
-                      {(c.budget_required||0)>0&&(
-                        <div className="space-y-1">
-                          <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden flex">
-                            <div className="h-full bg-[#00CC88] rounded-l-full" style={{width:`${paidPct}%`}}/>
-                          </div>
-                          <div className="flex justify-between text-xs text-[#8892B0]">
-                            <span>Paid {fmtINR(c.spent||0)}</span>
-                            {(c.pending||0)>0&&<span className="text-[#A78BFA]">Pending {fmtINR(c.pending)}</span>}
-                          </div>
-                          {catDeficit>0&&(
-                            <div className="flex justify-between text-xs border-t border-[#FF3333]/30 pt-1 mt-0.5">
-                              <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
-                              <span className="text-[#FF3333] font-bold">{fmtINR(catDeficit)}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
               </div>
             )}
 
@@ -2364,92 +2350,105 @@ function FinanceTab() {
 
       {/* BY CATEGORY */}
       {section==='breakdown'&&(
-        <div className="space-y-3">
-          <p className="text-[#8892B0] text-xs font-semibold">Spend by category — {periodLabel}</p>
+        <div className="space-y-2">
           {category_breakdown.length===0&&(
-            <div className="text-center py-8 text-[#8892B0] text-sm">No expenses recorded for this period</div>
+            <div className="text-center py-8 text-[#8892B0] text-sm">No categories found</div>
           )}
           {category_breakdown.map(c=>{
-            const links        = c.account_links||[]
-            const available    = c.amount_available||0
-            const budgetReq    = c.budget_required||0
-            const spent        = c.spent||0
-            const pending      = c.pending||0
-            const spentPct = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
-            const availPct = budgetReq>0 ? Math.min(available/budgetReq*100,100) : 0
+            const links      = c.account_links||[]
+            const available  = c.amount_available||0
+            const budgetReq  = c.budget_required||0
+            const spent      = c.spent||0
+            const pending    = c.pending||0
+            const spentPct   = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
+            const availPct   = budgetReq>0 ? Math.min(available/budgetReq*100,100) : 0
             const catDeficit = Math.max(0, pending - available)
             const isFunded   = pending>0 && catDeficit===0
+            const isOpen     = expandedByCat === c.category
             return (
-              <div key={c.category} className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${catDeficit>0?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
+              <div key={c.category} className={`bg-[#16213E] rounded-2xl overflow-hidden border ${catDeficit>0?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
 
-                {/* Category name + status badge */}
-                <div className="flex items-center justify-between">
-                  <p className="text-white font-semibold text-sm">{c.category}</p>
-                  {catDeficit>0 ? (
-                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-[#FF3333]/10 text-[#FF3333]">
-                      ⚠ {fmtINR(catDeficit)} short
-                    </span>
-                  ) : isFunded ? (
-                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-[#00CC88]/10 text-[#00CC88]">
-                      ✓ Funded
-                    </span>
-                  ) : null}
-                </div>
+                {/* Collapsed header — always visible */}
+                <button className="w-full px-4 py-3 flex items-center justify-between"
+                  onClick={()=>setExpandedByCat(isOpen?null:c.category)}>
+                  <div className="text-left min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{c.category}</p>
+                    {budgetReq>0&&(
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="w-20 h-1.5 bg-[#0F0F23] rounded-full overflow-hidden relative">
+                          <div className="absolute inset-y-0 left-0 bg-[#00A2FF]/20 rounded-full" style={{width:`${availPct}%`}}/>
+                          <div className={`absolute inset-y-0 left-0 rounded-full ${spentPct>=100?'bg-[#FF3333]':spentPct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`} style={{width:`${spentPct}%`}}/>
+                        </div>
+                        <span className="text-[#8892B0] text-[10px]">{spentPct.toFixed(0)}% paid</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                    {catDeficit>0 ? (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#FF3333]/10 text-[#FF3333]">⚠ {fmtINR(catDeficit)} short</span>
+                    ) : isFunded ? (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#00CC88]/10 text-[#00CC88]">✓ Funded</span>
+                    ) : null}
+                    <span className="text-[#8892B0] text-xs">{isOpen?'▲':'▼'}</span>
+                  </div>
+                </button>
 
-                {/* 2×2 number grid */}
-                <div className="grid grid-cols-2 gap-2 text-center">
-                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                    <p className="text-[#8892B0] text-[10px]">Available (allocated)</p>
-                    <p className={`font-bold text-xs mt-0.5 ${catDeficit>0?'text-[#FF3333]':'text-[#00A2FF]'}`}>{fmtINR(available)}</p>
-                  </div>
-                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                    <p className="text-[#8892B0] text-[10px]">Total Budget</p>
-                    <p className="text-white font-bold text-xs mt-0.5">{fmtINR(budgetReq)}</p>
-                  </div>
-                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                    <p className="text-[#8892B0] text-[10px]">✅ Paid</p>
-                    <p className="text-[#00CC88] font-bold text-xs mt-0.5">{spent>0?fmtINR(spent):'—'}</p>
-                  </div>
-                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                    <p className="text-[#8892B0] text-[10px]">🕐 Pending</p>
-                    <p className="text-[#A78BFA] font-bold text-xs mt-0.5">{pending>0?fmtINR(pending):'—'}</p>
-                  </div>
-                </div>
+                {/* Expanded detail */}
+                {isOpen&&(
+                  <div className="px-4 pb-4 space-y-3 border-t border-[#2D2B5A]/50">
 
-                {/* Spend progress bar */}
-                {budgetReq>0&&(
-                  <div className="space-y-1">
-                    <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden relative">
-                      {/* available band */}
-                      <div className="absolute inset-y-0 left-0 bg-[#00A2FF]/20 rounded-full"
-                        style={{width:`${availPct}%`}}/>
-                      {/* spent fill */}
-                      <div className={`absolute inset-y-0 left-0 rounded-full ${spentPct>=100?'bg-[#FF3333]':spentPct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`}
-                        style={{width:`${spentPct}%`}}/>
+                    {/* 2×2 number grid */}
+                    <div className="grid grid-cols-2 gap-2 text-center mt-3">
+                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                        <p className="text-[#8892B0] text-[10px]">Available (allocated)</p>
+                        <p className={`font-bold text-xs mt-0.5 ${catDeficit>0?'text-[#FF3333]':'text-[#00A2FF]'}`}>{fmtINR(available)}</p>
+                      </div>
+                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                        <p className="text-[#8892B0] text-[10px]">Total Budget</p>
+                        <p className="text-white font-bold text-xs mt-0.5">{fmtINR(budgetReq)}</p>
+                      </div>
+                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                        <p className="text-[#8892B0] text-[10px]">✅ Paid</p>
+                        <p className="text-[#00CC88] font-bold text-xs mt-0.5">{spent>0?fmtINR(spent):'—'}</p>
+                      </div>
+                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                        <p className="text-[#8892B0] text-[10px]">🕐 Pending</p>
+                        <p className="text-[#A78BFA] font-bold text-xs mt-0.5">{pending>0?fmtINR(pending):'—'}</p>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-xs text-[#8892B0]">
-                      <span>{spentPct.toFixed(0)}% of budget spent</span>
-                      <span>{fmtINR(budgetReq - spent)} pending</span>
-                    </div>
-                  </div>
-                )}
 
-                {/* Funding account chips */}
-                {links.length>0?(
-                  <div className="flex flex-wrap gap-1.5">
-                    {links.map(l=>{
-                      const acct = accounts.find(a=>a.id===l.account_id)
-                      return (
-                        <span key={l.account_id}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#00A2FF]/10 border border-[#00A2FF]/20 text-[#00A2FF] text-xs">
-                          {ACCOUNT_ICONS[acct?.type]||'🏦'} {l.account_name}
-                          {l.allocated>0 && <span className="text-white font-semibold">· {fmtINR(l.allocated)} allocated</span>}
-                        </span>
-                      )
-                    })}
+                    {/* Full progress bar */}
+                    {budgetReq>0&&(
+                      <div className="space-y-1">
+                        <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden relative">
+                          <div className="absolute inset-y-0 left-0 bg-[#00A2FF]/20 rounded-full" style={{width:`${availPct}%`}}/>
+                          <div className={`absolute inset-y-0 left-0 rounded-full ${spentPct>=100?'bg-[#FF3333]':spentPct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`} style={{width:`${spentPct}%`}}/>
+                        </div>
+                        <div className="flex justify-between text-xs text-[#8892B0]">
+                          <span>{spentPct.toFixed(0)}% of budget spent</span>
+                          <span>{fmtINR(budgetReq - spent)} remaining</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Funding account chips */}
+                    {links.length>0?(
+                      <div className="flex flex-wrap gap-1.5">
+                        {links.map(l=>{
+                          const acct = accounts.find(a=>a.id===l.account_id)
+                          return (
+                            <span key={l.account_id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#00A2FF]/10 border border-[#00A2FF]/20 text-[#00A2FF] text-xs">
+                              {ACCOUNT_ICONS[acct?.type]||'🏦'} {l.account_name}
+                              {l.allocated>0&&<span className="text-white font-semibold">· {fmtINR(l.allocated)}</span>}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    ):(
+                      <p className="text-[#8892B0] text-xs italic">No account linked — assign from Accounts tab</p>
+                    )}
                   </div>
-                ):(
-                  <p className="text-[#8892B0] text-xs italic">No account linked — assign from Accounts tab</p>
                 )}
               </div>
             )
