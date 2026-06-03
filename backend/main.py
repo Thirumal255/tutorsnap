@@ -6390,13 +6390,15 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
                 .all())
     total_income = sum(r.amount for r in receipts)
 
-    # ── Expenses this period (for overview net figure only) ──────────────────
-    task_exp_period = (db.query(AdminTaskExpense)
-                       .filter(AdminTaskExpense.status == "paid",
-                               extract("year",  AdminTaskExpense.expense_date) == _ry,
-                               extract("month", AdminTaskExpense.expense_date) == _rm)
-                       .all())
-    total_expenses = sum(e.amount for e in task_exp_period)
+    # ── Expenses this period — paid and planned separately ───────────────────
+    all_period_exp = (db.query(AdminTaskExpense)
+                      .filter(extract("year",  AdminTaskExpense.expense_date) == _ry,
+                              extract("month", AdminTaskExpense.expense_date) == _rm)
+                      .all())
+    paid_this_period    = [e for e in all_period_exp if e.status == "paid"]
+    planned_this_period = [e for e in all_period_exp if e.status == "planned"]
+    total_expenses        = sum(e.amount for e in paid_this_period)
+    total_planned_period  = sum(e.amount for e in planned_this_period)
 
     # ── Category allocations — permanent, no period filter ───────────────────
     allocations = db.query(CategoryAllocation).all()
@@ -6458,8 +6460,9 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         "total_cash":    total_cash,
         "total_balance": total_balance,
         "total_income":  total_income,
-        "total_expenses": total_expenses,
-        "net":           total_income - total_expenses,
+        "total_expenses":       total_expenses,        # paid this period
+        "total_planned_period": total_planned_period,  # planned (not yet paid) this period
+        "net":                  total_income - total_expenses,
         "category_breakdown": category_breakdown,
     }
 

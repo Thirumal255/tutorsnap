@@ -1840,12 +1840,14 @@ function FinanceTab() {
 
       {/* OVERVIEW */}
       {section==='overview'&&(()=>{
-        // Aggregate commitments from all categories
         const totalBudget   = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
         const totalPaid     = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
         const totalPending  = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
         const totalDeficit  = category_breakdown.reduce((s,c)=>s+(c.deficit||0),0)
         const hasAnyDeficit = totalDeficit > 0
+        const paidThisPeriod    = summary.total_expenses || 0
+        const plannedThisPeriod = summary.total_planned_period || 0
+        const activityTotal     = paidThisPeriod + plannedThisPeriod
 
         return (
           <div className="space-y-3">
@@ -1879,6 +1881,49 @@ function FinanceTab() {
                   )
                 })}
               </div>
+            </div>
+
+            {/* ── This Month ──────────────────────────────────── */}
+            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">{periodLabel}</p>
+                {activityTotal===0&&<p className="text-[#8892B0] text-xs">No activity</p>}
+              </div>
+              {activityTotal>0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-[#0F0F23] rounded-xl px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs">✅</span>
+                        <p className="text-[#8892B0] text-xs">Paid this month</p>
+                      </div>
+                      <p className="text-[#00CC88] font-bold text-sm">{paidThisPeriod>0?fmtINR(paidThisPeriod):'—'}</p>
+                    </div>
+                    <div className="bg-[#0F0F23] rounded-xl px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs">🕐</span>
+                        <p className="text-[#8892B0] text-xs">Planned this month</p>
+                      </div>
+                      <p className="text-[#A78BFA] font-bold text-sm">{plannedThisPeriod>0?fmtINR(plannedThisPeriod):'—'}</p>
+                    </div>
+                  </div>
+                  {paidThisPeriod>0&&plannedThisPeriod>0&&(
+                    <div className="space-y-1">
+                      <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden flex">
+                        <div className="h-full bg-[#00CC88] rounded-l-full"
+                          style={{width:`${Math.min(paidThisPeriod/activityTotal*100,100)}%`}}/>
+                        <div className="h-full bg-[#A78BFA]"
+                          style={{width:`${Math.min(plannedThisPeriod/activityTotal*100,100)}%`}}/>
+                      </div>
+                      <p className="text-[#8892B0] text-xs text-right">
+                        {fmtINR(activityTotal)} total this month
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-[#8892B0] text-xs">No expenses dated in {periodLabel}</p>
+              )}
             </div>
 
             {/* ── Commitments ─────────────────────────────────── */}
