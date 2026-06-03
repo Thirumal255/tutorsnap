@@ -1890,135 +1890,198 @@ function FinanceTab() {
 
   function exportPDF() {
     const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' })
-    const pw = doc.internal.pageSize.getWidth()
-    const grey  = [139,146,176]
-    const white = [255,255,255]
-    const dark  = [22,33,62]
-    const blue  = [0,162,255]
-    const green = [0,204,136]
-    const red   = [255,51,51]
-    const purple= [167,139,250]
+    const pw   = doc.internal.pageSize.getWidth()
+    const grey = [139,146,176]
+    const white= [255,255,255]
+    const dark = [15,15,35]
+    const blue = [0,162,255]
+    const red  = [255,51,51]
+    const green= [0,204,136]
+    const purp = [167,139,250]
 
     let y = 0
 
-    // ── Header banner ──────────────────────────────────────────
-    doc.setFillColor(...dark)
-    doc.rect(0, 0, pw, 22, 'F')
+    // ── Header banner ──────────────────────────────────────────────
+    doc.setFillColor(22,33,62)
+    doc.rect(0, 0, pw, 24, 'F')
     doc.setTextColor(...white)
     doc.setFontSize(14); doc.setFont('helvetica','bold')
-    doc.text('Finance Report', 14, 10)
-    doc.setFontSize(9); doc.setFont('helvetica','normal')
-    doc.setTextColor(...grey)
-    doc.text(periodLabel, 14, 16)
-    doc.text(`Generated ${new Date().toLocaleDateString('en-IN')}`, pw-14, 16, {align:'right'})
-    y = 28
+    doc.text('Finance Report', 14, 11)
+    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...grey)
+    doc.text(periodLabel, 14, 18)
+    doc.text(`Generated ${new Date().toLocaleDateString('en-IN')}`, pw-14, 18, {align:'right'})
+    y = 30
 
-    // ── 1. Overview ────────────────────────────────────────────
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
-    doc.text('1. Overview', 14, y); y += 6
+    // ══════════════════════════════════════════════════════════════
+    // SECTION 1 — OVERVIEW
+    // ══════════════════════════════════════════════════════════════
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
+    doc.text('Overview', 14, y); y += 5
+
+    // 1a. Balances — all accounts expanded
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...grey)
+    doc.text('Account Balances', 14, y); y += 3
 
     autoTable(doc, {
       startY: y,
-      head: [['Metric','Amount']],
-      body: [
-        ['Total Balance',        fmtINR(total_balance)],
-        ['Period Paid',          fmtINR(summary.total_expenses||0)],
-        ['Period Pending',       fmtINR(summary.total_planned_period||0)],
-        ['Overall Shortfall',    fmtINR(summary.overall_shortfall||0)],
-      ],
+      head: [['Account', 'Balance', 'Allocated', 'Free / Over']],
+      body: accounts.map(a=>{
+        const over = a.overallocated
+        return [
+          a.name,
+          fmtINR(a.current_balance),
+          fmtINR(a.total_allocated||0),
+          over ? `Over ${fmtINR(Math.abs(a.free_balance||0))}` : fmtINR(a.free_balance||0),
+        ]
+      }),
+      foot: [['Total', fmtINR(total_balance), '', '']],
       theme: 'grid',
-      headStyles:  { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:8 },
-      bodyStyles:  { fontSize:8, textColor:[30,30,50] },
-      columnStyles:{ 1: { halign:'right' } },
+      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
+      footStyles: { fillColor: dark, textColor: white, fontStyle:'bold', fontSize:7 },
+      bodyStyles: { fontSize:7, textColor:[20,20,40] },
+      columnStyles: { 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'} },
+      didParseCell(d) {
+        if (d.section==='body' && d.column.index===3 && d.cell.raw.startsWith('Over'))
+          d.cell.styles.textColor = red
+        if (d.section==='body' && d.column.index===3 && !d.cell.raw.startsWith('Over'))
+          d.cell.styles.textColor = green
+      },
       margin: { left:14, right:14 },
     })
-    y = doc.lastAutoTable.finalY + 8
+    y = doc.lastAutoTable.finalY + 6
 
-    // ── 2. Account Balances ────────────────────────────────────
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
-    doc.text('2. Account Balances', 14, y); y += 6
+    // 1b. Period breakdown — all categories expanded
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...grey)
+    doc.text(`Period Breakdown — ${periodLabel}`, 14, y); y += 3
+
+    const periodCats = summary.period_categories || []
+    const paidTotal  = summary.total_expenses || 0
+    const pendTotal  = summary.total_planned_period || 0
+    const periodDef  = summary.total_period_deficit || 0
 
     autoTable(doc, {
       startY: y,
-      head: [['Account','Type','Balance','Allocated','Free / Over']],
-      body: accounts.map(a=>([
-        a.name,
-        a.type,
-        fmtINR(a.current_balance),
-        fmtINR(a.total_allocated||0),
-        a.overallocated ? `⚠ Over ${fmtINR(Math.abs(a.free_balance||0))}` : fmtINR(a.free_balance||0),
+      head: [['Category', 'Paid', 'Pending', 'Deficit']],
+      body: periodCats.map(c=>([
+        c.category,
+        c.paid > 0  ? fmtINR(c.paid)    : '—',
+        c.planned > 0 ? fmtINR(c.planned) : '—',
+        c.deficit > 0 ? fmtINR(c.deficit) : '—',
       ])),
+      foot: [[
+        'Total',
+        fmtINR(paidTotal),
+        fmtINR(pendTotal),
+        periodDef > 0 ? fmtINR(periodDef) : '—',
+      ]],
       theme: 'grid',
-      headStyles:  { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:8 },
-      bodyStyles:  { fontSize:8, textColor:[30,30,50] },
-      columnStyles:{ 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'} },
+      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
+      footStyles: { fillColor: dark, textColor: white, fontStyle:'bold', fontSize:7 },
+      bodyStyles: { fontSize:7, textColor:[20,20,40] },
+      columnStyles: { 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'} },
+      didParseCell(d) {
+        if (d.section==='body' && d.column.index===3 && d.cell.raw!=='—')
+          d.cell.styles.textColor = red
+        if (d.section==='foot' && d.column.index===3 && d.cell.raw!=='—')
+          d.cell.styles.textColor = red
+        if (d.section==='body' && d.column.index===1)
+          d.cell.styles.textColor = green
+        if (d.section==='body' && d.column.index===2)
+          d.cell.styles.textColor = [...purp]
+      },
       margin: { left:14, right:14 },
     })
-    y = doc.lastAutoTable.finalY + 8
+    y = doc.lastAutoTable.finalY + 6
 
-    // ── 3. Income (Receipts) ───────────────────────────────────
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
-    doc.text(`3. Income — ${periodLabel}`, 14, y); y += 6
+    // 1c. Total Commitments bar
+    const totalBudget   = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
+    const totalPaid     = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
+    const totalPending  = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
+    const shortfall     = summary.overall_shortfall || 0
 
-    const receiptRows = receipts.map(r=>([
-      r.received_date||'—',
-      r.description||r.source_name||'—',
-      r.account_name||'—',
-      fmtINR(r.amount),
-    ]))
-    if (receiptRows.length===0) receiptRows.push(['—','No income recorded','—','—'])
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...grey)
+    doc.text('Total Commitments', 14, y); y += 3
 
     autoTable(doc, {
       startY: y,
-      head: [['Date','Description','Account','Amount']],
-      body: receiptRows,
-      foot: [['','','Total', fmtINR(receipts.reduce((s,r)=>s+(r.amount||0),0))]],
+      head: [['Total Budget', 'Paid', 'Pending', 'Shortfall']],
+      body: [[
+        fmtINR(totalBudget),
+        fmtINR(totalPaid),
+        fmtINR(totalPending),
+        shortfall > 0 ? fmtINR(shortfall) : 'Funded',
+      ]],
       theme: 'grid',
-      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:8 },
-      footStyles: { fillColor:[240,240,255], textColor:[30,30,50], fontStyle:'bold', fontSize:8 },
-      bodyStyles: { fontSize:8, textColor:[30,30,50] },
-      columnStyles:{ 3:{halign:'right'} },
+      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
+      bodyStyles: { fontSize:8, fontStyle:'bold', textColor:[20,20,40] },
+      columnStyles: { 0:{halign:'right'}, 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'} },
+      didParseCell(d) {
+        if (d.section==='body' && d.column.index===3 && d.cell.raw!=='Funded')
+          d.cell.styles.textColor = red
+        if (d.section==='body' && d.column.index===3 && d.cell.raw==='Funded')
+          d.cell.styles.textColor = green
+        if (d.section==='body' && d.column.index===1)
+          d.cell.styles.textColor = green
+        if (d.section==='body' && d.column.index===2)
+          d.cell.styles.textColor = [...purp]
+      },
       margin: { left:14, right:14 },
     })
-    y = doc.lastAutoTable.finalY + 8
+    y = doc.lastAutoTable.finalY + 10
 
-    // ── 4. By Category ─────────────────────────────────────────
-    if (y > 230) { doc.addPage(); y = 14 }
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
-    doc.text('4. By Category', 14, y); y += 6
+    // ══════════════════════════════════════════════════════════════
+    // SECTION 2 — BY CATEGORY (all expanded)
+    // ══════════════════════════════════════════════════════════════
+    if (y > 220) { doc.addPage(); y = 14 }
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
+    doc.text('By Category', 14, y); y += 5
 
     autoTable(doc, {
       startY: y,
-      head: [['Category','Budget','Available','Paid','Pending','Deficit','Accounts']],
+      head: [['Category', 'Available', 'Total Budget', 'Paid', 'Pending', 'Deficit', 'Funded by']],
       body: category_breakdown.map(c=>{
-        const deficit = Math.max(0,(c.pending||0)-(c.amount_available||0))
+        const deficit  = Math.max(0,(c.pending||0)-(c.amount_available||0))
+        const funded   = deficit===0 && (c.pending||0)>0
         return [
           c.category,
-          fmtINR(c.budget_required||0),
           fmtINR(c.amount_available||0),
+          fmtINR(c.budget_required||0),
           fmtINR(c.spent||0),
-          fmtINR(c.pending||0),
-          deficit>0 ? fmtINR(deficit) : '—',
+          (c.pending||0)>0 ? fmtINR(c.pending) : '—',
+          deficit>0 ? fmtINR(deficit) : (funded ? 'Funded' : '—'),
           (c.account_links||[]).map(l=>l.account_name).join(', ')||'—',
         ]
       }),
       theme: 'grid',
       headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
-      bodyStyles: { fontSize:7, textColor:[30,30,50] },
-      columnStyles:{ 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}, 5:{halign:'right'} },
-      didParseCell(data) {
-        if (data.section==='body' && data.column.index===5 && data.cell.raw!=='—')
-          data.cell.styles.textColor = red
+      bodyStyles: { fontSize:7, textColor:[20,20,40] },
+      columnStyles: {
+        1:{halign:'right'}, 2:{halign:'right'},
+        3:{halign:'right'}, 4:{halign:'right'}, 5:{halign:'right'},
+      },
+      didParseCell(d) {
+        if (d.section!=='body') return
+        if (d.column.index===5 && d.cell.raw!=='—' && d.cell.raw!=='Funded')
+          d.cell.styles.textColor = red
+        if (d.column.index===5 && d.cell.raw==='Funded')
+          d.cell.styles.textColor = green
+        if (d.column.index===3)
+          d.cell.styles.textColor = green
+        if (d.column.index===4 && d.cell.raw!=='—')
+          d.cell.styles.textColor = [...purp]
       },
       margin: { left:14, right:14 },
     })
 
-    // ── Footer on every page ───────────────────────────────────
+    // ── Page footer ────────────────────────────────────────────────
     const pages = doc.internal.getNumberOfPages()
     for (let i=1; i<=pages; i++) {
       doc.setPage(i)
       doc.setFontSize(7); doc.setTextColor(...grey)
-      doc.text(`TutorSnap Finance · Page ${i} of ${pages}`, pw/2, doc.internal.pageSize.getHeight()-6, {align:'center'})
+      doc.text(
+        `TutorSnap Finance · ${periodLabel} · Page ${i} of ${pages}`,
+        pw/2, doc.internal.pageSize.getHeight()-5, {align:'center'}
+      )
     }
 
     doc.save(`finance-${period}.pdf`)
