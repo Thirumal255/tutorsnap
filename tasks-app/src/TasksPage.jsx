@@ -1960,6 +1960,8 @@ function FinanceTab() {
         3: { halign:'right', cellWidth: 50 },
       },
       didParseCell(d) {
+        // force right-align on numeric columns for ALL sections (head/foot override fix)
+        if ([1,2,3].includes(d.column.index)) d.cell.styles.halign = 'right'
         if (d.section==='body' && d.column.index===1) d.cell.styles.textColor = BLUE
         if (d.section==='body' && d.column.index===3)
           d.cell.styles.textColor = d.cell.raw.startsWith('Over') ? RED : GREEN
@@ -2000,6 +2002,7 @@ function FinanceTab() {
         3: { halign:'right', cellWidth: 50 },
       },
       didParseCell(d) {
+        if ([1,2,3].includes(d.column.index)) d.cell.styles.halign = 'right'
         if (d.column.index===1 && !['Paid','-'].includes(d.cell.raw))
           d.cell.styles.textColor = GREEN
         if (d.column.index===2 && !['Pending','-'].includes(d.cell.raw))
@@ -2039,6 +2042,7 @@ function FinanceTab() {
         3: { halign:'right', cellWidth: 60 },
       },
       didParseCell(d) {
+        if ([0,1,2,3].includes(d.column.index)) d.cell.styles.halign = 'right'
         if (d.section!=='body') return
         if (d.column.index===1) d.cell.styles.textColor = GREEN
         if (d.column.index===2) d.cell.styles.textColor = PURPLE
@@ -2085,6 +2089,7 @@ function FinanceTab() {
         6: { cellWidth: 44 },
       },
       didParseCell(d) {
+        if ([1,2,3,4,5].includes(d.column.index)) d.cell.styles.halign = 'right'
         if (d.section!=='body') return
         if (d.column.index===1) d.cell.styles.textColor = BLUE
         if (d.column.index===3) d.cell.styles.textColor = GREEN
