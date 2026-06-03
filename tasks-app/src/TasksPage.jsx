@@ -1839,82 +1839,139 @@ function FinanceTab() {
       </div>
 
       {/* OVERVIEW */}
-      {section==='overview'&&(
-        <div className="space-y-3">
-          {/* Tier 1: Balances */}
-          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
-            <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Total Balance</p>
-            <p className="text-white font-fredoka font-bold text-3xl">{fmtINR(total_balance)}</p>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-[#0F0F23] rounded-xl p-3">
-                <p className="text-[#8892B0] text-xs">Bank</p>
-                <p className="text-[#00A2FF] font-bold mt-0.5">{fmtINR(total_bank)}</p>
-              </div>
-              <div className="bg-[#0F0F23] rounded-xl p-3">
-                <p className="text-[#8892B0] text-xs">Cash</p>
-                <p className="text-[#00CC88] font-bold mt-0.5">{fmtINR(total_cash)}</p>
-              </div>
-            </div>
-          </div>
+      {section==='overview'&&(()=>{
+        // Aggregate commitments from all categories
+        const totalBudget   = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
+        const totalPaid     = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
+        const totalPending  = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
+        const totalDeficit  = category_breakdown.reduce((s,c)=>s+(c.deficit||0),0)
+        const hasAnyDeficit = totalDeficit > 0
 
-          {/* Tier 2: This month */}
-          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
-            <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">{periodLabel}</p>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <p className="text-[#8892B0] text-xs">Income</p>
-                <p className="text-[#00CC88] font-bold text-base mt-0.5">{fmtINR(total_income)}</p>
+        return (
+          <div className="space-y-3">
+
+            {/* ── Account Balances ────────────────────────────── */}
+            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Account Balances</p>
+                <p className="text-white font-fredoka font-bold text-xl">{fmtINR(total_balance)}</p>
               </div>
-              <div>
-                <p className="text-[#8892B0] text-xs">Spent</p>
-                <p className="text-[#FFB347] font-bold text-base mt-0.5">{fmtINR(total_expenses)}</p>
-              </div>
-              <div>
-                <p className="text-[#8892B0] text-xs">Net</p>
-                <p className={`font-bold text-base mt-0.5 ${net>=0?'text-[#00CC88]':'text-[#FF3333]'}`}>{fmtINR(net)}</p>
+              <div className="space-y-2">
+                {accounts.map(a=>{
+                  const acctAlloc = a.total_allocated||0
+                  const acctFree  = a.free_balance??0
+                  const over      = a.overallocated
+                  return (
+                    <div key={a.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{ACCOUNT_ICONS[a.type]||'💳'}</span>
+                        <div>
+                          <p className="text-white text-xs font-semibold">{a.name}</p>
+                          {acctAlloc>0&&(
+                            <p className={`text-xs ${over?'text-[#FF3333]':'text-[#8892B0]'}`}>
+                              {fmtINR(acctAlloc)} allocated · {over?`⚠ over by ${fmtINR(Math.abs(acctFree))}`:`${fmtINR(acctFree)} free`}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[#00A2FF] font-bold text-sm">{fmtINR(a.current_balance)}</p>
+                    </div>
+                  )
+                })}
               </div>
             </div>
-            {total_income>0&&(
-              <div className="space-y-1">
-                <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${total_expenses>total_income?'bg-[#FF3333]':'bg-[#00A2FF]'}`}
-                    style={{width:`${Math.min(total_income>0?total_expenses/total_income*100:0,100)}%`}}/>
+
+            {/* ── Commitments ─────────────────────────────────── */}
+            {totalBudget>0&&(
+              <div className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${hasAnyDeficit?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
+                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Commitments</p>
+
+                {/* Big number: total budget */}
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-[#8892B0] text-xs">Total Budget Required</p>
+                    <p className="text-white font-fredoka font-bold text-2xl mt-0.5">{fmtINR(totalBudget)}</p>
+                  </div>
+                  {hasAnyDeficit&&(
+                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-[#FF3333]/15 text-[#FF3333]">
+                      ⚠ {fmtINR(totalDeficit)} short
+                    </span>
+                  )}
                 </div>
-                <p className="text-[#8892B0] text-xs text-right">
-                  {total_income>0?(total_expenses/total_income*100).toFixed(0):0}% of income spent
-                </p>
+
+                {/* Progress bar: paid vs pending */}
+                <div className="space-y-1.5">
+                  <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden flex">
+                    <div className="h-full bg-[#00CC88] rounded-l-full transition-all"
+                      style={{width:`${totalBudget>0?Math.min(totalPaid/totalBudget*100,100):0}%`}}/>
+                    <div className="h-full bg-[#A78BFA] transition-all"
+                      style={{width:`${totalBudget>0?Math.min(totalPending/totalBudget*100,100):0}%`}}/>
+                  </div>
+                  <div className="flex gap-3 text-xs">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#00CC88] inline-block"/>Paid {fmtINR(totalPaid)}</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#A78BFA] inline-block"/>Pending {fmtINR(totalPending)}</span>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Tier 3: Category breakdown (compact) */}
-          {category_breakdown.length>0&&(
-            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-2">
-              <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Category Spend</p>
-              {category_breakdown.map(c=>{
-                const pct = c.allocated>0?Math.min(c.spent/c.allocated*100,100):0
-                const color = c.allocated>0&&c.spent>c.allocated?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00A2FF]'
-                return (
-                  <div key={c.category} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <div>
-                        <span className="text-white">{c.category}</span>
-                        {c.account_name&&<span className="text-[#00A2FF] ml-1">· {c.account_name}</span>}
+            {/* ── Category Summary ─────────────────────────────── */}
+            {category_breakdown.length>0&&(
+              <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider px-4 pt-3 pb-2">By Category</p>
+                {category_breakdown.map((c,i)=>{
+                  const hasDeficit = (c.deficit||0) > 0
+                  const paidPct    = (c.budget_required||0)>0
+                    ? Math.min((c.spent||0)/(c.budget_required)*100,100) : 0
+                  return (
+                    <div key={c.category}
+                      className={`px-4 py-3 ${i>0?'border-t border-[#2D2B5A]/50':''} ${hasDeficit?'bg-[#FF3333]/5':''}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div>
+                          <p className="text-white text-xs font-semibold">{c.category}</p>
+                          {(c.account_links||[]).length>0&&(
+                            <p className="text-[#00A2FF] text-xs">
+                              {(c.account_links).map(l=>l.account_name).join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white text-xs font-semibold">{fmtINR(c.budget_required||0)}</p>
+                          {hasDeficit
+                            ? <p className="text-[#FF3333] text-xs font-semibold">⚠ {fmtINR(c.deficit)} short</p>
+                            : <p className="text-[#00CC88] text-xs">✓ covered</p>
+                          }
+                        </div>
                       </div>
-                      <span className="text-[#FFB347]">{fmtINR(c.spent)}{c.allocated>0&&<span className="text-[#8892B0]"> / {fmtINR(c.allocated)}</span>}</span>
+                      {(c.budget_required||0)>0&&(
+                        <div className="space-y-1">
+                          <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden flex">
+                            <div className="h-full bg-[#00CC88] rounded-l-full"
+                              style={{width:`${paidPct}%`}}/>
+                          </div>
+                          <div className="flex justify-between text-xs text-[#8892B0]">
+                            <span>Paid {fmtINR(c.spent||0)}</span>
+                            {(c.pending||0)>0&&<span className="text-[#A78BFA]">Pending {fmtINR(c.pending)}</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {c.allocated>0&&(
-                      <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${color}`} style={{width:`${pct}%`}}/>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                  )
+                })}
+              </div>
+            )}
+
+            {category_breakdown.length===0&&totalBudget===0&&(
+              <div className="text-center py-10 space-y-2">
+                <p className="text-3xl">📊</p>
+                <p className="text-[#8892B0] text-sm">No data yet</p>
+                <p className="text-[#8892B0] text-xs">Add accounts, assign categories, and log expenses to see your overview</p>
+              </div>
+            )}
+
+          </div>
+        )
+      })()}
 
       {/* ACCOUNTS */}
       {section==='accounts'&&(
