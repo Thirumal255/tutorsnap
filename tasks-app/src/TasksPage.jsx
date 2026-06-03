@@ -1134,6 +1134,8 @@ function HomeTab({ tasks, onTaskClick }) {
   const today = new Date(new Date().toDateString())
   const in7days = new Date(today); in7days.setDate(today.getDate()+7)
   const root = tasks.filter(t=>!t.parent_id)
+  const [focusOpen, setFocusOpen]     = useState(true)
+  const [comingOpen, setComingOpen]   = useState(true)
 
   // Overdue in-progress tasks
   const overdueTasks = root.filter(t=>t.status==='in_progress'&&isOverdue(t))
@@ -1170,112 +1172,129 @@ function HomeTab({ tasks, onTaskClick }) {
       </div>
 
       {/* ── Today's Focus ── */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <h2 className="text-white font-bold text-base">Today's Focus</h2>
-          {totalOngoing>0&&(
-            <span className="bg-[#00A2FF]/15 text-[#00A2FF] text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing}</span>
-          )}
-        </div>
-
-        {totalOngoing===0 ? (
-          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-6 text-center">
-            <p className="text-2xl mb-2">✅</p>
-            <p className="text-[#8892B0] text-sm">All clear — nothing in progress</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {/* Overdue first */}
-            {overdueTasks.map(t=>{
-              const days = daysLeft(t.end_date)
-              const spent = t.total_expense||0
-              return (
-                <div key={t.id} onClick={()=>onTaskClick(t)}
-                  className={`border-l-4 border-l-[#FF3333] border border-[#FF3333]/20 rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all space-y-2`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
-                      {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
-                    </div>
-                    <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">
-                      {Math.abs(days)}d late
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
-                    {t.end_date&&<span className="text-[#FF3333] text-xs">📅 {fmtShort(t.end_date)}</span>}
-                  </div>
-                  {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
-                  <SubtaskPill subtasks={t.subtasks}/>
-                </div>
-              )
-            })}
-
-            {/* Separator if both sections exist */}
-            {overdueTasks.length>0&&activeTasks.length>0&&(
-              <div className="flex items-center gap-2 py-1">
-                <div className="flex-1 h-px bg-[#2D2B5A]"/>
-                <span className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">In Progress</span>
-                <div className="flex-1 h-px bg-[#2D2B5A]"/>
-              </div>
+      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+        {/* Collapsible header */}
+        <button className="w-full flex items-center justify-between px-4 py-3"
+          onClick={()=>setFocusOpen(o=>!o)}>
+          <div className="flex items-center gap-2">
+            <h2 className="text-white font-bold text-sm">Today's Focus</h2>
+            {totalOngoing>0&&(
+              <span className="bg-[#00A2FF]/15 text-[#00A2FF] text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing}</span>
             )}
+            {overdueTasks.length>0&&(
+              <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full">⚠ {overdueTasks.length}</span>
+            )}
+          </div>
+          <span className="text-[#8892B0] text-xs">{focusOpen?'▲':'▼'}</span>
+        </button>
 
-            {/* Active tasks */}
-            {activeTasks.map(t=>{
-              const days = daysLeft(t.end_date)
-              const spent = t.total_expense||0
-              return (
-                <div key={t.id} onClick={()=>onTaskClick(t)}
-                  className={`border-l-4 bg-[#16213E] border border-[#2D2B5A] ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'} rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all space-y-2`}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
-                    {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
+        {focusOpen&&(
+          <div className="px-3 pb-3 space-y-2">
+            {totalOngoing===0 ? (
+              <div className="text-center py-4">
+                <p className="text-2xl mb-1">✅</p>
+                <p className="text-[#8892B0] text-sm">All clear — nothing in progress</p>
+              </div>
+            ) : (
+              <>
+                {/* Overdue first */}
+                {overdueTasks.map(t=>{
+                  const days = daysLeft(t.end_date)
+                  const spent = t.total_expense||0
+                  return (
+                    <div key={t.id} onClick={()=>onTaskClick(t)}
+                      className="border-l-4 border-l-[#FF3333] border border-[#FF3333]/20 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
+                          {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
+                        </div>
+                        <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
+                        {t.end_date&&<span className="text-[#FF3333] text-xs">📅 {fmtShort(t.end_date)}</span>}
+                      </div>
+                      {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
+                      <SubtaskPill subtasks={t.subtasks}/>
+                    </div>
+                  )
+                })}
+
+                {overdueTasks.length>0&&activeTasks.length>0&&(
+                  <div className="flex items-center gap-2 py-1">
+                    <div className="flex-1 h-px bg-[#2D2B5A]"/>
+                    <span className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">In Progress</span>
+                    <div className="flex-1 h-px bg-[#2D2B5A]"/>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
-                    {t.end_date&&(
-                      <span className={`text-xs ${days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
-                        📅 {fmtShort(t.end_date)}{days!=null&&days<=3?` · ${days}d left`:''}
-                      </span>
-                    )}
-                  </div>
-                  {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
-                  <SubtaskPill subtasks={t.subtasks}/>
-                </div>
-              )
-            })}
+                )}
+
+                {/* Active tasks */}
+                {activeTasks.map(t=>{
+                  const days = daysLeft(t.end_date)
+                  const spent = t.total_expense||0
+                  return (
+                    <div key={t.id} onClick={()=>onTaskClick(t)}
+                      className={`border-l-4 bg-[#0F0F23] border border-[#2D2B5A] ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
+                        {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
+                        {t.end_date&&(
+                          <span className={`text-xs ${days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
+                            📅 {fmtShort(t.end_date)}{days!=null&&days<=3?` · ${days}d left`:''}
+                          </span>
+                        )}
+                      </div>
+                      {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
+                      <SubtaskPill subtasks={t.subtasks}/>
+                    </div>
+                  )
+                })}
+              </>
+            )}
           </div>
         )}
       </div>
 
       {/* ── Coming Up (7 days) ── */}
       {upcoming.length>0&&(
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-white font-bold text-base">Coming Up</h2>
-            <span className="text-[#8892B0] text-xs">next 7 days</span>
-            <span className="bg-[#FFB347]/15 text-[#FFB347] text-xs font-bold px-2 py-0.5 rounded-full">{upcoming.length}</span>
-          </div>
-          <div className="space-y-2">
-            {upcoming.map(t=>{
-              const days = daysLeft(t.start_date)
-              return (
-                <div key={t.id} onClick={()=>onTaskClick(t)}
-                  className="bg-[#16213E] border border-[#FFB347]/20 border-l-4 border-l-[#FFB347] rounded-2xl p-3 cursor-pointer active:scale-[0.99] transition-all">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold text-sm truncate">{t.title}</p>
-                      <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A] mt-1 inline-block">{t.category}</span>
+        <div className="bg-[#16213E] border border-[#FFB347]/20 rounded-2xl overflow-hidden">
+          {/* Collapsible header */}
+          <button className="w-full flex items-center justify-between px-4 py-3"
+            onClick={()=>setComingOpen(o=>!o)}>
+            <div className="flex items-center gap-2">
+              <h2 className="text-white font-bold text-sm">Coming Up</h2>
+              <span className="text-[#8892B0] text-xs">next 7 days</span>
+              <span className="bg-[#FFB347]/15 text-[#FFB347] text-xs font-bold px-2 py-0.5 rounded-full">{upcoming.length}</span>
+            </div>
+            <span className="text-[#8892B0] text-xs">{comingOpen?'▲':'▼'}</span>
+          </button>
+
+          {comingOpen&&(
+            <div className="px-3 pb-3 space-y-2">
+              {upcoming.map(t=>{
+                const days = daysLeft(t.start_date)
+                return (
+                  <div key={t.id} onClick={()=>onTaskClick(t)}
+                    className="bg-[#0F0F23] border border-[#FFB347]/20 border-l-4 border-l-[#FFB347] rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold text-sm truncate">{t.title}</p>
+                        <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A] mt-1 inline-block">{t.category}</span>
+                      </div>
+                      <span className="text-[#FFB347] text-xs font-semibold flex-shrink-0 text-right">
+                        {days===0?'Starts today':days===1?'Tomorrow':`In ${days}d`}<br/>
+                        <span className="text-[#8892B0] font-normal">{fmtShort(t.start_date)}</span>
+                      </span>
                     </div>
-                    <span className="text-[#FFB347] text-xs font-semibold flex-shrink-0 text-right">
-                      {days===0?'Starts today':days===1?'Tomorrow':`In ${days}d`}<br/>
-                      <span className="text-[#8892B0] font-normal">{fmtShort(t.start_date)}</span>
-                    </span>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
