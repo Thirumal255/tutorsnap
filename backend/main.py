@@ -6491,7 +6491,9 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         budget_required  = cat_budget.get(cat, 0)
         spent            = cat_spent.get(cat, 0)
         pending          = round(budget_required - spent, 3)   # planned not yet paid
-        deficit          = round(max(0.0, pending - amount_available), 3)
+        # Deficit is NOT per-category — it's computed globally below.
+        # Per-category we only track pending (budget not yet paid).
+        deficit          = 0.0   # kept in response for backwards compat, always 0 now
         category_breakdown.append({
             "category":         cat,
             "amount_available": amount_available,
@@ -6514,8 +6516,11 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         "total_income":  total_income,
         "total_expenses":       total_expenses,
         "total_planned_period": total_planned_period,
-        "period_categories":    period_categories,     # per-category paid+planned this period
+        "period_categories":    period_categories,
         "net":                  total_income - total_expenses,
+        # Overall shortfall: total pending across all categories vs total live account balance
+        # This is the only honest "deficit" — do you have enough money in your accounts?
+        "overall_shortfall":    round(max(0.0, sum(c["pending"] for c in category_breakdown) - total_balance), 3),
         "category_breakdown": category_breakdown,
     }
 

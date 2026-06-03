@@ -1843,8 +1843,8 @@ function FinanceTab() {
         const totalBudget   = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
         const totalPaid     = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
         const totalPending  = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
-        const totalDeficit  = category_breakdown.reduce((s,c)=>s+(c.deficit||0),0)
-        const hasAnyDeficit = totalDeficit > 0
+        const overallShortfall = summary.overall_shortfall || 0
+        const hasShortfall     = overallShortfall > 0
         const paidThisPeriod    = summary.total_expenses || 0
         const plannedThisPeriod = summary.total_planned_period || 0
         const budgetThisPeriod  = paidThisPeriod + plannedThisPeriod
@@ -1912,12 +1912,6 @@ function FinanceTab() {
                           <span className="text-[#8892B0]">🕐 Pending</span>
                           <span className="text-[#A78BFA] font-semibold">{plannedThisPeriod>0?fmtINR(plannedThisPeriod):'—'}</span>
                         </div>
-                        {plannedThisPeriod>0&&(
-                          <div className="flex justify-between text-[10px] border-t border-[#2D2B5A] pt-1">
-                            <span className="text-[#FF3333]">⚠ Deficit</span>
-                            <span className="text-[#FF3333] font-semibold">{fmtINR(plannedThisPeriod)}</span>
-                          </div>
-                        )}
                         {/* mini bar */}
                         {budgetThisPeriod>0&&(
                           <div className="h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden flex mt-1">
@@ -1947,10 +1941,6 @@ function FinanceTab() {
                                   <span className="text-[#8892B0]">🕐 Pending</span>
                                   <span className="text-[#A78BFA]">{fmtINR(c.planned)}</span>
                                 </div>}
-                                {c.planned>0&&<div className="flex justify-between border-t border-[#FF3333]/20 pt-0.5">
-                                  <span className="text-[#FF3333]">⚠ Deficit</span>
-                                  <span className="text-[#FF3333] font-semibold">{fmtINR(c.planned)}</span>
-                                </div>}
                               </div>
                             </div>
                           )
@@ -1965,20 +1955,23 @@ function FinanceTab() {
 
             {/* ── Commitments ─────────────────────────────────── */}
             {totalBudget>0&&(
-              <div className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${hasAnyDeficit?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
+              <div className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${hasShortfall?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
                 <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Commitments</p>
 
-                {/* Big number: total budget */}
                 <div className="flex items-end justify-between">
                   <div>
                     <p className="text-[#8892B0] text-xs">Total Budget Required</p>
                     <p className="text-white font-fredoka font-bold text-2xl mt-0.5">{fmtINR(totalBudget)}</p>
                   </div>
-                  {hasAnyDeficit&&(
+                  {hasShortfall ? (
                     <span className="text-xs font-bold px-2 py-1 rounded-full bg-[#FF3333]/15 text-[#FF3333]">
-                      ⚠ {fmtINR(totalDeficit)} short
+                      ⚠ {fmtINR(overallShortfall)} short
                     </span>
-                  )}
+                  ) : totalPending>0 ? (
+                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-[#00CC88]/10 text-[#00CC88]">
+                      ✓ Funded
+                    </span>
+                  ) : null}
                 </div>
 
                 {/* Progress bar: paid vs pending */}
@@ -2002,34 +1995,26 @@ function FinanceTab() {
               <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
                 <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider px-4 pt-3 pb-2">By Category</p>
                 {category_breakdown.map((c,i)=>{
-                  const hasDeficit = (c.deficit||0) > 0
-                  const paidPct    = (c.budget_required||0)>0
+                  const paidPct = (c.budget_required||0)>0
                     ? Math.min((c.spent||0)/(c.budget_required)*100,100) : 0
                   return (
                     <div key={c.category}
-                      className={`px-4 py-3 ${i>0?'border-t border-[#2D2B5A]/50':''} ${hasDeficit?'bg-[#FF3333]/5':''}`}>
+                      className={`px-4 py-3 ${i>0?'border-t border-[#2D2B5A]/50':''}`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <div>
                           <p className="text-white text-xs font-semibold">{c.category}</p>
                           {(c.account_links||[]).length>0&&(
                             <p className="text-[#00A2FF] text-xs">
-                              {(c.account_links).map(l=>l.account_name).join(' · ')}
+                              {c.account_links.map(l=>l.account_name).join(' · ')}
                             </p>
                           )}
                         </div>
-                        <div className="text-right">
-                          <p className="text-white text-xs font-semibold">{fmtINR(c.budget_required||0)}</p>
-                          {hasDeficit
-                            ? <p className="text-[#FF3333] text-xs font-semibold">⚠ {fmtINR(c.deficit)} short</p>
-                            : <p className="text-[#00CC88] text-xs">✓ covered</p>
-                          }
-                        </div>
+                        <p className="text-white text-xs font-semibold">{fmtINR(c.budget_required||0)}</p>
                       </div>
                       {(c.budget_required||0)>0&&(
                         <div className="space-y-1">
                           <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden flex">
-                            <div className="h-full bg-[#00CC88] rounded-l-full"
-                              style={{width:`${paidPct}%`}}/>
+                            <div className="h-full bg-[#00CC88] rounded-l-full" style={{width:`${paidPct}%`}}/>
                           </div>
                           <div className="flex justify-between text-xs text-[#8892B0]">
                             <span>Paid {fmtINR(c.spent||0)}</span>
@@ -2373,52 +2358,31 @@ function FinanceTab() {
             const budgetReq    = c.budget_required||0
             const spent        = c.spent||0
             const pending      = c.pending||0
-            const deficit      = c.deficit||0
-            const hasDeficit   = deficit > 0
-            const spentPct     = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
-            const availPct     = budgetReq>0 ? Math.min(available/budgetReq*100,100) : 0
+            const spentPct = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
             return (
-              <div key={c.category}
-                className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${hasDeficit?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
+              <div key={c.category} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
 
-                {/* Category name + deficit badge */}
+                {/* Category name */}
                 <div className="flex items-center justify-between">
                   <p className="text-white font-semibold text-sm">{c.category}</p>
-                  {hasDeficit
-                    ? <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#FF3333]/15 text-[#FF3333]">
-                        ⚠ Deficit {fmtINR(deficit)}
-                      </span>
-                    : budgetReq>0
-                      ? <span className="text-xs font-semibold text-[#00CC88]">✓ Funded</span>
-                      : null
-                  }
+                  <p className="text-white font-bold text-sm">{fmtINR(budgetReq)}</p>
                 </div>
 
-                {/* 5 key numbers in 2 rows */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
-                    <p className="text-[#8892B0] text-xs">Available (allocated)</p>
-                    <p className="text-[#00A2FF] font-bold text-sm mt-0.5">{available>0?fmtINR(available):'Not set'}</p>
+                {/* 3 numbers */}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                    <p className="text-[#8892B0] text-[10px]">Total Budget</p>
+                    <p className="text-white font-bold text-xs mt-0.5">{fmtINR(budgetReq)}</p>
                   </div>
-                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
-                    <p className="text-[#8892B0] text-xs">Total Budget</p>
-                    <p className="text-white font-bold text-sm mt-0.5">{fmtINR(budgetReq)}</p>
+                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                    <p className="text-[#8892B0] text-[10px]">✅ Paid</p>
+                    <p className="text-[#00CC88] font-bold text-xs mt-0.5">{spent>0?fmtINR(spent):'—'}</p>
                   </div>
-                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
-                    <p className="text-[#8892B0] text-xs">Paid</p>
-                    <p className="text-[#FFB347] font-bold text-sm mt-0.5">{fmtINR(spent)}</p>
-                  </div>
-                  <div className="bg-[#0F0F23] rounded-xl px-3 py-2">
-                    <p className="text-[#8892B0] text-xs">Pending (planned)</p>
-                    <p className="text-[#A78BFA] font-bold text-sm mt-0.5">{pending>0?fmtINR(pending):'—'}</p>
+                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                    <p className="text-[#8892B0] text-[10px]">🕐 Pending</p>
+                    <p className="text-[#A78BFA] font-bold text-xs mt-0.5">{pending>0?fmtINR(pending):'—'}</p>
                   </div>
                 </div>
-                {hasDeficit&&(
-                  <div className="bg-[#FF3333]/10 border border-[#FF3333]/20 rounded-xl px-3 py-2 flex items-center justify-between">
-                    <p className="text-[#8892B0] text-xs">Deficit (pending − available)</p>
-                    <p className="text-[#FF3333] font-bold text-sm">{fmtINR(deficit)}</p>
-                  </div>
-                )}
 
                 {/* Spend progress bar */}
                 {budgetReq>0&&(
