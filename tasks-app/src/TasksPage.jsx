@@ -245,6 +245,7 @@ function TaskCard({ task, onClick, onStatusChange }) {
   const overdue = isOverdue(task)
   const days = daysLeft(task.end_date)
   const spent = task.total_expense||0
+  const [isOpen, setIsOpen] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [completing, setCompleting] = useState(false)
   const longPress = useLongPress(()=>setShowPicker(true))
@@ -268,54 +269,70 @@ function TaskCard({ task, onClick, onStatusChange }) {
 
   return (
     <>
-      <div {...longPress} onClick={()=>onClick(task)}
-        className={`bg-[#16213E] border border-[#2D2B5A] border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-all hover:border-[#00A2FF]/40 space-y-2 select-none`}>
+      <div {...longPress}
+        className={`bg-[#16213E] border border-[#2D2B5A] border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} rounded-2xl overflow-hidden select-none ${overdue?'border-[#FF3333]/30':''}`}>
 
-        {/* Top row: complete btn + title */}
-        <div className="flex items-start gap-2.5">
+        {/* ── Collapsed header (always visible) ── */}
+        <div className="flex items-center gap-2.5 p-3 cursor-pointer active:scale-[0.99] transition-all"
+          onClick={()=>setIsOpen(o=>!o)}>
+          {/* Complete button */}
           <button onClick={handleComplete} disabled={completing}
-            className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center mt-0.5 transition-all ${
+            className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
               isDone ? 'bg-[#00CC88] border-[#00CC88] text-white'
                      : 'border-[#2D2B5A] text-transparent hover:border-[#00CC88] hover:text-[#00CC88]'
             }`}>
             <span className="text-xs font-bold leading-none">✓</span>
           </button>
-          <div className="flex-1 min-w-0">
-            <h3 className={`font-semibold text-sm leading-snug ${isDone?'line-through text-[#8892B0]':'text-white'}`}>
-              {task.title}
-            </h3>
+
+          {/* Title */}
+          <h3 className={`flex-1 min-w-0 font-semibold text-sm leading-snug truncate ${isDone?'line-through text-[#8892B0]':'text-white'}`}>
+            {task.title}
+          </h3>
+
+          {/* Right: urgent hint + chevron */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {overdue&&<span className="text-[#FF3333] text-xs font-bold">{Math.abs(days)}d late</span>}
+            {!overdue&&days!=null&&days<=3&&<span className="text-[#FFB347] text-xs font-semibold">{days}d left</span>}
+            <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
+          </div>
+        </div>
+
+        {/* ── Expanded detail ── */}
+        {isOpen&&(
+          <div className="px-3 pb-3 space-y-2 border-t border-[#2D2B5A]/60">
+            {/* Notes */}
             {task.notes&&!isDone&&(
-              <p className="text-[#8892B0] text-xs mt-0.5 truncate">{task.notes}</p>
+              <p className="text-[#8892B0] text-xs pt-2">{task.notes}</p>
             )}
-          </div>
-        </div>
 
-        {/* Budget bar */}
-        {task.budget>0 && <BudgetBar budget={task.budget} spent={spent} compact/>}
+            {/* Category + status */}
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{task.category}</span>
+              <StatusBadge status={task.status}/>
+            </div>
 
-        {/* Bottom row: category + status + dates + subtasks */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Category tag */}
-            <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{task.category}</span>
-            {/* Status badge */}
-            <StatusBadge status={task.status}/>
-          </div>
-          <SubtaskPill subtasks={task.subtasks}/>
-        </div>
+            {/* Date */}
+            {(task.start_date||task.end_date)&&(
+              <div className="flex items-center gap-1 text-xs">
+                <span className={overdue?'text-[#FF3333]':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}>{overdue?'⚠️':'📅'}</span>
+                <span className={overdue?'text-[#FF3333] font-semibold':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}>
+                  {task.start_date&&fmtShort(task.start_date)}
+                  {task.start_date&&task.end_date&&<span className="text-[#2D2B5A]"> → </span>}
+                  {task.end_date&&fmtShort(task.end_date)}
+                  {overdue?` · ${Math.abs(days)}d late`:days!=null&&days<=3?` · ${days}d left`:''}
+                </span>
+              </div>
+            )}
 
-        {/* Date row */}
-        {(task.start_date||task.end_date)&&(
-          <div className="flex items-center gap-1 text-xs">
-            <span className={overdue?'text-[#FF3333]':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}>
-              {overdue?'⚠️':'📅'}
-            </span>
-            <span className={`${overdue?'text-[#FF3333] font-semibold':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
-              {task.start_date&&<span>{fmtShort(task.start_date)}</span>}
-              {task.start_date&&task.end_date&&<span className="text-[#2D2B5A]"> → </span>}
-              {task.end_date&&<span>{fmtShort(task.end_date)}</span>}
-              {overdue?` · ${Math.abs(days)}d late`:days!=null&&days<=3?` · ${days}d left`:''}
-            </span>
+            {/* Budget + subtasks */}
+            {task.budget>0&&<BudgetBar budget={task.budget} spent={spent} compact/>}
+            <SubtaskPill subtasks={task.subtasks}/>
+
+            {/* Open full detail */}
+            <button onClick={e=>{e.stopPropagation();onClick(task)}}
+              className="w-full py-1.5 rounded-lg bg-[#00A2FF]/10 text-[#00A2FF] text-xs font-semibold mt-1">
+              Open Task →
+            </button>
           </div>
         )}
       </div>
@@ -1134,8 +1151,8 @@ function HomeTab({ tasks, onTaskClick }) {
   const today = new Date(new Date().toDateString())
   const in7days = new Date(today); in7days.setDate(today.getDate()+7)
   const root = tasks.filter(t=>!t.parent_id)
-  const [focusOpen, setFocusOpen]     = useState(true)
-  const [comingOpen, setComingOpen]   = useState(true)
+  const [focusOpen, setFocusOpen]     = useState(false)
+  const [comingOpen, setComingOpen]   = useState(false)
 
   // Overdue in-progress tasks
   const overdueTasks = root.filter(t=>t.status==='in_progress'&&isOverdue(t))
