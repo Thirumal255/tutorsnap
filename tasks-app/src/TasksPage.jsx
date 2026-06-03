@@ -1538,28 +1538,31 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
         </div>
       </div>
 
-      {/* ── Single filter row: status pills | divider | category chips ── */}
+      {/* ── Two filter rows: status | category ── */}
       {!q&&(
-        <div className="px-4 pb-3 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
-          {STATUSES.map(f=>(
-            <button key={f.key} onClick={()=>setFilterStatus(f.key)}
+        <div className="space-y-2 pb-3">
+          {/* Row 1 — Status */}
+          <div className="px-4 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+            {STATUSES.map(f=>(
+              <button key={f.key} onClick={()=>setFilterStatus(f.key)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                  filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                }`}>{f.label}</button>
+            ))}
+          </div>
+          {/* Row 2 — Category */}
+          <div className="px-4 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
+            <button onClick={()=>setFilterCat('all')}
               className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
-              }`}>{f.label}</button>
-          ))}
-          {/* Divider */}
-          <div className="flex-shrink-0 w-px bg-[#2D2B5A] self-stretch mx-1"/>
-          {/* Category chips */}
-          <button onClick={()=>setFilterCat('all')}
-            className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-              filterCat==='all'?'bg-[#A78BFA] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
-            }`}>All Cats</button>
-          {categories.map(c=>(
-            <button key={c} onClick={()=>setFilterCat(filterCat===c?'all':c)}
-              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                filterCat===c?'bg-[#A78BFA] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
-              }`}>{c}</button>
-          ))}
+                filterCat==='all'?'bg-[#A78BFA] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+              }`}>All</button>
+            {categories.map(c=>(
+              <button key={c} onClick={()=>setFilterCat(filterCat===c?'all':c)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                  filterCat===c?'bg-[#A78BFA] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                }`}>{c}</button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1894,55 +1897,43 @@ function FinanceTab() {
             <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
               <div className="grid grid-cols-2 divide-x divide-[#2D2B5A]">
 
-                {/* LEFT — Account Balances (collapsed by default, tap account to expand) */}
-                <div className="p-3 space-y-2.5">
-                  <div>
-                    <p className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">Balances</p>
-                    <p className="text-white font-fredoka font-bold text-lg leading-tight">{fmtINR(total_balance)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    {accounts.map(a=>{
-                      const over = a.overallocated
-                      const isOpen = expandedBalanceAcc === a.id
-                      return (
-                        <div key={a.id} className={`rounded-lg overflow-hidden ${isOpen?'bg-[#0F0F23]':''}`}>
-                          {/* Collapsed row — just icon + name + chevron; balance hidden until open */}
-                          <button className="w-full flex items-center justify-between py-1 px-1.5 text-left"
-                            onClick={()=>setExpandedBalanceAcc(isOpen?null:a.id)}>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-sm flex-shrink-0">{ACCOUNT_ICONS[a.type]||'💳'}</span>
-                              <p className="text-white text-xs font-semibold truncate">{a.name}</p>
-                            </div>
-                            <span className="text-[#8892B0] text-[10px] flex-shrink-0 ml-1">{isOpen?'▲':'▼'}</span>
-                          </button>
-                          {/* Expanded detail */}
-                          {isOpen&&(
-                            <div className="px-2 pb-2 space-y-0.5">
-                              <div className="flex justify-between text-xs">
-                                <span className="text-[#8892B0]">Balance</span>
-                                <span className="text-[#00A2FF] font-bold">{fmtINR(a.current_balance)}</span>
+                {/* LEFT — Account Balances (fully collapsed; tap total to reveal list) */}
+                <div className="p-3">
+                  {/* Always-visible header — tap to expand/collapse entire list */}
+                  <button className="w-full text-left" onClick={()=>setExpandedBalanceAcc(expandedBalanceAcc==='all'?null:'all')}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">Balances</p>
+                      <span className="text-[#8892B0] text-[10px]">{expandedBalanceAcc==='all'?'▲':'▼'}</span>
+                    </div>
+                    <p className="text-white font-fredoka font-bold text-lg leading-tight mt-0.5">{fmtINR(total_balance)}</p>
+                  </button>
+
+                  {/* Expandable account list */}
+                  {expandedBalanceAcc==='all'&&(
+                    <div className="mt-2.5 space-y-1">
+                      {accounts.map(a=>{
+                        const over = a.overallocated
+                        const isOpen = expandedBalanceAcc === a.id  // individual row expand (future use)
+                        return (
+                          <div key={a.id} className="rounded-lg bg-[#0F0F23] px-2 py-1.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-sm flex-shrink-0">{ACCOUNT_ICONS[a.type]||'💳'}</span>
+                                <p className="text-white text-xs font-semibold truncate">{a.name}</p>
                               </div>
-                              {(a.total_allocated||0)>0&&(
-                                <>
-                                  <div className="flex justify-between text-xs">
-                                    <span className="text-[#8892B0]">Allocated</span>
-                                    <span className="text-white">{fmtINR(a.total_allocated)}</span>
-                                  </div>
-                                  <div className="flex justify-between text-xs">
-                                    <span className={over?'text-[#FF3333]':'text-[#8892B0]'}>{over?'⚠ Over':'Free'}</span>
-                                    <span className={over?'text-[#FF3333] font-bold':'text-[#00CC88]'}>{fmtINR(Math.abs(a.free_balance||0))}</span>
-                                  </div>
-                                </>
-                              )}
-                              {(a.total_allocated||0)===0&&(
-                                <p className="text-[#8892B0] text-xs">No categories linked</p>
-                              )}
+                              <p className="text-[#00A2FF] text-xs font-bold ml-1 flex-shrink-0">{fmtINR(a.current_balance)}</p>
                             </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                            {(a.total_allocated||0)>0&&(
+                              <div className="flex justify-between text-[10px] mt-0.5 pl-6">
+                                <span className={over?'text-[#FF3333]':'text-[#8892B0]'}>{over?'⚠ Over':'Free'}</span>
+                                <span className={over?'text-[#FF3333] font-bold':'text-[#00CC88]'}>{fmtINR(Math.abs(a.free_balance||0))}</span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* RIGHT — Period breakdown */}
