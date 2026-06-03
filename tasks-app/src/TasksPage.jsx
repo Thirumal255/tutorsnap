@@ -1898,7 +1898,7 @@ function FinanceTab() {
 
                   {budgetThisPeriod>0&&(
                     <>
-                      {/* Totals row */}
+                      {/* Totals summary */}
                       <div className="bg-[#0F0F23] rounded-xl p-2 space-y-1">
                         <div className="flex justify-between text-[10px]">
                           <span className="text-[#8892B0]">Budget</span>
@@ -1912,8 +1912,14 @@ function FinanceTab() {
                           <span className="text-[#8892B0]">🕐 Pending</span>
                           <span className="text-[#A78BFA] font-semibold">{plannedThisPeriod>0?fmtINR(plannedThisPeriod):'—'}</span>
                         </div>
+                        {plannedThisPeriod>0&&(
+                          <div className="flex justify-between text-[10px] border-t border-[#2D2B5A] pt-1">
+                            <span className="text-[#FF3333]">⚠ Deficit</span>
+                            <span className="text-[#FF3333] font-semibold">{fmtINR(plannedThisPeriod)}</span>
+                          </div>
+                        )}
                         {/* mini bar */}
-                        {paidThisPeriod>0&&plannedThisPeriod>0&&(
+                        {budgetThisPeriod>0&&(
                           <div className="h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden flex mt-1">
                             <div className="h-full bg-[#00CC88]" style={{width:`${paidThisPeriod/budgetThisPeriod*100}%`}}/>
                             <div className="h-full bg-[#A78BFA]" style={{width:`${plannedThisPeriod/budgetThisPeriod*100}%`}}/>
@@ -1921,20 +1927,30 @@ function FinanceTab() {
                         )}
                       </div>
 
-                      {/* Per-category */}
+                      {/* Per-category with deficit */}
                       <div className="space-y-2">
                         {periodCats.map(c=>{
-                          const budget  = c.paid + c.planned
-                          const pending = c.planned
+                          const budget = c.paid + c.planned
                           return (
-                            <div key={c.category}>
+                            <div key={c.category} className={c.planned>0?'bg-[#FF3333]/5 rounded-lg p-1.5 -mx-1':''}>
                               <p className="text-white text-[10px] font-semibold truncate">{c.category}</p>
-                              <div className="flex justify-between text-[10px] text-[#8892B0]">
-                                <span>₹{(budget/1000).toFixed(1)}K total</span>
-                                <span className="flex gap-1.5">
-                                  {c.paid>0&&<span className="text-[#00CC88]">✅{fmtINR(c.paid)}</span>}
-                                  {c.planned>0&&<span className="text-[#A78BFA]">🕐{fmtINR(c.planned)}</span>}
-                                </span>
+                              <div className="text-[10px] space-y-0.5 mt-0.5">
+                                <div className="flex justify-between">
+                                  <span className="text-[#8892B0]">Budget</span>
+                                  <span className="text-white">{fmtINR(budget)}</span>
+                                </div>
+                                {c.paid>0&&<div className="flex justify-between">
+                                  <span className="text-[#8892B0]">✅ Paid</span>
+                                  <span className="text-[#00CC88]">{fmtINR(c.paid)}</span>
+                                </div>}
+                                {c.planned>0&&<div className="flex justify-between">
+                                  <span className="text-[#8892B0]">🕐 Pending</span>
+                                  <span className="text-[#A78BFA]">{fmtINR(c.planned)}</span>
+                                </div>}
+                                {c.planned>0&&<div className="flex justify-between border-t border-[#FF3333]/20 pt-0.5">
+                                  <span className="text-[#FF3333]">⚠ Deficit</span>
+                                  <span className="text-[#FF3333] font-semibold">{fmtINR(c.planned)}</span>
+                                </div>}
                               </div>
                             </div>
                           )
@@ -2121,21 +2137,35 @@ function FinanceTab() {
                       const link = (c.account_links||[]).find(l=>l.account_id===a.id)
                       const allocKey = `${a.id}_${c.category}`
                       const editingAmt = editAllocAmount[allocKey] !== undefined
+                      // max you can set = free_balance + this category's current allocation
+                      const maxForThis = (a.free_balance||0) + (link?.allocated||0)
+                      const draftAmt   = parseFloat(editAllocAmount[allocKey])||0
+                      const overLimit  = editingAmt && draftAmt > maxForThis
                       return (
                         <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40">
                           {editingAmt ? (
-                            <div className="flex items-center gap-2">
-                              <span className="text-white text-xs font-semibold flex-1">{c.category}</span>
-                              <input type="number" min="0" step="0.001" autoFocus
-                                value={editAllocAmount[allocKey]}
-                                onChange={e=>setEditAllocAmount(x=>({...x,[allocKey]:e.target.value}))}
-                                className="w-28 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-2 py-1 text-white text-xs"/>
-                              <button onClick={async()=>{
-                                await upsertFinanceAllocation({category:c.category, allocated_amount:parseFloat(editAllocAmount[allocKey])||0, account_id:a.id})
-                                setEditAllocAmount(x=>({...x,[allocKey]:undefined})); await load()
-                              }} className="px-2 py-1 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
-                              <button onClick={()=>setEditAllocAmount(x=>({...x,[allocKey]:undefined}))}
-                                className="text-[#8892B0] text-xs px-1">✕</button>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-white text-xs font-semibold flex-1">{c.category}</span>
+                                <input type="number" min="0" step="0.001" autoFocus
+                                  value={editAllocAmount[allocKey]}
+                                  onChange={e=>setEditAllocAmount(x=>({...x,[allocKey]:e.target.value}))}
+                                  className={`w-28 bg-[#0F0F23] border rounded-xl px-2 py-1 text-white text-xs ${overLimit?'border-[#FF3333]':'border-[#2D2B5A]'}`}/>
+                                <button disabled={overLimit} onClick={async()=>{
+                                  try {
+                                    await upsertFinanceAllocation({category:c.category, allocated_amount:draftAmt, account_id:a.id})
+                                    setEditAllocAmount(x=>({...x,[allocKey]:undefined})); await load()
+                                  } catch(e) { alert(e.response?.data?.detail||'Failed') }
+                                }} className={`px-2 py-1 rounded-xl text-white text-xs font-semibold ${overLimit?'bg-[#2D2B5A] opacity-50 cursor-not-allowed':'bg-[#00A2FF]'}`}>Save</button>
+                                <button onClick={()=>setEditAllocAmount(x=>({...x,[allocKey]:undefined}))}
+                                  className="text-[#8892B0] text-xs px-1">✕</button>
+                              </div>
+                              <p className={`text-xs ml-0 ${overLimit?'text-[#FF3333]':'text-[#8892B0]'}`}>
+                                {overLimit
+                                  ? `⚠ Exceeds limit. Max: ${fmtINR(maxForThis)}`
+                                  : `Available to allocate: ${fmtINR(maxForThis)}`
+                                }
+                              </p>
                             </div>
                           ) : (
                             <div className="flex items-center justify-between">
@@ -2166,6 +2196,7 @@ function FinanceTab() {
                           return (
                             <div key={cat}>
                               {isEditing ? (
+                                <div className="space-y-1">
                                 <div className="flex items-center gap-2">
                                   <span className="text-white text-xs font-semibold flex-1">{cat}</span>
                                   <input
@@ -2178,12 +2209,16 @@ function FinanceTab() {
                                   />
                                   <button onClick={async()=>{
                                     const amt = parseFloat(draft)||0
-                                    await upsertFinanceAllocation({category:cat, allocated_amount:amt, account_id:a.id})
-                                    setAssignDraft(x=>({...x,[draftKey]:undefined}))
-                                    await load()
+                                    try {
+                                      await upsertFinanceAllocation({category:cat, allocated_amount:amt, account_id:a.id})
+                                      setAssignDraft(x=>({...x,[draftKey]:undefined}))
+                                      await load()
+                                    } catch(e) { alert(e.response?.data?.detail||'Failed') }
                                   }} className="px-2 py-1 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
                                   <button onClick={()=>setAssignDraft(x=>({...x,[draftKey]:undefined}))}
                                     className="text-[#8892B0] text-xs">✕</button>
+                                </div>
+                                <p className="text-[#8892B0] text-xs">Available: {fmtINR(a.free_balance||0)}</p>
                                 </div>
                               ) : (
                                 <button onClick={()=>setAssignDraft(x=>({...x,[draftKey]:''}))}

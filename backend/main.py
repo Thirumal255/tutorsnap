@@ -6009,6 +6009,14 @@ def send_task_digest(
 
 # -- Finance Endpoints --------------------------------------------------------
 
+def fmtINR_py(v: float) -> str:
+    """Format a float as Indian currency string (for error messages)."""
+    if v >= 1_00_00_000:
+        return f"₹{v/1_00_00_000:.2f}Cr"
+    if v >= 1_00_000:
+        return f"₹{v/1_00_000:.2f}L"
+    return f"₹{v:,.0f}"
+
 class PaymentAccountIn(BaseModel):
     name: str
     type: str = "bank"
@@ -6318,6 +6326,32 @@ def upsert_allocation(body: CategoryAllocationIn, db: Session = Depends(get_db),
     else:
         q = q.filter(CategoryAllocation.account_id.is_(None))
     existing = q.first()
+
+    # ── Guard: don't allow over-allocation ────────────────────────────────
+    if body.account_id is not None and body.allocated_amount > 0:
+        acct = db.query(PaymentAccount).filter(PaymentAccount.id == body.account_id).first()
+        if acct:
+            live = _batch_live_balances(db, [acct])[acct.id]
+            # sum of all OTHER categories already allocated to this account
+            other_alloc = (
+                db.query(func.sum(CategoryAllocation.allocated_amount))
+                .filter(
+                    CategoryAllocation.account_id == body.account_id,
+                    CategoryAllocation.category != body.category,
+                )
+                .scalar() or 0
+            )
+            max_allowed = round(live - other_alloc, 3)
+            if body.allocated_amount > max_allowed:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Cannot allocate {fmtINR_py(body.allocated_amount)} from {acct.name}. "
+                        f"Available to allocate: {fmtINR_py(max_allowed)} "
+                        f"(live balance {fmtINR_py(live)} − already allocated {fmtINR_py(other_alloc)})."
+                    )
+                )
+
     if existing:
         existing.allocated_amount = body.allocated_amount
         db.commit(); db.refresh(existing)
