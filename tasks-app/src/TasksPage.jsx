@@ -1968,17 +1968,27 @@ function FinanceTab() {
                 {isExpanded&&(
                   <div className="border-t border-[#2D2B5A]">
                     {/* Allocation bar */}
-                    {totalAllocated>0&&a.current_balance>0&&(
+                    {totalAllocated>0&&(
                       <div className="px-4 pt-3 pb-2 space-y-1">
-                        <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-[#00A2FF]/40 relative">
-                            <div className="h-full rounded-full bg-[#00A2FF]"
-                              style={{width:`${Math.min(totalAllocated/a.current_balance*100,100)}%`}}/>
-                          </div>
-                        </div>
+                        {/* Bar: how much of account capacity is allocated */}
+                        {(() => {
+                          const capacity = a.current_balance + (a.paid_out||0)  // inflows total
+                          const pct = capacity>0 ? Math.min(totalAllocated/capacity*100,100) : 0
+                          const spentPct = capacity>0 ? Math.min((a.paid_out||0)/capacity*100,100) : 0
+                          return (
+                            <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden relative">
+                              {/* Allocated band */}
+                              <div className={`absolute inset-y-0 left-0 rounded-full ${overAllocated?'bg-[#FF3333]':'bg-[#00A2FF]'}`}
+                                style={{width:`${pct}%`}}/>
+                              {/* Spent band (darker) */}
+                              <div className="absolute inset-y-0 left-0 rounded-full bg-[#00CC88]/60"
+                                style={{width:`${spentPct}%`}}/>
+                            </div>
+                          )
+                        })()}
                         <div className="flex justify-between text-xs text-[#8892B0]">
                           <span>{fmtINR(totalAllocated)} allocated</span>
-                          <span>{fmtINR(totalSpent)} spent · {fmtINR(free)} free</span>
+                          <span>{fmtINR(a.paid_out||0)} spent · {fmtINR(a.free_balance??free)} free</span>
                         </div>
                       </div>
                     )}

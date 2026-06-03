@@ -6061,14 +6061,22 @@ def _batch_live_balances(db, accounts: list) -> Dict[int, float]:
     return result
 
 
-def _acct_dict(acct: "PaymentAccount", live_bal: float, total_allocated: float = 0) -> dict:
-    free = round(live_bal - total_allocated, 3)
+def _acct_dict(acct: "PaymentAccount", live_bal: float,
+               total_allocated: float = 0, paid_out: float = 0) -> dict:
+    # Correct free calculation:
+    # live_balance has paid expenses already deducted.
+    # Spending allocated money should NOT make the account look over-allocated.
+    # free = (live_bal + paid_out) - total_allocated
+    #      = total_inflows (opening + receipts + xfer_in - xfer_out) - total_allocated
+    # This is independent of how much has already been spent from the allocation.
+    free = round((live_bal + paid_out) - total_allocated, 3)
     return {
         "id": acct.id, "name": acct.name, "type": acct.type,
         "opening_balance": acct.opening_balance or acct.current_balance or 0,
         "live_balance": live_bal,
-        "current_balance": live_bal,   # alias — frontend uses this
+        "current_balance": live_bal,
         "total_allocated": total_allocated,
+        "paid_out": paid_out,
         "free_balance": free,
         "overallocated": free < 0,
     }
@@ -6095,7 +6103,7 @@ class CategoryAllocationIn(BaseModel):
 
 
 def _allocated_per_account(db, account_ids: list) -> Dict[int, float]:
-    """Sum of all category allocations per account."""
+    """Sum of category allocations per account."""
     if not account_ids:
         return {}
     rows = (
@@ -6106,12 +6114,29 @@ def _allocated_per_account(db, account_ids: list) -> Dict[int, float]:
     return {aid: float(total or 0) for aid, total in rows}
 
 
+def _paid_per_account(db, account_ids: list) -> Dict[int, float]:
+    """Sum of paid expenses per account (already deducted in live_balance)."""
+    if not account_ids:
+        return {}
+    rows = (
+        db.query(AdminTaskExpense.account_id, func.sum(AdminTaskExpense.amount))
+        .filter(
+            AdminTaskExpense.account_id.in_(account_ids),
+            AdminTaskExpense.status == "paid",
+        )
+        .group_by(AdminTaskExpense.account_id).all()
+    )
+    return {aid: float(total or 0) for aid, total in rows}
+
+
 @app.get("/api/finance/accounts")
 def list_accounts(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    rows = db.query(PaymentAccount).order_by(PaymentAccount.name).all()
-    live = _batch_live_balances(db, rows)
-    alloc = _allocated_per_account(db, [r.id for r in rows])
-    return [_acct_dict(r, live[r.id], alloc.get(r.id, 0)) for r in rows]
+    rows  = db.query(PaymentAccount).order_by(PaymentAccount.name).all()
+    ids   = [r.id for r in rows]
+    live  = _batch_live_balances(db, rows)
+    alloc = _allocated_per_account(db, ids)
+    paid  = _paid_per_account(db, ids)
+    return [_acct_dict(r, live[r.id], alloc.get(r.id, 0), paid.get(r.id, 0)) for r in rows]
 
 @app.post("/api/finance/accounts")
 def create_account(body: PaymentAccountIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6146,7 +6171,8 @@ def update_account(acct_id: int, body: PaymentAccountIn, db: Session = Depends(g
     db.commit()
     live = _batch_live_balances(db, [acct])
     alloc = _allocated_per_account(db, [acct.id])
-    return _acct_dict(acct, live[acct.id], alloc.get(acct.id, 0))
+    paid  = _paid_per_account(db, [acct.id])
+    return _acct_dict(acct, live[acct.id], alloc.get(acct.id, 0), paid.get(acct.id, 0))
 
 @app.get("/api/finance/accounts/{acct_id}/breakdown")
 def account_breakdown(acct_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
@@ -6347,8 +6373,10 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
 
     # ── Accounts + live balances (4 queries total, not 4N) ───────────────────
     accounts  = db.query(PaymentAccount).order_by(PaymentAccount.type, PaymentAccount.name).all()
-    live_bal  = _batch_live_balances(db, accounts)          # single batch
-    alloc_per = _allocated_per_account(db, [a.id for a in accounts])
+    acct_ids  = [a.id for a in accounts]
+    live_bal  = _batch_live_balances(db, accounts)
+    alloc_per = _allocated_per_account(db, acct_ids)
+    paid_per  = _paid_per_account(db, acct_ids)
 
     total_bank    = sum(live_bal[a.id] for a in accounts if a.type == "bank")
     total_cash    = sum(live_bal[a.id] for a in accounts if a.type == "cash")
@@ -6425,7 +6453,7 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
 
     return {
         "period":        period,
-        "accounts":      [_acct_dict(a, live_bal[a.id], alloc_per.get(a.id, 0)) for a in accounts],
+        "accounts":      [_acct_dict(a, live_bal[a.id], alloc_per.get(a.id, 0), paid_per.get(a.id, 0)) for a in accounts],
         "total_bank":    total_bank,
         "total_cash":    total_cash,
         "total_balance": total_balance,
