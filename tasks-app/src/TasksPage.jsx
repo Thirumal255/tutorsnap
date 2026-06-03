@@ -1201,22 +1201,34 @@ function HomeTab({ tasks, onTaskClick }) {
                 {overdueTasks.map(t=>{
                   const days = daysLeft(t.end_date)
                   const spent = t.total_expense||0
+                  const isOpen = expandedBalanceAcc === `task-${t.id}`
+                  const toggle = e=>{ e.stopPropagation(); setExpandedBalanceAcc(isOpen?null:`task-${t.id}`) }
                   return (
-                    <div key={t.id} onClick={()=>onTaskClick(t)}
-                      className="border-l-4 border-l-[#FF3333] border border-[#FF3333]/20 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
-                          {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
+                    <div key={t.id} className="border-l-4 border-l-[#FF3333] border border-[#FF3333]/20 rounded-xl overflow-hidden">
+                      {/* Collapsed header — tap to expand */}
+                      <button className="w-full flex items-center justify-between p-3 text-left" onClick={toggle}>
+                        <p className="text-white font-semibold text-sm leading-snug flex-1 min-w-0 truncate pr-2">{t.title}</p>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full">{Math.abs(days)}d late</span>
+                          <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
                         </div>
-                        <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
-                        {t.end_date&&<span className="text-[#FF3333] text-xs">📅 {fmtShort(t.end_date)}</span>}
-                      </div>
-                      {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
-                      <SubtaskPill subtasks={t.subtasks}/>
+                      </button>
+                      {/* Expanded detail */}
+                      {isOpen&&(
+                        <div className="px-3 pb-3 space-y-2 border-t border-[#FF3333]/20">
+                          {t.notes&&<p className="text-[#8892B0] text-xs pt-2">{t.notes}</p>}
+                          <div className="flex items-center gap-2 flex-wrap pt-1">
+                            <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
+                            {t.end_date&&<span className="text-[#FF3333] text-xs">📅 {fmtShort(t.end_date)}</span>}
+                          </div>
+                          {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
+                          <SubtaskPill subtasks={t.subtasks}/>
+                          <button onClick={e=>{e.stopPropagation();onTaskClick(t)}}
+                            className="w-full mt-1 py-1.5 rounded-lg bg-[#FF3333]/10 text-[#FF3333] text-xs font-semibold">
+                            Open Task →
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -1233,23 +1245,40 @@ function HomeTab({ tasks, onTaskClick }) {
                 {activeTasks.map(t=>{
                   const days = daysLeft(t.end_date)
                   const spent = t.total_expense||0
+                  const isOpen = expandedBalanceAcc === `task-${t.id}`
+                  const toggle = e=>{ e.stopPropagation(); setExpandedBalanceAcc(isOpen?null:`task-${t.id}`) }
                   return (
-                    <div key={t.id} onClick={()=>onTaskClick(t)}
-                      className={`border-l-4 bg-[#0F0F23] border border-[#2D2B5A] ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2`}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
-                        {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
-                        {t.end_date&&(
-                          <span className={`text-xs ${days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
-                            📅 {fmtShort(t.end_date)}{days!=null&&days<=3?` · ${days}d left`:''}
-                          </span>
-                        )}
-                      </div>
-                      {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
-                      <SubtaskPill subtasks={t.subtasks}/>
+                    <div key={t.id} className={`border-l-4 bg-[#0F0F23] border border-[#2D2B5A] ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'} rounded-xl overflow-hidden`}>
+                      {/* Collapsed header */}
+                      <button className="w-full flex items-center justify-between p-3 text-left" onClick={toggle}>
+                        <p className="text-white font-semibold text-sm leading-snug flex-1 min-w-0 truncate pr-2">{t.title}</p>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {t.end_date&&days!=null&&days<=3&&(
+                            <span className={`text-xs font-semibold ${days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>{days}d left</span>
+                          )}
+                          <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
+                        </div>
+                      </button>
+                      {/* Expanded detail */}
+                      {isOpen&&(
+                        <div className="px-3 pb-3 space-y-2 border-t border-[#2D2B5A]">
+                          {t.notes&&<p className="text-[#8892B0] text-xs pt-2">{t.notes}</p>}
+                          <div className="flex items-center gap-2 flex-wrap pt-1">
+                            <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
+                            {t.end_date&&(
+                              <span className={`text-xs ${days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
+                                📅 {fmtShort(t.end_date)}{days!=null&&days<=3?` · ${days}d left`:''}
+                              </span>
+                            )}
+                          </div>
+                          {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
+                          <SubtaskPill subtasks={t.subtasks}/>
+                          <button onClick={e=>{e.stopPropagation();onTaskClick(t)}}
+                            className="w-full mt-1 py-1.5 rounded-lg bg-[#00A2FF]/10 text-[#00A2FF] text-xs font-semibold">
+                            Open Task →
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -1277,19 +1306,34 @@ function HomeTab({ tasks, onTaskClick }) {
             <div className="px-3 pb-3 space-y-2">
               {upcoming.map(t=>{
                 const days = daysLeft(t.start_date)
+                const isOpen = expandedBalanceAcc === `upcoming-${t.id}`
+                const toggle = e=>{ e.stopPropagation(); setExpandedBalanceAcc(isOpen?null:`upcoming-${t.id}`) }
                 return (
-                  <div key={t.id} onClick={()=>onTaskClick(t)}
-                    className="bg-[#0F0F23] border border-[#FFB347]/20 border-l-4 border-l-[#FFB347] rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-semibold text-sm truncate">{t.title}</p>
-                        <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A] mt-1 inline-block">{t.category}</span>
+                  <div key={t.id} className="bg-[#0F0F23] border border-[#FFB347]/20 border-l-4 border-l-[#FFB347] rounded-xl overflow-hidden">
+                    {/* Collapsed header */}
+                    <button className="w-full flex items-center justify-between p-3 text-left" onClick={toggle}>
+                      <p className="text-white font-semibold text-sm truncate flex-1 min-w-0 pr-2">{t.title}</p>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-[#FFB347] text-xs font-semibold">
+                          {days===0?'Today':days===1?'Tomorrow':`In ${days}d`}
+                        </span>
+                        <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
                       </div>
-                      <span className="text-[#FFB347] text-xs font-semibold flex-shrink-0 text-right">
-                        {days===0?'Starts today':days===1?'Tomorrow':`In ${days}d`}<br/>
-                        <span className="text-[#8892B0] font-normal">{fmtShort(t.start_date)}</span>
-                      </span>
-                    </div>
+                    </button>
+                    {/* Expanded detail */}
+                    {isOpen&&(
+                      <div className="px-3 pb-3 space-y-2 border-t border-[#FFB347]/20">
+                        <div className="flex items-center gap-2 flex-wrap pt-2">
+                          <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
+                          <span className="text-[#8892B0] text-xs">📅 {fmtShort(t.start_date)}</span>
+                        </div>
+                        {t.notes&&<p className="text-[#8892B0] text-xs">{t.notes}</p>}
+                        <button onClick={e=>{e.stopPropagation();onTaskClick(t)}}
+                          className="w-full mt-1 py-1.5 rounded-lg bg-[#FFB347]/10 text-[#FFB347] text-xs font-semibold">
+                          Open Task →
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })}
