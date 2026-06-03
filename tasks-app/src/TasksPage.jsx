@@ -1847,83 +1847,104 @@ function FinanceTab() {
         const hasAnyDeficit = totalDeficit > 0
         const paidThisPeriod    = summary.total_expenses || 0
         const plannedThisPeriod = summary.total_planned_period || 0
-        const activityTotal     = paidThisPeriod + plannedThisPeriod
+        const budgetThisPeriod  = paidThisPeriod + plannedThisPeriod
+        const periodCats        = summary.period_categories || []
 
         return (
           <div className="space-y-3">
 
-            {/* ── Account Balances ────────────────────────────── */}
-            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Account Balances</p>
-                <p className="text-white font-fredoka font-bold text-xl">{fmtINR(total_balance)}</p>
-              </div>
-              <div className="space-y-2">
-                {accounts.map(a=>{
-                  const acctAlloc = a.total_allocated||0
-                  const acctFree  = a.free_balance??0
-                  const over      = a.overallocated
-                  return (
-                    <div key={a.id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">{ACCOUNT_ICONS[a.type]||'💳'}</span>
-                        <div>
-                          <p className="text-white text-xs font-semibold">{a.name}</p>
-                          {acctAlloc>0&&(
-                            <p className={`text-xs ${over?'text-[#FF3333]':'text-[#8892B0]'}`}>
-                              {fmtINR(acctAlloc)} allocated · {over?`⚠ over by ${fmtINR(Math.abs(acctFree))}`:`${fmtINR(acctFree)} free`}
+            {/* ── Split card: Account Balances (left) | Period (right) ── */}
+            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+              <div className="grid grid-cols-2 divide-x divide-[#2D2B5A]">
+
+                {/* LEFT — Account Balances */}
+                <div className="p-3 space-y-2.5">
+                  <div>
+                    <p className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">Balances</p>
+                    <p className="text-white font-fredoka font-bold text-lg leading-tight">{fmtINR(total_balance)}</p>
+                  </div>
+                  <div className="space-y-2">
+                    {accounts.map(a=>{
+                      const over = a.overallocated
+                      return (
+                        <div key={a.id}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-sm flex-shrink-0">{ACCOUNT_ICONS[a.type]||'💳'}</span>
+                              <p className="text-white text-xs font-semibold truncate">{a.name}</p>
+                            </div>
+                            <p className="text-[#00A2FF] text-xs font-bold ml-1 flex-shrink-0">{fmtINR(a.current_balance)}</p>
+                          </div>
+                          {(a.total_allocated||0)>0&&(
+                            <p className={`text-[10px] ml-5 ${over?'text-[#FF3333]':'text-[#8892B0]'}`}>
+                              {over?`⚠ over ${fmtINR(Math.abs(a.free_balance||0))}`:`${fmtINR(a.free_balance||0)} free`}
                             </p>
                           )}
                         </div>
-                      </div>
-                      <p className="text-[#00A2FF] font-bold text-sm">{fmtINR(a.current_balance)}</p>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* ── This Month ──────────────────────────────────── */}
-            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">{periodLabel}</p>
-                {activityTotal===0&&<p className="text-[#8892B0] text-xs">No activity</p>}
-              </div>
-              {activityTotal>0 ? (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-[#0F0F23] rounded-xl px-3 py-2.5">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-xs">✅</span>
-                        <p className="text-[#8892B0] text-xs">Paid this month</p>
-                      </div>
-                      <p className="text-[#00CC88] font-bold text-sm">{paidThisPeriod>0?fmtINR(paidThisPeriod):'—'}</p>
-                    </div>
-                    <div className="bg-[#0F0F23] rounded-xl px-3 py-2.5">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-xs">🕐</span>
-                        <p className="text-[#8892B0] text-xs">Planned this month</p>
-                      </div>
-                      <p className="text-[#A78BFA] font-bold text-sm">{plannedThisPeriod>0?fmtINR(plannedThisPeriod):'—'}</p>
-                    </div>
+                      )
+                    })}
                   </div>
-                  {paidThisPeriod>0&&plannedThisPeriod>0&&(
-                    <div className="space-y-1">
-                      <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden flex">
-                        <div className="h-full bg-[#00CC88] rounded-l-full"
-                          style={{width:`${Math.min(paidThisPeriod/activityTotal*100,100)}%`}}/>
-                        <div className="h-full bg-[#A78BFA]"
-                          style={{width:`${Math.min(plannedThisPeriod/activityTotal*100,100)}%`}}/>
+                </div>
+
+                {/* RIGHT — Period breakdown */}
+                <div className="p-3 space-y-2.5">
+                  <div>
+                    <p className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">{periodLabel}</p>
+                    {budgetThisPeriod===0
+                      ? <p className="text-[#8892B0] text-xs mt-1">No activity</p>
+                      : <p className="text-white font-fredoka font-bold text-lg leading-tight">{fmtINR(budgetThisPeriod)}</p>
+                    }
+                  </div>
+
+                  {budgetThisPeriod>0&&(
+                    <>
+                      {/* Totals row */}
+                      <div className="bg-[#0F0F23] rounded-xl p-2 space-y-1">
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-[#8892B0]">Budget</span>
+                          <span className="text-white font-semibold">{fmtINR(budgetThisPeriod)}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-[#8892B0]">✅ Paid</span>
+                          <span className="text-[#00CC88] font-semibold">{paidThisPeriod>0?fmtINR(paidThisPeriod):'—'}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-[#8892B0]">🕐 Pending</span>
+                          <span className="text-[#A78BFA] font-semibold">{plannedThisPeriod>0?fmtINR(plannedThisPeriod):'—'}</span>
+                        </div>
+                        {/* mini bar */}
+                        {paidThisPeriod>0&&plannedThisPeriod>0&&(
+                          <div className="h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden flex mt-1">
+                            <div className="h-full bg-[#00CC88]" style={{width:`${paidThisPeriod/budgetThisPeriod*100}%`}}/>
+                            <div className="h-full bg-[#A78BFA]" style={{width:`${plannedThisPeriod/budgetThisPeriod*100}%`}}/>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[#8892B0] text-xs text-right">
-                        {fmtINR(activityTotal)} total this month
-                      </p>
-                    </div>
+
+                      {/* Per-category */}
+                      <div className="space-y-2">
+                        {periodCats.map(c=>{
+                          const budget  = c.paid + c.planned
+                          const pending = c.planned
+                          return (
+                            <div key={c.category}>
+                              <p className="text-white text-[10px] font-semibold truncate">{c.category}</p>
+                              <div className="flex justify-between text-[10px] text-[#8892B0]">
+                                <span>₹{(budget/1000).toFixed(1)}K total</span>
+                                <span className="flex gap-1.5">
+                                  {c.paid>0&&<span className="text-[#00CC88]">✅{fmtINR(c.paid)}</span>}
+                                  {c.planned>0&&<span className="text-[#A78BFA]">🕐{fmtINR(c.planned)}</span>}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
                   )}
-                </>
-              ) : (
-                <p className="text-[#8892B0] text-xs">No expenses dated in {periodLabel}</p>
-              )}
+                </div>
+
+              </div>
             </div>
 
             {/* ── Commitments ─────────────────────────────────── */}

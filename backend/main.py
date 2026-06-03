@@ -6390,15 +6390,33 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
                 .all())
     total_income = sum(r.amount for r in receipts)
 
-    # ── Expenses this period — paid and planned separately ───────────────────
-    all_period_exp = (db.query(AdminTaskExpense)
-                      .filter(extract("year",  AdminTaskExpense.expense_date) == _ry,
-                              extract("month", AdminTaskExpense.expense_date) == _rm)
-                      .all())
-    paid_this_period    = [e for e in all_period_exp if e.status == "paid"]
-    planned_this_period = [e for e in all_period_exp if e.status == "planned"]
-    total_expenses        = sum(e.amount for e in paid_this_period)
-    total_planned_period  = sum(e.amount for e in planned_this_period)
+    # ── Expenses this period — paid and planned, with category breakdown ─────
+    all_period_exp = (
+        db.query(AdminTaskExpense, AdminTask)
+        .join(AdminTask, AdminTask.id == AdminTaskExpense.task_id)
+        .filter(extract("year",  AdminTaskExpense.expense_date) == _ry,
+                extract("month", AdminTaskExpense.expense_date) == _rm)
+        .all()
+    )
+    period_cat_paid: Dict[str, float] = {}
+    period_cat_planned: Dict[str, float] = {}
+    for exp, task in all_period_exp:
+        cat = task.category if task else "Uncategorized"
+        if exp.status == "paid":
+            period_cat_paid[cat] = period_cat_paid.get(cat, 0) + exp.amount
+        else:
+            period_cat_planned[cat] = period_cat_planned.get(cat, 0) + exp.amount
+
+    total_expenses       = sum(period_cat_paid.values())
+    total_planned_period = sum(period_cat_planned.values())
+
+    all_period_cats = sorted(set(list(period_cat_paid.keys()) + list(period_cat_planned.keys())))
+    period_categories = [
+        {"category": cat,
+         "paid":    round(period_cat_paid.get(cat, 0), 3),
+         "planned": round(period_cat_planned.get(cat, 0), 3)}
+        for cat in all_period_cats
+    ]
 
     # ── Category allocations — permanent, no period filter ───────────────────
     allocations = db.query(CategoryAllocation).all()
@@ -6460,8 +6478,9 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         "total_cash":    total_cash,
         "total_balance": total_balance,
         "total_income":  total_income,
-        "total_expenses":       total_expenses,        # paid this period
-        "total_planned_period": total_planned_period,  # planned (not yet paid) this period
+        "total_expenses":       total_expenses,
+        "total_planned_period": total_planned_period,
+        "period_categories":    period_categories,     # per-category paid+planned this period
         "net":                  total_income - total_expenses,
         "category_breakdown": category_breakdown,
     }
