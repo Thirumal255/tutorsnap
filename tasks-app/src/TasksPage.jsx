@@ -2376,17 +2376,32 @@ function FinanceTab() {
             const spent        = c.spent||0
             const pending      = c.pending||0
             const spentPct = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
+            const availPct = budgetReq>0 ? Math.min(available/budgetReq*100,100) : 0
+            const catDeficit = Math.max(0, pending - available)
+            const isFunded   = pending>0 && catDeficit===0
             return (
-              <div key={c.category} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-4 space-y-3">
+              <div key={c.category} className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${catDeficit>0?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
 
-                {/* Category name */}
+                {/* Category name + status badge */}
                 <div className="flex items-center justify-between">
                   <p className="text-white font-semibold text-sm">{c.category}</p>
-                  <p className="text-white font-bold text-sm">{fmtINR(budgetReq)}</p>
+                  {catDeficit>0 ? (
+                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-[#FF3333]/10 text-[#FF3333]">
+                      ⚠ {fmtINR(catDeficit)} short
+                    </span>
+                  ) : isFunded ? (
+                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-[#00CC88]/10 text-[#00CC88]">
+                      ✓ Funded
+                    </span>
+                  ) : null}
                 </div>
 
-                {/* 3 numbers */}
-                <div className="grid grid-cols-3 gap-2 text-center">
+                {/* 2×2 number grid */}
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
+                    <p className="text-[#8892B0] text-[10px]">Available (allocated)</p>
+                    <p className={`font-bold text-xs mt-0.5 ${catDeficit>0?'text-[#FF3333]':'text-[#00A2FF]'}`}>{fmtINR(available)}</p>
+                  </div>
                   <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
                     <p className="text-[#8892B0] text-[10px]">Total Budget</p>
                     <p className="text-white font-bold text-xs mt-0.5">{fmtINR(budgetReq)}</p>
