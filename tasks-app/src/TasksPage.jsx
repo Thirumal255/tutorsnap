@@ -1889,70 +1889,92 @@ function FinanceTab() {
   const periodLabel = new Date(period+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'})
 
   function exportPDF() {
+    // ₹ is not supported by jsPDF built-in fonts — use Rs. instead
+    const r = v => fmtINR(v).replace('₹','Rs.')
+
     const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' })
     const pw   = doc.internal.pageSize.getWidth()
-    const grey = [139,146,176]
-    const white= [255,255,255]
-    const dark = [15,15,35]
-    const blue = [0,162,255]
-    const red  = [255,51,51]
-    const green= [0,204,136]
-    const purp = [167,139,250]
+    const ml = 12, mr = 12          // left / right margin
+    const cw = pw - ml - mr         // usable content width
+
+    // Palette matching the UI
+    const BG_CARD  = [22, 33, 62]   // #16213E
+    const BG_DARK  = [15, 15, 35]   // #0F0F23
+    const BLUE     = [0, 162, 255]  // #00A2FF
+    const GREEN    = [0, 204, 136]  // #00CC88
+    const RED      = [255, 51, 51]  // #FF3333
+    const PURPLE   = [167,139,250]  // #A78BFA
+    const GREY     = [136,146,176]  // #8892B0
+    const WHITE    = [255,255,255]
+    const TEXT     = [220,225,240]  // light body text
+
+    const HEAD_STYLE = { fillColor:BG_DARK, textColor:BLUE, fontStyle:'bold', fontSize:7.5, cellPadding:3 }
+    const FOOT_STYLE = { fillColor:BG_DARK, textColor:WHITE, fontStyle:'bold', fontSize:7.5, cellPadding:3 }
+    const BODY_STYLE = { fillColor:BG_CARD, textColor:TEXT, fontSize:8, cellPadding:3 }
 
     let y = 0
 
     // ── Header banner ──────────────────────────────────────────────
-    doc.setFillColor(22,33,62)
-    doc.rect(0, 0, pw, 24, 'F')
-    doc.setTextColor(...white)
-    doc.setFontSize(14); doc.setFont('helvetica','bold')
-    doc.text('Finance Report', 14, 11)
-    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...grey)
-    doc.text(periodLabel, 14, 18)
-    doc.text(`Generated ${new Date().toLocaleDateString('en-IN')}`, pw-14, 18, {align:'right'})
-    y = 30
+    doc.setFillColor(...BG_DARK)
+    doc.rect(0, 0, pw, 26, 'F')
+    // accent line
+    doc.setFillColor(...BLUE)
+    doc.rect(0, 26, pw, 1, 'F')
+    doc.setTextColor(...WHITE)
+    doc.setFontSize(15); doc.setFont('helvetica','bold')
+    doc.text('Finance Report', ml, 12)
+    doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(...GREY)
+    doc.text(periodLabel, ml, 20)
+    doc.text(`Generated ${new Date().toLocaleDateString('en-IN')}`, pw-mr, 20, {align:'right'})
+    y = 32
 
     // ══════════════════════════════════════════════════════════════
     // SECTION 1 — OVERVIEW
     // ══════════════════════════════════════════════════════════════
-    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
-    doc.text('Overview', 14, y); y += 5
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...BLUE)
+    doc.text('1. Overview', ml, y); y += 6
 
-    // 1a. Balances — all accounts expanded
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...grey)
-    doc.text('Account Balances', 14, y); y += 3
+    // ── 1a. Account Balances ──────────────────────────────────────
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREY)
+    doc.text('Account Balances', ml, y); y += 3
 
     autoTable(doc, {
       startY: y,
       head: [['Account', 'Balance', 'Allocated', 'Free / Over']],
-      body: accounts.map(a=>{
-        const over = a.overallocated
-        return [
-          a.name,
-          fmtINR(a.current_balance),
-          fmtINR(a.total_allocated||0),
-          over ? `Over ${fmtINR(Math.abs(a.free_balance||0))}` : fmtINR(a.free_balance||0),
-        ]
-      }),
-      foot: [['Total', fmtINR(total_balance), '', '']],
-      theme: 'grid',
-      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
-      footStyles: { fillColor: dark, textColor: white, fontStyle:'bold', fontSize:7 },
-      bodyStyles: { fontSize:7, textColor:[20,20,40] },
-      columnStyles: { 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'} },
-      didParseCell(d) {
-        if (d.section==='body' && d.column.index===3 && d.cell.raw.startsWith('Over'))
-          d.cell.styles.textColor = red
-        if (d.section==='body' && d.column.index===3 && !d.cell.raw.startsWith('Over'))
-          d.cell.styles.textColor = green
+      body: accounts.map(a=>([
+        a.name,
+        r(a.current_balance),
+        r(a.total_allocated||0),
+        a.overallocated
+          ? `Over ${r(Math.abs(a.free_balance||0))}`
+          : r(a.free_balance||0),
+      ])),
+      foot: [['Total', r(total_balance), '', '']],
+      theme: 'plain',
+      headStyles: { ...HEAD_STYLE },
+      footStyles: { ...FOOT_STYLE },
+      bodyStyles: { ...BODY_STYLE },
+      alternateRowStyles: { fillColor:[18,27,52] },
+      columnStyles: {
+        0: { cellWidth: cw*0.38 },
+        1: { halign:'right', cellWidth: cw*0.2,  textColor: BLUE },
+        2: { halign:'right', cellWidth: cw*0.2 },
+        3: { halign:'right', cellWidth: cw*0.22 },
       },
-      margin: { left:14, right:14 },
+      didParseCell(d) {
+        if (d.section==='body' && d.column.index===3) {
+          d.cell.styles.textColor = d.cell.raw.startsWith('Over') ? RED : GREEN
+        }
+        if (d.section==='foot' && d.column.index===1)
+          d.cell.styles.textColor = BLUE
+      },
+      margin: { left:ml, right:mr },
     })
-    y = doc.lastAutoTable.finalY + 6
+    y = doc.lastAutoTable.finalY + 7
 
-    // 1b. Period breakdown — all categories expanded
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...grey)
-    doc.text(`Period Breakdown — ${periodLabel}`, 14, y); y += 3
+    // ── 1b. Period Breakdown ──────────────────────────────────────
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREY)
+    doc.text(`Period Breakdown  —  ${periodLabel}`, ml, y); y += 3
 
     const periodCats = summary.period_categories || []
     const paidTotal  = summary.total_expenses || 0
@@ -1964,123 +1986,132 @@ function FinanceTab() {
       head: [['Category', 'Paid', 'Pending', 'Deficit']],
       body: periodCats.map(c=>([
         c.category,
-        c.paid > 0  ? fmtINR(c.paid)    : '—',
-        c.planned > 0 ? fmtINR(c.planned) : '—',
-        c.deficit > 0 ? fmtINR(c.deficit) : '—',
+        c.paid    > 0 ? r(c.paid)    : '—',
+        c.planned > 0 ? r(c.planned) : '—',
+        c.deficit > 0 ? r(c.deficit) : '—',
       ])),
-      foot: [[
-        'Total',
-        fmtINR(paidTotal),
-        fmtINR(pendTotal),
-        periodDef > 0 ? fmtINR(periodDef) : '—',
-      ]],
-      theme: 'grid',
-      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
-      footStyles: { fillColor: dark, textColor: white, fontStyle:'bold', fontSize:7 },
-      bodyStyles: { fontSize:7, textColor:[20,20,40] },
-      columnStyles: { 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'} },
-      didParseCell(d) {
-        if (d.section==='body' && d.column.index===3 && d.cell.raw!=='—')
-          d.cell.styles.textColor = red
-        if (d.section==='foot' && d.column.index===3 && d.cell.raw!=='—')
-          d.cell.styles.textColor = red
-        if (d.section==='body' && d.column.index===1)
-          d.cell.styles.textColor = green
-        if (d.section==='body' && d.column.index===2)
-          d.cell.styles.textColor = [...purp]
-      },
-      margin: { left:14, right:14 },
-    })
-    y = doc.lastAutoTable.finalY + 6
-
-    // 1c. Total Commitments bar
-    const totalBudget   = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
-    const totalPaid     = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
-    const totalPending  = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
-    const shortfall     = summary.overall_shortfall || 0
-
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...grey)
-    doc.text('Total Commitments', 14, y); y += 3
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Total Budget', 'Paid', 'Pending', 'Shortfall']],
-      body: [[
-        fmtINR(totalBudget),
-        fmtINR(totalPaid),
-        fmtINR(totalPending),
-        shortfall > 0 ? fmtINR(shortfall) : 'Funded',
-      ]],
-      theme: 'grid',
-      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
-      bodyStyles: { fontSize:8, fontStyle:'bold', textColor:[20,20,40] },
-      columnStyles: { 0:{halign:'right'}, 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'} },
-      didParseCell(d) {
-        if (d.section==='body' && d.column.index===3 && d.cell.raw!=='Funded')
-          d.cell.styles.textColor = red
-        if (d.section==='body' && d.column.index===3 && d.cell.raw==='Funded')
-          d.cell.styles.textColor = green
-        if (d.section==='body' && d.column.index===1)
-          d.cell.styles.textColor = green
-        if (d.section==='body' && d.column.index===2)
-          d.cell.styles.textColor = [...purp]
-      },
-      margin: { left:14, right:14 },
-    })
-    y = doc.lastAutoTable.finalY + 10
-
-    // ══════════════════════════════════════════════════════════════
-    // SECTION 2 — BY CATEGORY (all expanded)
-    // ══════════════════════════════════════════════════════════════
-    if (y > 220) { doc.addPage(); y = 14 }
-    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
-    doc.text('By Category', 14, y); y += 5
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Category', 'Available', 'Total Budget', 'Paid', 'Pending', 'Deficit', 'Funded by']],
-      body: category_breakdown.map(c=>{
-        const deficit  = Math.max(0,(c.pending||0)-(c.amount_available||0))
-        const funded   = deficit===0 && (c.pending||0)>0
-        return [
-          c.category,
-          fmtINR(c.amount_available||0),
-          fmtINR(c.budget_required||0),
-          fmtINR(c.spent||0),
-          (c.pending||0)>0 ? fmtINR(c.pending) : '—',
-          deficit>0 ? fmtINR(deficit) : (funded ? 'Funded' : '—'),
-          (c.account_links||[]).map(l=>l.account_name).join(', ')||'—',
-        ]
-      }),
-      theme: 'grid',
-      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
-      bodyStyles: { fontSize:7, textColor:[20,20,40] },
+      foot: [['Total', r(paidTotal), r(pendTotal), periodDef>0 ? r(periodDef) : '—']],
+      theme: 'plain',
+      headStyles: { ...HEAD_STYLE },
+      footStyles: { ...FOOT_STYLE },
+      bodyStyles: { ...BODY_STYLE },
+      alternateRowStyles: { fillColor:[18,27,52] },
       columnStyles: {
-        1:{halign:'right'}, 2:{halign:'right'},
-        3:{halign:'right'}, 4:{halign:'right'}, 5:{halign:'right'},
+        0: { cellWidth: cw*0.38 },
+        1: { halign:'right', cellWidth: cw*0.2 },
+        2: { halign:'right', cellWidth: cw*0.2 },
+        3: { halign:'right', cellWidth: cw*0.22 },
+      },
+      didParseCell(d) {
+        if (d.column.index===1 && d.cell.raw!=='Paid' && d.cell.raw!=='—')
+          d.cell.styles.textColor = GREEN
+        if (d.column.index===2 && d.cell.raw!=='Pending' && d.cell.raw!=='—')
+          d.cell.styles.textColor = PURPLE
+        if (d.column.index===3 && d.cell.raw!=='Deficit' && d.cell.raw!=='—')
+          d.cell.styles.textColor = RED
+      },
+      margin: { left:ml, right:mr },
+    })
+    y = doc.lastAutoTable.finalY + 7
+
+    // ── 1c. Total Commitments ─────────────────────────────────────
+    const totalBudget  = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
+    const totalPaid    = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
+    const totalPending = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
+    const shortfall    = summary.overall_shortfall || 0
+
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREY)
+    doc.text('Total Commitments', ml, y); y += 3
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Total Budget Required', 'Paid', 'Pending', 'Shortfall / Status']],
+      body: [[
+        r(totalBudget),
+        r(totalPaid),
+        r(totalPending),
+        shortfall > 0 ? `${r(shortfall)} short` : 'Funded',
+      ]],
+      theme: 'plain',
+      headStyles: { ...HEAD_STYLE },
+      bodyStyles: { ...BODY_STYLE, fontSize:9, fontStyle:'bold' },
+      columnStyles: {
+        0: { halign:'right', cellWidth: cw*0.3 },
+        1: { halign:'right', cellWidth: cw*0.2 },
+        2: { halign:'right', cellWidth: cw*0.2 },
+        3: { halign:'right', cellWidth: cw*0.3 },
       },
       didParseCell(d) {
         if (d.section!=='body') return
-        if (d.column.index===5 && d.cell.raw!=='—' && d.cell.raw!=='Funded')
-          d.cell.styles.textColor = red
-        if (d.column.index===5 && d.cell.raw==='Funded')
-          d.cell.styles.textColor = green
+        if (d.column.index===1) d.cell.styles.textColor = GREEN
+        if (d.column.index===2) d.cell.styles.textColor = PURPLE
         if (d.column.index===3)
-          d.cell.styles.textColor = green
-        if (d.column.index===4 && d.cell.raw!=='—')
-          d.cell.styles.textColor = [...purp]
+          d.cell.styles.textColor = shortfall>0 ? RED : GREEN
       },
-      margin: { left:14, right:14 },
+      margin: { left:ml, right:mr },
+    })
+    y = doc.lastAutoTable.finalY + 12
+
+    // ══════════════════════════════════════════════════════════════
+    // SECTION 2 — BY CATEGORY
+    // ══════════════════════════════════════════════════════════════
+    if (y > 210) { doc.addPage(); y = 16 }
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...BLUE)
+    doc.text('2. By Category', ml, y); y += 6
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Category', 'Available', 'Budget', 'Paid', 'Pending', 'Deficit', 'Funded by']],
+      body: category_breakdown.map(c=>{
+        const deficit = Math.max(0,(c.pending||0)-(c.amount_available||0))
+        const funded  = deficit===0 && (c.pending||0)>0
+        return [
+          c.category,
+          r(c.amount_available||0),
+          r(c.budget_required||0),
+          r(c.spent||0),
+          (c.pending||0)>0 ? r(c.pending) : '—',
+          deficit>0 ? r(deficit) : (funded ? 'Funded' : '—'),
+          (c.account_links||[]).map(l=>l.account_name).join(', ') || '—',
+        ]
+      }),
+      theme: 'plain',
+      headStyles: { ...HEAD_STYLE, fontSize:7 },
+      bodyStyles: { ...BODY_STYLE, fontSize:7.5 },
+      alternateRowStyles: { fillColor:[18,27,52] },
+      columnStyles: {
+        0: { cellWidth: cw*0.16 },
+        1: { halign:'right', cellWidth: cw*0.13 },
+        2: { halign:'right', cellWidth: cw*0.13 },
+        3: { halign:'right', cellWidth: cw*0.12 },
+        4: { halign:'right', cellWidth: cw*0.12 },
+        5: { halign:'right', cellWidth: cw*0.12 },
+        6: { cellWidth: cw*0.22 },
+      },
+      didParseCell(d) {
+        if (d.section!=='body') return
+        if (d.column.index===1) d.cell.styles.textColor = BLUE
+        if (d.column.index===3) d.cell.styles.textColor = GREEN
+        if (d.column.index===4 && d.cell.raw!=='—') d.cell.styles.textColor = PURPLE
+        if (d.column.index===5 && d.cell.raw!=='—' && d.cell.raw!=='Funded')
+          d.cell.styles.textColor = RED
+        if (d.column.index===5 && d.cell.raw==='Funded')
+          d.cell.styles.textColor = GREEN
+        if (d.column.index===6) d.cell.styles.textColor = GREY
+      },
+      margin: { left:ml, right:mr },
     })
 
     // ── Page footer ────────────────────────────────────────────────
     const pages = doc.internal.getNumberOfPages()
     for (let i=1; i<=pages; i++) {
       doc.setPage(i)
-      doc.setFontSize(7); doc.setTextColor(...grey)
+      doc.setFillColor(...BG_DARK)
+      doc.rect(0, doc.internal.pageSize.getHeight()-10, pw, 10, 'F')
+      doc.setFontSize(7); doc.setTextColor(...GREY)
       doc.text(
-        `TutorSnap Finance · ${periodLabel} · Page ${i} of ${pages}`,
-        pw/2, doc.internal.pageSize.getHeight()-5, {align:'center'}
+        `TutorSnap Finance  |  ${periodLabel}  |  Page ${i} of ${pages}`,
+        pw/2, doc.internal.pageSize.getHeight()-4, {align:'center'}
       )
     }
 
