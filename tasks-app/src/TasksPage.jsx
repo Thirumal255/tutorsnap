@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import {
   getAdminTasks, getAdminTasksSummary, getAdminTaskCategories,
   createAdminTask, updateAdminTask, deleteAdminTask,
@@ -1886,6 +1888,142 @@ function FinanceTab() {
   }
   const periodLabel = new Date(period+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'})
 
+  function exportPDF() {
+    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' })
+    const pw = doc.internal.pageSize.getWidth()
+    const grey  = [139,146,176]
+    const white = [255,255,255]
+    const dark  = [22,33,62]
+    const blue  = [0,162,255]
+    const green = [0,204,136]
+    const red   = [255,51,51]
+    const purple= [167,139,250]
+
+    let y = 0
+
+    // ── Header banner ──────────────────────────────────────────
+    doc.setFillColor(...dark)
+    doc.rect(0, 0, pw, 22, 'F')
+    doc.setTextColor(...white)
+    doc.setFontSize(14); doc.setFont('helvetica','bold')
+    doc.text('Finance Report', 14, 10)
+    doc.setFontSize(9); doc.setFont('helvetica','normal')
+    doc.setTextColor(...grey)
+    doc.text(periodLabel, 14, 16)
+    doc.text(`Generated ${new Date().toLocaleDateString('en-IN')}`, pw-14, 16, {align:'right'})
+    y = 28
+
+    // ── 1. Overview ────────────────────────────────────────────
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
+    doc.text('1. Overview', 14, y); y += 6
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Metric','Amount']],
+      body: [
+        ['Total Balance',        fmtINR(total_balance)],
+        ['Period Paid',          fmtINR(summary.total_expenses||0)],
+        ['Period Pending',       fmtINR(summary.total_planned_period||0)],
+        ['Overall Shortfall',    fmtINR(summary.overall_shortfall||0)],
+      ],
+      theme: 'grid',
+      headStyles:  { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:8 },
+      bodyStyles:  { fontSize:8, textColor:[30,30,50] },
+      columnStyles:{ 1: { halign:'right' } },
+      margin: { left:14, right:14 },
+    })
+    y = doc.lastAutoTable.finalY + 8
+
+    // ── 2. Account Balances ────────────────────────────────────
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
+    doc.text('2. Account Balances', 14, y); y += 6
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Account','Type','Balance','Allocated','Free / Over']],
+      body: accounts.map(a=>([
+        a.name,
+        a.type,
+        fmtINR(a.current_balance),
+        fmtINR(a.total_allocated||0),
+        a.overallocated ? `⚠ Over ${fmtINR(Math.abs(a.free_balance||0))}` : fmtINR(a.free_balance||0),
+      ])),
+      theme: 'grid',
+      headStyles:  { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:8 },
+      bodyStyles:  { fontSize:8, textColor:[30,30,50] },
+      columnStyles:{ 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'} },
+      margin: { left:14, right:14 },
+    })
+    y = doc.lastAutoTable.finalY + 8
+
+    // ── 3. Income (Receipts) ───────────────────────────────────
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
+    doc.text(`3. Income — ${periodLabel}`, 14, y); y += 6
+
+    const receiptRows = receipts.map(r=>([
+      r.received_date||'—',
+      r.description||r.source_name||'—',
+      r.account_name||'—',
+      fmtINR(r.amount),
+    ]))
+    if (receiptRows.length===0) receiptRows.push(['—','No income recorded','—','—'])
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Date','Description','Account','Amount']],
+      body: receiptRows,
+      foot: [['','','Total', fmtINR(receipts.reduce((s,r)=>s+(r.amount||0),0))]],
+      theme: 'grid',
+      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:8 },
+      footStyles: { fillColor:[240,240,255], textColor:[30,30,50], fontStyle:'bold', fontSize:8 },
+      bodyStyles: { fontSize:8, textColor:[30,30,50] },
+      columnStyles:{ 3:{halign:'right'} },
+      margin: { left:14, right:14 },
+    })
+    y = doc.lastAutoTable.finalY + 8
+
+    // ── 4. By Category ─────────────────────────────────────────
+    if (y > 230) { doc.addPage(); y = 14 }
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...blue)
+    doc.text('4. By Category', 14, y); y += 6
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Category','Budget','Available','Paid','Pending','Deficit','Accounts']],
+      body: category_breakdown.map(c=>{
+        const deficit = Math.max(0,(c.pending||0)-(c.amount_available||0))
+        return [
+          c.category,
+          fmtINR(c.budget_required||0),
+          fmtINR(c.amount_available||0),
+          fmtINR(c.spent||0),
+          fmtINR(c.pending||0),
+          deficit>0 ? fmtINR(deficit) : '—',
+          (c.account_links||[]).map(l=>l.account_name).join(', ')||'—',
+        ]
+      }),
+      theme: 'grid',
+      headStyles: { fillColor: dark, textColor: blue, fontStyle:'bold', fontSize:7 },
+      bodyStyles: { fontSize:7, textColor:[30,30,50] },
+      columnStyles:{ 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}, 5:{halign:'right'} },
+      didParseCell(data) {
+        if (data.section==='body' && data.column.index===5 && data.cell.raw!=='—')
+          data.cell.styles.textColor = red
+      },
+      margin: { left:14, right:14 },
+    })
+
+    // ── Footer on every page ───────────────────────────────────
+    const pages = doc.internal.getNumberOfPages()
+    for (let i=1; i<=pages; i++) {
+      doc.setPage(i)
+      doc.setFontSize(7); doc.setTextColor(...grey)
+      doc.text(`TutorSnap Finance · Page ${i} of ${pages}`, pw/2, doc.internal.pageSize.getHeight()-6, {align:'center'})
+    }
+
+    doc.save(`finance-${period}.pdf`)
+  }
+
   const SECTIONS = [
     { key:'overview', label:'Overview' },
     { key:'accounts', label:'Accounts' },
@@ -1895,12 +2033,18 @@ function FinanceTab() {
 
   return (
     <div className="p-4 pb-28 space-y-4">
-      {/* Period picker */}
-      <div className="flex items-center justify-between bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3">
-        <button onClick={()=>shiftPeriod(-1)} className="text-[#8892B0] text-lg px-1">‹</button>
-        <p className="text-white font-semibold text-sm">{periodLabel}</p>
-        <button onClick={()=>shiftPeriod(1)} className={`text-lg px-1 ${period>=curPeriod?'text-[#2D2B5A]':'text-[#8892B0]'}`}
-          disabled={period>=curPeriod}>›</button>
+      {/* Period picker + export */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between flex-1 bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3">
+          <button onClick={()=>shiftPeriod(-1)} className="text-[#8892B0] text-lg px-1">‹</button>
+          <p className="text-white font-semibold text-sm">{periodLabel}</p>
+          <button onClick={()=>shiftPeriod(1)} className={`text-lg px-1 ${period>=curPeriod?'text-[#2D2B5A]':'text-[#8892B0]'}`}
+            disabled={period>=curPeriod}>›</button>
+        </div>
+        <button onClick={exportPDF}
+          className="flex-shrink-0 flex items-center gap-1.5 bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-3 py-3 text-[#00A2FF] text-xs font-semibold hover:border-[#00A2FF]/40 transition-all">
+          <span>📄</span> PDF
+        </button>
       </div>
 
       {/* Section tabs */}
