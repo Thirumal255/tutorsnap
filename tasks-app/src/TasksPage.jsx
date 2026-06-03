@@ -1945,28 +1945,25 @@ function FinanceTab() {
         a.name,
         r(a.current_balance),
         r(a.total_allocated||0),
-        a.overallocated
-          ? `Over ${r(Math.abs(a.free_balance||0))}`
-          : r(a.free_balance||0),
+        a.overallocated ? `Over ${r(Math.abs(a.free_balance||0))}` : r(a.free_balance||0),
       ])),
       foot: [['Total', r(total_balance), '', '']],
-      theme: 'plain',
+      theme: 'grid',
       headStyles: { ...HEAD_STYLE },
       footStyles: { ...FOOT_STYLE },
       bodyStyles: { ...BODY_STYLE },
       alternateRowStyles: { fillColor:[18,27,52] },
       columnStyles: {
-        0: { cellWidth: cw*0.38 },
-        1: { halign:'right', cellWidth: cw*0.2,  textColor: BLUE },
-        2: { halign:'right', cellWidth: cw*0.2 },
-        3: { halign:'right', cellWidth: cw*0.22 },
+        0: { cellWidth: 60 },
+        1: { halign:'right', cellWidth: 38 },
+        2: { halign:'right', cellWidth: 38 },
+        3: { halign:'right', cellWidth: 50 },
       },
       didParseCell(d) {
-        if (d.section==='body' && d.column.index===3) {
+        if (d.section==='body' && d.column.index===1) d.cell.styles.textColor = BLUE
+        if (d.section==='body' && d.column.index===3)
           d.cell.styles.textColor = d.cell.raw.startsWith('Over') ? RED : GREEN
-        }
-        if (d.section==='foot' && d.column.index===1)
-          d.cell.styles.textColor = BLUE
+        if (d.section==='foot' && d.column.index===1) d.cell.styles.textColor = BLUE
       },
       margin: { left:ml, right:mr },
     })
@@ -1974,7 +1971,7 @@ function FinanceTab() {
 
     // ── 1b. Period Breakdown ──────────────────────────────────────
     doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREY)
-    doc.text(`Period Breakdown  —  ${periodLabel}`, ml, y); y += 3
+    doc.text(`Period Breakdown  -  ${periodLabel}`, ml, y); y += 3
 
     const periodCats = summary.period_categories || []
     const paidTotal  = summary.total_expenses || 0
@@ -1986,28 +1983,28 @@ function FinanceTab() {
       head: [['Category', 'Paid', 'Pending', 'Deficit']],
       body: periodCats.map(c=>([
         c.category,
-        c.paid    > 0 ? r(c.paid)    : '—',
-        c.planned > 0 ? r(c.planned) : '—',
-        c.deficit > 0 ? r(c.deficit) : '—',
+        c.paid    > 0 ? r(c.paid)    : '-',
+        c.planned > 0 ? r(c.planned) : '-',
+        c.deficit > 0 ? r(c.deficit) : '-',
       ])),
-      foot: [['Total', r(paidTotal), r(pendTotal), periodDef>0 ? r(periodDef) : '—']],
-      theme: 'plain',
+      foot: [['Total', r(paidTotal), r(pendTotal), periodDef>0 ? r(periodDef) : '-']],
+      theme: 'grid',
       headStyles: { ...HEAD_STYLE },
       footStyles: { ...FOOT_STYLE },
       bodyStyles: { ...BODY_STYLE },
       alternateRowStyles: { fillColor:[18,27,52] },
       columnStyles: {
-        0: { cellWidth: cw*0.38 },
-        1: { halign:'right', cellWidth: cw*0.2 },
-        2: { halign:'right', cellWidth: cw*0.2 },
-        3: { halign:'right', cellWidth: cw*0.22 },
+        0: { cellWidth: 60 },
+        1: { halign:'right', cellWidth: 38 },
+        2: { halign:'right', cellWidth: 38 },
+        3: { halign:'right', cellWidth: 50 },
       },
       didParseCell(d) {
-        if (d.column.index===1 && d.cell.raw!=='Paid' && d.cell.raw!=='—')
+        if (d.column.index===1 && !['Paid','-'].includes(d.cell.raw))
           d.cell.styles.textColor = GREEN
-        if (d.column.index===2 && d.cell.raw!=='Pending' && d.cell.raw!=='—')
+        if (d.column.index===2 && !['Pending','-'].includes(d.cell.raw))
           d.cell.styles.textColor = PURPLE
-        if (d.column.index===3 && d.cell.raw!=='Deficit' && d.cell.raw!=='—')
+        if (d.column.index===3 && !['Deficit','-'].includes(d.cell.raw))
           d.cell.styles.textColor = RED
       },
       margin: { left:ml, right:mr },
@@ -2025,28 +2022,27 @@ function FinanceTab() {
 
     autoTable(doc, {
       startY: y,
-      head: [['Total Budget Required', 'Paid', 'Pending', 'Shortfall / Status']],
+      head: [['Total Budget', 'Paid', 'Pending', 'Shortfall']],
       body: [[
         r(totalBudget),
         r(totalPaid),
         r(totalPending),
         shortfall > 0 ? `${r(shortfall)} short` : 'Funded',
       ]],
-      theme: 'plain',
+      theme: 'grid',
       headStyles: { ...HEAD_STYLE },
       bodyStyles: { ...BODY_STYLE, fontSize:9, fontStyle:'bold' },
       columnStyles: {
-        0: { halign:'right', cellWidth: cw*0.3 },
-        1: { halign:'right', cellWidth: cw*0.2 },
-        2: { halign:'right', cellWidth: cw*0.2 },
-        3: { halign:'right', cellWidth: cw*0.3 },
+        0: { halign:'right', cellWidth: 50 },
+        1: { halign:'right', cellWidth: 38 },
+        2: { halign:'right', cellWidth: 38 },
+        3: { halign:'right', cellWidth: 60 },
       },
       didParseCell(d) {
         if (d.section!=='body') return
         if (d.column.index===1) d.cell.styles.textColor = GREEN
         if (d.column.index===2) d.cell.styles.textColor = PURPLE
-        if (d.column.index===3)
-          d.cell.styles.textColor = shortfall>0 ? RED : GREEN
+        if (d.column.index===3) d.cell.styles.textColor = shortfall>0 ? RED : GREEN
       },
       margin: { left:ml, right:mr },
     })
@@ -2070,30 +2066,30 @@ function FinanceTab() {
           r(c.amount_available||0),
           r(c.budget_required||0),
           r(c.spent||0),
-          (c.pending||0)>0 ? r(c.pending) : '—',
-          deficit>0 ? r(deficit) : (funded ? 'Funded' : '—'),
-          (c.account_links||[]).map(l=>l.account_name).join(', ') || '—',
+          (c.pending||0)>0 ? r(c.pending) : '-',
+          deficit>0 ? r(deficit) : (funded ? 'Funded' : '-'),
+          (c.account_links||[]).map(l=>l.account_name).join(', ') || '-',
         ]
       }),
-      theme: 'plain',
+      theme: 'grid',
       headStyles: { ...HEAD_STYLE, fontSize:7 },
       bodyStyles: { ...BODY_STYLE, fontSize:7.5 },
       alternateRowStyles: { fillColor:[18,27,52] },
       columnStyles: {
-        0: { cellWidth: cw*0.16 },
-        1: { halign:'right', cellWidth: cw*0.13 },
-        2: { halign:'right', cellWidth: cw*0.13 },
-        3: { halign:'right', cellWidth: cw*0.12 },
-        4: { halign:'right', cellWidth: cw*0.12 },
-        5: { halign:'right', cellWidth: cw*0.12 },
-        6: { cellWidth: cw*0.22 },
+        0: { cellWidth: 28 },
+        1: { halign:'right', cellWidth: 24 },
+        2: { halign:'right', cellWidth: 24 },
+        3: { halign:'right', cellWidth: 22 },
+        4: { halign:'right', cellWidth: 22 },
+        5: { halign:'right', cellWidth: 22 },
+        6: { cellWidth: 44 },
       },
       didParseCell(d) {
         if (d.section!=='body') return
         if (d.column.index===1) d.cell.styles.textColor = BLUE
         if (d.column.index===3) d.cell.styles.textColor = GREEN
-        if (d.column.index===4 && d.cell.raw!=='—') d.cell.styles.textColor = PURPLE
-        if (d.column.index===5 && d.cell.raw!=='—' && d.cell.raw!=='Funded')
+        if (d.column.index===4 && d.cell.raw!=='-') d.cell.styles.textColor = PURPLE
+        if (d.column.index===5 && d.cell.raw!=='-' && d.cell.raw!=='Funded')
           d.cell.styles.textColor = RED
         if (d.column.index===5 && d.cell.raw==='Funded')
           d.cell.styles.textColor = GREEN
