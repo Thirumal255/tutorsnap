@@ -2007,9 +2007,10 @@ function FinanceTab() {
                 {category_breakdown.map((c,i)=>{
                   const paidPct = (c.budget_required||0)>0
                     ? Math.min((c.spent||0)/(c.budget_required)*100,100) : 0
+                  const catDeficit = Math.max(0, (c.pending||0) - (c.amount_available||0))
                   return (
                     <div key={c.category}
-                      className={`px-4 py-3 ${i>0?'border-t border-[#2D2B5A]/50':''}`}>
+                      className={`px-4 py-3 ${i>0?'border-t border-[#2D2B5A]/50':''} ${catDeficit>0?'bg-[#FF3333]/5':''}`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <div>
                           <p className="text-white text-xs font-semibold">{c.category}</p>
@@ -2030,6 +2031,12 @@ function FinanceTab() {
                             <span>Paid {fmtINR(c.spent||0)}</span>
                             {(c.pending||0)>0&&<span className="text-[#A78BFA]">Pending {fmtINR(c.pending)}</span>}
                           </div>
+                          {catDeficit>0&&(
+                            <div className="flex justify-between text-xs border-t border-[#FF3333]/30 pt-1 mt-0.5">
+                              <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
+                              <span className="text-[#FF3333] font-bold">{fmtINR(catDeficit)}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
