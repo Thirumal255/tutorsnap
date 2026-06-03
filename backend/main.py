@@ -6516,11 +6516,20 @@ def finance_summary(period: Optional[str] = None, db: Session = Depends(get_db),
         "total_income":  total_income,
         "total_expenses":       total_expenses,
         "total_planned_period": total_planned_period,
-        "period_categories":    period_categories,
         "net":                  total_income - total_expenses,
-        # Overall shortfall: total pending across all categories vs total live account balance
-        # This is the only honest "deficit" — do you have enough money in your accounts?
         "overall_shortfall":    round(max(0.0, sum(c["pending"] for c in category_breakdown) - total_balance), 3),
+        # Period categories with deficit = max(0, period_pending - allocated_for_category)
+        # Same formula as overall per-category deficit, scoped to this period's pending only
+        "period_categories": [
+            {**pc,
+             "allocated": next((c["amount_available"] for c in category_breakdown if c["category"] == pc["category"]), 0),
+             "deficit":   round(max(0.0, pc["planned"] - next((c["amount_available"] for c in category_breakdown if c["category"] == pc["category"]), 0)), 3)}
+            for pc in period_categories
+        ],
+        "total_period_deficit": round(sum(
+            max(0.0, pc["planned"] - next((c["amount_available"] for c in category_breakdown if c["category"] == pc["category"]), 0))
+            for pc in period_categories
+        ), 3),
         "category_breakdown": category_breakdown,
     }
 

@@ -1849,6 +1849,7 @@ function FinanceTab() {
         const plannedThisPeriod = summary.total_planned_period || 0
         const budgetThisPeriod  = paidThisPeriod + plannedThisPeriod
         const periodCats        = summary.period_categories || []
+        const totalPeriodDeficit = summary.total_period_deficit || 0
 
         return (
           <div className="space-y-3">
@@ -1899,7 +1900,7 @@ function FinanceTab() {
                   {budgetThisPeriod>0&&(
                     <>
                       {/* Totals summary */}
-                      <div className="bg-[#0F0F23] rounded-xl p-2 space-y-1">
+                      <div className={`rounded-xl p-2 space-y-1 ${totalPeriodDeficit>0?'bg-[#FF3333]/8 border border-[#FF3333]/20':'bg-[#0F0F23]'}`}>
                         <div className="flex justify-between text-[10px]">
                           <span className="text-[#8892B0]">Budget</span>
                           <span className="text-white font-semibold">{fmtINR(budgetThisPeriod)}</span>
@@ -1912,7 +1913,12 @@ function FinanceTab() {
                           <span className="text-[#8892B0]">🕐 Pending</span>
                           <span className="text-[#A78BFA] font-semibold">{plannedThisPeriod>0?fmtINR(plannedThisPeriod):'—'}</span>
                         </div>
-                        {/* mini bar */}
+                        {totalPeriodDeficit>0&&(
+                          <div className="flex justify-between text-[10px] border-t border-[#FF3333]/30 pt-1 mt-1">
+                            <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
+                            <span className="text-[#FF3333] font-bold">{fmtINR(totalPeriodDeficit)}</span>
+                          </div>
+                        )}
                         {budgetThisPeriod>0&&(
                           <div className="h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden flex mt-1">
                             <div className="h-full bg-[#00CC88]" style={{width:`${paidThisPeriod/budgetThisPeriod*100}%`}}/>
@@ -1926,7 +1932,7 @@ function FinanceTab() {
                         {periodCats.map(c=>{
                           const budget = c.paid + c.planned
                           return (
-                            <div key={c.category} className={c.planned>0?'bg-[#FF3333]/5 rounded-lg p-1.5 -mx-1':''}>
+                            <div key={c.category} className={c.deficit>0?'bg-[#FF3333]/5 rounded-lg p-1.5 -mx-1':c.planned>0?'rounded-lg p-1.5 -mx-1':''}>
                               <p className="text-white text-[10px] font-semibold truncate">{c.category}</p>
                               <div className="text-[10px] space-y-0.5 mt-0.5">
                                 <div className="flex justify-between">
@@ -1940,6 +1946,10 @@ function FinanceTab() {
                                 {c.planned>0&&<div className="flex justify-between">
                                   <span className="text-[#8892B0]">🕐 Pending</span>
                                   <span className="text-[#A78BFA]">{fmtINR(c.planned)}</span>
+                                </div>}
+                                {c.deficit>0&&<div className="flex justify-between border-t border-[#FF3333]/30 pt-0.5 mt-0.5">
+                                  <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
+                                  <span className="text-[#FF3333] font-bold">{fmtINR(c.deficit)}</span>
                                 </div>}
                               </div>
                             </div>
