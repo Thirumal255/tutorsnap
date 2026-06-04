@@ -1,3 +1,14 @@
+# Sensitive / local files
+firebase-sa-key.json
+migration/secrets/
+migration/db_password.txt
+migration/db_export.sql
+migration/cors.json
+migration/new_project_values.txt
+backend_start.log
+set_gh_secrets.py
+import_notion_tasks.py
+
 __pycache__/
 *.py[cod]
 .venv/
