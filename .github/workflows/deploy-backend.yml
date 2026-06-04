@@ -84,6 +84,7 @@ jobs:
           DATABASE_URL=DATABASE_URL:latest,\
           ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,\
           GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,\
+          GOOGLE_CLIENT_IDS=GOOGLE_CLIENT_IDS:latest,\
           GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,\
           JWT_SECRET=JWT_SECRET:latest,\
           ADMIN_EMAILS=ADMIN_EMAILS:latest,\
