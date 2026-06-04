@@ -9,9 +9,9 @@ on:
       - '.github/workflows/deploy-backend.yml'
 
 env:
-  PROJECT_ID: tutorsnap
+  PROJECT_ID: project-726f0196-ff7a-4360-ad1
   REGION: asia-south1
-  IMAGE: asia-south1-docker.pkg.dev/tutorsnap/tutorsnap/api
+  IMAGE: asia-south1-docker.pkg.dev/project-726f0196-ff7a-4360-ad1/tutorsnap/api
 
 jobs:
   deploy:

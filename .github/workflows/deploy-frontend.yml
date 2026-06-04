@@ -11,9 +11,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - name: Checkout
@@ -43,8 +40,5 @@ jobs:
       - name: Deploy to Firebase Hosting
         working-directory: frontend
         env:
-          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-        run: |
-          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/firebase-sa.json
-          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json
-          firebase deploy --only hosting --project=tutorsnap --non-interactive
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: firebase deploy --only hosting --project=tutorsnap --non-interactive --token "$FIREBASE_TOKEN"

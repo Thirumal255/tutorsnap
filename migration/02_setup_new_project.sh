@@ -6,7 +6,7 @@
 set -e
 
 # ── CONFIG — fill these in ────────────────────────────────────────────────────
-NEW_PROJECT="FILL_ME_IN"          # ← your new GCP project ID
+NEW_PROJECT="project-726f0196-ff7a-4360-ad1"   # tutorsnap-prod
 REGION="asia-south1"
 GITHUB_REPO="Thirumal255/tutorsnap"
 DB_INSTANCE="tutorsnap-db"
