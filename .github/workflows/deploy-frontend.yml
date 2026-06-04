@@ -19,12 +19,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
-
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
@@ -48,4 +42,9 @@ jobs:
 
       - name: Deploy to Firebase Hosting
         working-directory: frontend
-        run: firebase deploy --only hosting --project=tutorsnap --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/firebase-sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json
+          firebase deploy --only hosting --project=tutorsnap --non-interactive
