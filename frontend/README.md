@@ -406,3 +406,4 @@ VITE_API_BASE=https://tutorsnap-api-yfxhelshwq-el.a.run.app
 ```
 
 In development, `VITE_API_BASE` can be omitted — the Vite proxy handles `/api/*`.
+
