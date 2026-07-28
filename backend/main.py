@@ -6627,21 +6627,20 @@ def _generate_assignment_questions(
     book_subject: str,
     book_grade: int,
     sections: list,
-    level_distribution: dict,
 ) -> list:
     """Call Claude to produce a structured, objective-first assignment paper."""
 
-    # Build rich topic context
+    # Build rich topic context — each topic carries its own difficulty_ceiling
     topic_blocks = []
     for t in topics:
         objs = t.learning_objectives or []
         concepts = t.key_concepts or []
         exs = t.exercises or []
-        block = f"TOPIC: {t.title}\n"
+        level = t.difficulty_ceiling or "L3"
+        block = f"TOPIC: {t.title}  [Book level: {level}]\n"
         if objs:
             block += "Learning objectives (what students must be able to DO):\n"
-            block += "\n".join(f"  • {o}" for o in objs)
-            block += "\n"
+            block += "\n".join(f"  • {o}" for o in objs) + "\n"
         if concepts:
             block += f"Key concepts: {', '.join(concepts[:6])}\n"
         if exs:
@@ -6653,12 +6652,10 @@ def _generate_assignment_questions(
 
     # Build section spec for the prompt
     section_specs = []
-    total_questions = 0
     for s in sections:
         fmt = s["format"]
         count = s["count"]
         marks = s["marks_each"]
-        total_questions += count
         if fmt == "mcq":
             section_specs.append(
                 f'Section {s["label"]} — {count} MCQ questions, {marks} mark each.\n'
@@ -6685,31 +6682,23 @@ def _generate_assignment_questions(
                 f'  For the answer: show step-by-step working and state marks per step.'
             )
 
-    # Level distribution instruction
-    easy_pct = level_distribution.get("easy", 30)
-    medium_pct = level_distribution.get("medium", 50)
-    hard_pct = level_distribution.get("hard", 20)
-    easy_count = max(1, round(total_questions * easy_pct / 100))
-    medium_count = max(1, round(total_questions * medium_pct / 100))
-    hard_count = max(0, total_questions - easy_count - medium_count)
-
     prompt = f"""You are an expert Grade {book_grade} {book_subject} teacher preparing an assignment paper.
 
 YOUR TASK:
 Generate questions that test whether students have achieved the learning objectives below.
-Do NOT simply copy or rephrase book exercises. Instead, design fresh scenarios that require
+Do NOT simply copy or rephrase book exercises. Design fresh scenarios that require
 applying the same concepts — new contexts, new numbers, same cognitive skill.
 
 TOPICS AND LEARNING OBJECTIVES:
 {chr(10).join(topic_blocks)}
 
+CRITICAL RULE — DIFFICULTY LEVEL:
+Each topic above has a "[Book level: LX]" tag. This is the difficulty level the book sets for that topic.
+Every question you write for a topic MUST be at exactly that topic's book level.
+Do not upgrade or downgrade the level. The level in the JSON output must match the topic's book level.
+
 PAPER STRUCTURE — generate questions exactly as specified per section:
 {chr(10).join(section_specs)}
-
-COGNITIVE LEVEL DISTRIBUTION across all questions:
-- {easy_count} questions at L1/L2 (recall, define, identify, describe)
-- {medium_count} questions at L3 (apply, calculate, solve, use in context)
-- {hard_count} questions at L4/L5 (analyse, compare, justify, evaluate)
 
 QUESTION FRAMING RULES:
 1. Start from the learning objective, not the exercise. Ask: "What must the student be able to DO?"
@@ -6730,7 +6719,7 @@ Return a JSON array only — no other text. Each element must have:
   "options": {{"a": "...", "b": "...", "c": "...", "d": "..."}} or null if not MCQ,
   "correct_option": "<a|b|c|d>" or null if not MCQ,
   "source_topic": "<topic title>",
-  "level": "<L1|L2|L3|L4|L5>",
+  "level": "<must match the topic's book level exactly>",
   "marks": <total marks for this question>,
   "answer": "<model answer with working>",
   "marking_guide": ["<1 mark: ...>", "<1 mark: ...>"]
@@ -6864,7 +6853,6 @@ def generate_assignment(
         {"label": "B", "format": "short_answer",  "count": 4,  "marks_each": 3},
         {"label": "C", "format": "long_answer",   "count": 2,  "marks_each": 5},
     ])
-    level_distribution = data.get("level_distribution", {"easy": 30, "medium": 50, "hard": 20})
 
     if not book_id or not chapter_ids:
         raise HTTPException(status_code=400, detail="book_id and chapter_ids are required")
@@ -6885,7 +6873,6 @@ def generate_assignment(
         book_subject=book.subject,
         book_grade=book.grade,
         sections=sections,
-        level_distribution=level_distribution,
     )
 
     paper = AssignmentPaper(

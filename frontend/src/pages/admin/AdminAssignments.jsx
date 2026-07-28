@@ -297,7 +297,6 @@ export default function AdminAssignments() {
     title: '',
     include_answers: false,
     sections: DEFAULT_SECTIONS,
-    level_distribution: { easy: 30, medium: 50, hard: 20 },
   })
   const [generating, setGenerating]   = useState(false)
   const [genError, setGenError]       = useState('')
@@ -364,21 +363,6 @@ export default function AdminAssignments() {
     setConfig(c => ({ ...c, sections: c.sections.filter((_, i) => i !== idx) }))
   }
 
-  function updateLevel(key, value) {
-    setConfig(c => {
-      const dist = { ...c.level_distribution, [key]: Number(value) }
-      // Clamp so total = 100
-      const total = dist.easy + dist.medium + dist.hard
-      if (total !== 100) {
-        const others = Object.keys(dist).filter(k => k !== key)
-        const remaining = 100 - dist[key]
-        const sum = others.reduce((s, k) => s + dist[k], 0)
-        if (sum > 0) others.forEach(k => { dist[k] = Math.round(dist[k] * remaining / sum) })
-      }
-      return { ...c, level_distribution: dist }
-    })
-  }
-
   const totalMarks = config.sections.reduce((s, sec) => s + sec.count * sec.marks_each, 0)
   const totalQuestions = config.sections.reduce((s, sec) => s + sec.count, 0)
 
@@ -393,7 +377,6 @@ export default function AdminAssignments() {
         chapter_ids: selectedChapters,
         title: config.title,
         sections: config.sections,
-        level_distribution: config.level_distribution,
         include_answers: config.include_answers,
       })
       const paper = res.data
@@ -632,37 +615,10 @@ export default function AdminAssignments() {
             </div>
           </div>
 
-          {/* Cognitive level distribution */}
-          <div>
-            <label className="block text-xs text-[#8892B0] font-semibold uppercase tracking-wider mb-3">
-              Cognitive Level Distribution
-              <span className="ml-2 text-[#4A5568] normal-case font-normal">(should add to 100%)</span>
-            </label>
-            <div className="space-y-3">
-              {[
-                { key: 'easy',   label: 'Easy (L1–L2)',   color: '#00D68F', desc: 'Recall, define, identify' },
-                { key: 'medium', label: 'Medium (L3)',     color: '#00A2FF', desc: 'Apply, calculate, solve' },
-                { key: 'hard',   label: 'Hard (L4–L5)',   color: '#C77DFF', desc: 'Analyse, justify, evaluate' },
-              ].map(({ key, label, color, desc }) => (
-                <div key={key}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-white font-semibold" style={{ color }}>{label}</span>
-                    <span className="text-xs text-white font-bold">{config.level_distribution[key]}%</span>
-                  </div>
-                  <input type="range" min={0} max={100} value={config.level_distribution[key]}
-                    onChange={e => updateLevel(key, e.target.value)}
-                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                    style={{ accentColor: color }}
-                  />
-                  <p className="text-[10px] text-[#4A5568] mt-0.5">{desc}</p>
-                </div>
-              ))}
-              <p className="text-xs text-[#4A5568]">
-                Total: <span className={`font-bold ${Object.values(config.level_distribution).reduce((a,b)=>a+b,0) === 100 ? 'text-[#00D68F]' : 'text-[#FF3333]'}`}>
-                  {Object.values(config.level_distribution).reduce((a,b)=>a+b,0)}%
-                </span>
-              </p>
-            </div>
+          {/* Level note */}
+          <div className="p-3 bg-[#00A2FF]/5 border border-[#00A2FF]/20 rounded-xl">
+            <p className="text-xs text-[#00A2FF] font-semibold">📘 Difficulty follows the book</p>
+            <p className="text-xs text-[#4A5568] mt-0.5">Questions are generated at each topic's own level (L1–L5) as set in the textbook.</p>
           </div>
 
           {/* Include answers */}
