@@ -1,14 +1,14 @@
 """add_assignment_papers
 
 Revision ID: aa1b2c3d4e5f
-Revises: z9a0b1c2d3e4
+Revises: z9a0b1c2d3e4, a963847deb5a
 Create Date: 2026-07-28 00:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = 'aa1b2c3d4e5f'
-down_revision = 'z9a0b1c2d3e4'
+down_revision = ('z9a0b1c2d3e4', 'a963847deb5a')
 branch_labels = None
 depends_on = None
 
