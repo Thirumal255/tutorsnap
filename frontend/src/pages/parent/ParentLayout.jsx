@@ -124,6 +124,17 @@ export default function ParentLayout() {
               </span>
             )}
           </NavLink>
+          <NavLink to="/parent/assignments"
+            className={({ isActive }) =>
+              `flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-nunito font-semibold transition-all ${
+                isActive
+                  ? 'bg-[#00A2FF]/15 text-[#00A2FF] border-l-4 border-[#00A2FF]'
+                  : 'text-[#8892B0] hover:bg-[#1A1A3E] hover:text-white'
+              }`
+            }
+          >
+            <span className="flex items-center gap-2.5"><span>📝</span> Assignments</span>
+          </NavLink>
         </nav>
 
         {/* User card */}

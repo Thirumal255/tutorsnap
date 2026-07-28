@@ -31,10 +31,12 @@ import AdminBooks from './pages/admin/AdminBooks'
 import AdminAnalytics from './pages/admin/AdminAnalytics'
 import AdminAuditLog from './pages/admin/AdminAuditLog'
 import AdminTasks from './pages/admin/AdminTasks'
+import AdminAssignments from './pages/admin/AdminAssignments'
 import ParentLayout from './pages/parent/ParentLayout'
 import ParentDashboard from './pages/parent/ParentDashboard'
 import ParentChildDetail from './pages/parent/ParentChildDetail'
 import ParentNotifications from './pages/parent/ParentNotifications'
+import ParentAssignments from './pages/parent/ParentAssignments'
 import ProfilePage from './pages/ProfilePage'
 import { ToastProvider } from './context/ToastContext'
 
@@ -133,6 +135,7 @@ export default function App() {
               <Route path="analytics" element={<AdminAnalytics />} />
               <Route path="audit-log" element={<AdminAuditLog />} />
               <Route path="tasks" element={<AdminTasks />} />
+              <Route path="assignments" element={<AdminAssignments />} />
             </Route>
 
             {/* Parent */}
@@ -144,6 +147,7 @@ export default function App() {
               <Route index element={<ParentDashboard />} />
               <Route path="children/:id" element={<ParentChildDetail />} />
               <Route path="notifications" element={<ParentNotifications />} />
+              <Route path="assignments" element={<ParentAssignments />} />
             </Route>
 
             {/* Profile — shared by student and parent */}

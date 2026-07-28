@@ -28,6 +28,7 @@ from models import (
     AIUsageLog, AdminAuditLog, StudentGoal,
     AdminTask, AdminTaskExpense, AdminTaskDependency,
     PaymentAccount, FundSource, FundReceipt, CategoryAllocation, FundTransfer,
+    AssignmentPaper,
 )
 from ingestion import run_ingestion
 from auth import get_current_user, require_admin, require_parent, verify_google_token, create_jwt
@@ -1139,6 +1140,7 @@ def admin_preview_book(
                 "difficulty_ceiling": t.difficulty_ceiling,
                 "key_concepts": kc,
                 "vocabulary": vc,
+                "exercises": t.exercises or [],
             })
         chapters_data.append({
             "id": ch.id,
@@ -6604,4 +6606,337 @@ def delete_transfer(xfer_id: int, db: Session = Depends(get_db), _: User = Depen
     # DO NOT mutate current_balance here (would double the reversal).
     db.delete(xfer)
     db.commit()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ASSIGNMENT PAPER GENERATOR
+# ══════════════════════════════════════════════════════════════════════════════
+
+_ANTHROPIC_CLIENT_ASSIGN = None
+
+def _get_assign_client():
+    global _ANTHROPIC_CLIENT_ASSIGN
+    if _ANTHROPIC_CLIENT_ASSIGN is None:
+        import anthropic
+        _ANTHROPIC_CLIENT_ASSIGN = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    return _ANTHROPIC_CLIENT_ASSIGN
+
+
+def _generate_assignment_questions(
+    topics: list,
+    book_subject: str,
+    book_grade: int,
+    question_count: int,
+    types: list,
+    level: str,
+) -> list:
+    """Call Claude to produce a structured assignment paper from book exercises."""
+
+    # Build topic context blocks
+    topic_blocks = []
+    all_exercises = []
+    for t in topics:
+        exs = t.exercises or []
+        concepts = ", ".join((t.key_concepts or [])[:5])
+        block = f"Topic: {t.title}\nKey concepts: {concepts}\n"
+        if exs:
+            block += "Book exercises:\n" + "\n".join(f"  - {e}" for e in exs[:25])
+        else:
+            block += f"Textbook content: {(t.raw_content or '')[:800]}"
+        topic_blocks.append(block)
+        all_exercises.extend(exs)
+
+    has_exercises = len(all_exercises) > 0
+    type_instructions = []
+    if "verbatim" in types and has_exercises:
+        type_instructions.append('- "verbatim": copy a book exercise question exactly as written')
+    if "value_changed" in types and has_exercises:
+        type_instructions.append('- "value_changed": take a book exercise and substitute different numbers/names, keeping same structure')
+    if "reformulated" in types:
+        type_instructions.append('- "reformulated": write a new question testing the same concept, grounded strictly in the provided content')
+
+    if not type_instructions:
+        type_instructions = ['- "reformulated": write a new question testing the same concept, grounded strictly in the provided content']
+
+    level_instruction = (
+        "Use a mix of difficulty levels L1 (recall) through L3 (application)."
+        if level == "mixed"
+        else f"All questions must be at difficulty {level}."
+    )
+
+    prompt = f"""You are generating an assignment paper for Grade {book_grade} {book_subject}.
+
+STRICT RULE: Every question MUST be based only on the topics and exercises provided below. Do not invent questions from outside this content.
+
+{chr(10).join(topic_blocks)}
+
+Generate exactly {question_count} assignment questions.
+
+Question types available:
+{chr(10).join(type_instructions)}
+
+{level_instruction}
+
+Distribute question types roughly evenly across: {', '.join(types)}.
+
+Return a JSON array only, no other text. Each element:
+{{
+  "index": <1-based integer>,
+  "question": "<question text>",
+  "type": "<verbatim|value_changed|reformulated>",
+  "source_topic": "<topic title this question is from>",
+  "level": "<L1|L2|L3|L4|L5>",
+  "marks": <integer 1-4>,
+  "answer": "<concise model answer>"
+}}"""
+
+    client = _get_assign_client()
+    msg = client.messages.create(
+        model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
+        max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = msg.content[0].text.strip()
+    # Strip markdown code fences if present
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw.strip())
+
+
+@app.get("/api/books/{book_id}/chapters-with-exercises")
+def chapters_with_exercises(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return chapters for a book with exercise counts per chapter — used by assignment wizard."""
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if book.ingestion_status != "done":
+        raise HTTPException(status_code=400, detail="Book is not fully ingested yet")
+
+    chapters = (db.query(Chapter)
+                .filter(Chapter.book_id == book_id)
+                .order_by(Chapter.chapter_number)
+                .all())
+    result = []
+    for ch in chapters:
+        topics = db.query(Topic).filter(Topic.chapter_id == ch.id).all()
+        exercise_count = sum(len(t.exercises or []) for t in topics)
+        result.append({
+            "id": ch.id,
+            "chapter_number": ch.chapter_number,
+            "title": ch.title,
+            "topic_count": len(topics),
+            "exercise_count": exercise_count,
+        })
+    return {"book_id": book_id, "subject": book.subject, "grade": book.grade, "chapters": result}
+
+
+@app.post("/api/assignment/generate")
+def generate_assignment(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate an assignment paper for selected chapters. Admin or parent only."""
+    if current_user.role not in ("admin", "parent"):
+        raise HTTPException(status_code=403, detail="Admin or parent access required")
+
+    book_id       = data.get("book_id")
+    chapter_ids   = data.get("chapter_ids", [])
+    title         = data.get("title", "Assignment")
+    question_count = min(int(data.get("question_count", 10)), 30)
+    types         = data.get("types", ["verbatim", "value_changed", "reformulated"])
+    level         = data.get("level", "mixed")
+    include_answers = bool(data.get("include_answers", False))
+
+    if not book_id or not chapter_ids:
+        raise HTTPException(status_code=400, detail="book_id and chapter_ids are required")
+
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # Fetch all topics for the selected chapters
+    topics = (db.query(Topic)
+              .join(Chapter)
+              .filter(Chapter.id.in_(chapter_ids), Chapter.book_id == book_id)
+              .all())
+    if not topics:
+        raise HTTPException(status_code=400, detail="No topics found for selected chapters")
+
+    questions = _generate_assignment_questions(
+        topics=topics,
+        book_subject=book.subject,
+        book_grade=book.grade,
+        question_count=question_count,
+        types=types,
+        level=level,
+    )
+
+    paper = AssignmentPaper(
+        book_id=book_id,
+        created_by=current_user.id,
+        title=title,
+        chapter_ids=chapter_ids,
+        questions=questions,
+        include_answers=include_answers,
+    )
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+
+    return {
+        "assignment_id": paper.id,
+        "title": paper.title,
+        "book": book.title or book.filename,
+        "subject": book.subject,
+        "grade": book.grade,
+        "include_answers": paper.include_answers,
+        "questions": paper.questions,
+        "created_at": paper.created_at.isoformat(),
+    }
+
+
+@app.get("/api/assignment/list")
+def list_assignments(
+    book_id: int = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List saved assignment papers. Admin sees all; parent sees papers for their children's grade books."""
+    if current_user.role not in ("admin", "parent"):
+        raise HTTPException(status_code=403, detail="Admin or parent access required")
+
+    q = db.query(AssignmentPaper).join(Book)
+    if book_id:
+        q = q.filter(AssignmentPaper.book_id == book_id)
+    if current_user.role == "parent":
+        # Filter to books matching children's grades
+        child_links = db.query(ParentStudentLink).filter(
+            ParentStudentLink.parent_id == current_user.id
+        ).all()
+        child_ids = [l.student_id for l in child_links]
+        children = db.query(User).filter(User.id.in_(child_ids)).all()
+        grades = list({c.grade for c in children if c.grade})
+        if grades:
+            q = q.filter(Book.grade.in_(grades))
+
+    papers = q.order_by(AssignmentPaper.created_at.desc()).all()
+    return [
+        {
+            "id": p.id,
+            "title": p.title,
+            "book_id": p.book_id,
+            "book_title": p.book.title or p.book.filename,
+            "subject": p.book.subject,
+            "grade": p.book.grade,
+            "question_count": len(p.questions),
+            "include_answers": p.include_answers,
+            "created_at": p.created_at.isoformat(),
+        }
+        for p in papers
+    ]
+
+
+@app.get("/api/assignment/{assignment_id}")
+def get_assignment(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch a single assignment paper with all questions."""
+    if current_user.role not in ("admin", "parent"):
+        raise HTTPException(status_code=403, detail="Admin or parent access required")
+
+    paper = db.query(AssignmentPaper).filter(AssignmentPaper.id == assignment_id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    return {
+        "id": paper.id,
+        "title": paper.title,
+        "book_id": paper.book_id,
+        "book_title": paper.book.title or paper.book.filename,
+        "subject": paper.book.subject,
+        "grade": paper.book.grade,
+        "chapter_ids": paper.chapter_ids,
+        "include_answers": paper.include_answers,
+        "questions": paper.questions,
+        "created_at": paper.created_at.isoformat(),
+    }
+
+
+@app.post("/api/assignment/{assignment_id}/regenerate-question")
+def regenerate_question(
+    assignment_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Regenerate a single question at a given index."""
+    paper = db.query(AssignmentPaper).filter(AssignmentPaper.id == assignment_id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    question_index = data.get("question_index")  # 0-based
+    if question_index is None or question_index >= len(paper.questions):
+        raise HTTPException(status_code=400, detail="Invalid question_index")
+
+    old_q = paper.questions[question_index]
+    topic_title = old_q.get("source_topic", "")
+    q_type = old_q.get("type", "reformulated")
+    level = old_q.get("level", "L2")
+
+    # Find the topic
+    topics = (db.query(Topic)
+              .join(Chapter)
+              .filter(Chapter.id.in_(paper.chapter_ids))
+              .filter(Topic.title == topic_title)
+              .all())
+    if not topics:
+        topics = (db.query(Topic)
+                  .join(Chapter)
+                  .filter(Chapter.id.in_(paper.chapter_ids))
+                  .all())
+
+    book = paper.book
+    new_qs = _generate_assignment_questions(
+        topics=topics[:3],
+        book_subject=book.subject,
+        book_grade=book.grade,
+        question_count=1,
+        types=[q_type],
+        level=level,
+    )
+    if not new_qs:
+        raise HTTPException(status_code=500, detail="Failed to regenerate question")
+
+    new_q = new_qs[0]
+    new_q["index"] = old_q["index"]
+
+    questions = list(paper.questions)
+    questions[question_index] = new_q
+    paper.questions = questions
+    db.commit()
+
+    return {"question": new_q}
+
+
+@app.delete("/api/assignment/{assignment_id}")
+def delete_assignment(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    paper = db.query(AssignmentPaper).filter(AssignmentPaper.id == assignment_id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    db.delete(paper)
+    db.commit()
+    return {"ok": True}
     return {"deleted": True}

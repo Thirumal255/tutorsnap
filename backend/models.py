@@ -465,6 +465,23 @@ class FundTransfer(Base):
     to_account   = relationship("PaymentAccount", foreign_keys=[to_account_id])
 
 
+class AssignmentPaper(Base):
+    """Admin/parent-generated assignment paper from book exercises."""
+    __tablename__ = "assignment_papers"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    book_id         = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
+    created_by      = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    title           = Column(String(300), nullable=False)
+    chapter_ids     = Column(JSON, nullable=False)   # list[int]
+    questions       = Column(JSON, nullable=False)   # list[{index, question, type, source_topic, level, marks, answer}]
+    include_answers = Column(Boolean, nullable=False, default=False)
+    created_at      = Column(DateTime, default=datetime.utcnow)
+
+    book    = relationship("Book")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
 class StudentGoal(Base):
     """Weekly learning goal set by the student."""
     __tablename__ = "student_goals"

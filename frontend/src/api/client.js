@@ -170,6 +170,14 @@ export const teachChat = (topicId, messages, turnNumber) =>
 export const getCurrentGoal = ()     => api.get('/student/goals/current')
 export const setWeeklyGoal  = (data) => api.post('/student/goals', data)
 
+// Assignment Paper Generator
+export const getChaptersWithExercises = (bookId)       => api.get(`/books/${bookId}/chapters-with-exercises`)
+export const generateAssignment        = (data)         => api.post('/assignment/generate', data)
+export const listAssignments           = (bookId)       => api.get('/assignment/list', { params: bookId ? { book_id: bookId } : {} })
+export const getAssignment             = (id)           => api.get(`/assignment/${id}`)
+export const deleteAssignment          = (id)           => api.delete(`/assignment/${id}`)
+export const regenerateQuestion        = (id, data)     => api.post(`/assignment/${id}/regenerate-question`, data)
+
 // Admin Task Tracker
 export const getAdminTasks         = (params = {}) => api.get('/admin/tasks', { params })
 export const getAdminTasksSummary  = ()             => api.get('/admin/tasks/summary')

@@ -12,7 +12,8 @@ const NAV = [
   { to: '/admin/analytics',  label: 'Analytics', icon: '📊' },
   { to: '/admin/audit-log',  label: 'Audit Log', icon: '📋' },
   { to: '/admin/settings',   label: 'Settings',  icon: '⚙️' },
-  { to: '/admin/tasks',      label: 'My Tasks',  icon: '✅' },
+  { to: '/admin/tasks',       label: 'My Tasks',    icon: '✅' },
+  { to: '/admin/assignments', label: 'Assignments', icon: '📝' },
 ]
 
 // On mobile, show a condensed set in the bottom nav
