@@ -6666,18 +6666,27 @@ def _generate_assignment_questions(
 
     prompt = f"""You are generating an assignment paper for Grade {book_grade} {book_subject}.
 
-STRICT RULE: Every question MUST be based only on the topics and exercises provided below. Do not invent questions from outside this content.
+STRICT RULES:
+1. Every question MUST be based only on the topics and exercises provided below.
+2. For EVERY question, compute the answer yourself from scratch based on the exact question text you write. Never copy an answer from the source exercise if you changed any numbers or wording.
+3. For "value_changed" questions: after substituting new numbers, carefully work out the correct answer for those new numbers before writing it down.
+4. Double-check every numerical answer before including it.
 
 {chr(10).join(topic_blocks)}
 
 Generate exactly {question_count} assignment questions.
 
-Question types available:
+Question types:
 {chr(10).join(type_instructions)}
 
 {level_instruction}
 
 Distribute question types roughly evenly across: {', '.join(types)}.
+
+IMPORTANT for answers:
+- "verbatim": copy the book question exactly, then compute/verify the correct answer yourself.
+- "value_changed": show your working in the answer so the teacher can verify (e.g. "a) 7  b) 9  c) 18 — Working: 5+2=7, 6+3=9, 8+10=18").
+- "reformulated": provide a clear model answer.
 
 Return a JSON array only, no other text. Each element:
 {{
@@ -6687,7 +6696,7 @@ Return a JSON array only, no other text. Each element:
   "source_topic": "<topic title this question is from>",
   "level": "<L1|L2|L3|L4|L5>",
   "marks": <integer 1-4>,
-  "answer": "<concise model answer>"
+  "answer": "<correct model answer — must match the exact question you wrote>"
 }}"""
 
     client = _get_assign_client()
