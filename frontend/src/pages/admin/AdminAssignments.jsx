@@ -8,7 +8,7 @@ import {
 
 const LEVELS = ['L1', 'L2', 'L3', 'L4', 'L5', 'mixed']
 const LEVEL_LABELS = { L1: 'L1 – Recall', L2: 'L2 – Understanding', L3: 'L3 – Application', L4: 'L4 – Analysis', L5: 'L5 – Synthesis', mixed: 'Mixed' }
-const TYPE_LABELS = { verbatim: '📖 Verbatim (exact book question)', value_changed: '🔢 Value-changed (different numbers)', reformulated: '✨ Reformulated (same concept, new phrasing)' }
+const TYPE_LABELS = { value_changed: '🔢 Value-changed (different numbers)', reformulated: '✨ Reformulated (same concept, new phrasing)' }
 
 // ── PDF Download ──────────────────────────────────────────────────────────────
 function downloadPDF(paper) {
@@ -182,7 +182,7 @@ export default function AdminAssignments() {
   const [chapters, setChapters]       = useState([])
   const [selectedChapters, setSelectedChapters] = useState([])
   const [config, setConfig]           = useState({
-    title: '', question_count: 10, types: ['verbatim', 'value_changed', 'reformulated'],
+    title: '', question_count: 10, types: ['value_changed', 'reformulated'],
     level: 'mixed', include_answers: false,
   })
   const [generating, setGenerating]   = useState(false)

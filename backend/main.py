@@ -6648,8 +6648,7 @@ def _generate_assignment_questions(
 
     has_exercises = len(all_exercises) > 0
     type_instructions = []
-    if "verbatim" in types and has_exercises:
-        type_instructions.append('- "verbatim": copy a book exercise question exactly as written')
+    # verbatim disabled — PDF extraction is lossy and corrupts math signs/formatting
     if "value_changed" in types and has_exercises:
         type_instructions.append('- "value_changed": take a book exercise and substitute different numbers/names, keeping same structure')
     if "reformulated" in types:
