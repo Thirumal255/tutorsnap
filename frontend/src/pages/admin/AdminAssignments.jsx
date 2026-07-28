@@ -3,6 +3,7 @@ import {
   getBooks, getChaptersWithExercises,
   generateAssignment, listAssignments,
   getAssignment, deleteAssignment, regenerateQuestion,
+  extractExercises,
 } from '../../api/client'
 
 const LEVELS = ['L1', 'L2', 'L3', 'L4', 'L5', 'mixed']
@@ -190,6 +191,8 @@ export default function AdminAssignments() {
   const [viewingPaper, setViewingPaper] = useState(null)
   const [loadingView, setLoadingView]  = useState(false)
   const [loadingList, setLoadingList]  = useState(true)
+  const [extracting, setExtracting]    = useState(false)
+  const [extractMsg, setExtractMsg]    = useState('')
 
   useEffect(() => {
     getBooks().then(r => setBooks(r.data.filter(b => b.status === 'done'))).catch(() => {})
@@ -199,9 +202,25 @@ export default function AdminAssignments() {
   function selectBook(book) {
     setSelectedBook(book)
     setSelectedChapters([])
+    setExtractMsg('')
     setConfig(c => ({ ...c, title: `${book.subject || ''} Grade ${book.grade} Assignment` }))
     getChaptersWithExercises(book.id).then(r => setChapters(r.data.chapters)).catch(() => {})
     setStep(1)
+  }
+
+  async function handleExtractExercises() {
+    setExtracting(true)
+    setExtractMsg('')
+    try {
+      const res = await extractExercises(selectedBook.id)
+      setExtractMsg(`Done — ${res.data.total_exercises} exercises extracted across ${res.data.updated_topics} topics.`)
+      const r = await getChaptersWithExercises(selectedBook.id)
+      setChapters(r.data.chapters)
+    } catch {
+      setExtractMsg('Extraction failed. Please try again.')
+    } finally {
+      setExtracting(false)
+    }
   }
 
   function toggleChapter(id) {
@@ -366,6 +385,21 @@ export default function AdminAssignments() {
               )
             })}
           </div>
+          {/* Extract exercises banner — shown when book has no exercises yet */}
+          {chapters.length > 0 && chapters.every(ch => ch.exercise_count === 0) && (
+            <div className="mb-4 p-4 bg-[#FFD700]/5 border border-[#FFD700]/30 rounded-xl">
+              <p className="text-sm text-[#FFD700] font-semibold mb-1">No exercises found in this book</p>
+              <p className="text-xs text-[#8892B0] mb-3">
+                Click below to use AI to extract exercise questions from the book content. This takes ~30–60 seconds.
+              </p>
+              <button onClick={handleExtractExercises} disabled={extracting}
+                className="px-4 py-2 bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/40 rounded-xl text-sm font-semibold hover:bg-[#FFD700]/30 transition-all disabled:opacity-50">
+                {extracting ? '⏳ Extracting exercises…' : '✨ Extract Exercises with AI'}
+              </button>
+              {extractMsg && <p className="text-xs text-[#00D68F] mt-2">{extractMsg}</p>}
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <p className="text-xs text-[#4A5568]">
               {selectedChapters.length} chapter{selectedChapters.length !== 1 ? 's' : ''} selected · {totalExercises} exercises available

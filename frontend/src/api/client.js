@@ -177,6 +177,7 @@ export const listAssignments           = (bookId)       => api.get('/assignment/
 export const getAssignment             = (id)           => api.get(`/assignment/${id}`)
 export const deleteAssignment          = (id)           => api.delete(`/assignment/${id}`)
 export const regenerateQuestion        = (id, data)     => api.post(`/assignment/${id}/regenerate-question`, data)
+export const extractExercises          = (bookId)        => api.post(`/admin/books/${bookId}/extract-exercises`)
 
 // Admin Task Tracker
 export const getAdminTasks         = (params = {}) => api.get('/admin/tasks', { params })

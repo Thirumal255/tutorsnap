@@ -6736,6 +6736,62 @@ def chapters_with_exercises(
     return {"book_id": book_id, "subject": book.subject, "grade": book.grade, "chapters": result}
 
 
+@app.post("/api/admin/books/{book_id}/extract-exercises")
+def extract_exercises(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Use Claude to extract exercise questions from each topic's raw_content and save to topic.exercises."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    client = _get_assign_client()
+    topics = (db.query(Topic)
+              .join(Chapter, Chapter.id == Topic.chapter_id)
+              .filter(Chapter.book_id == book_id)
+              .all())
+
+    updated = 0
+    for topic in topics:
+        if not topic.raw_content or len(topic.raw_content.strip()) < 30:
+            continue
+        prompt = f"""You are extracting exercise questions from a textbook page.
+
+Topic: {topic.title}
+Content:
+{topic.raw_content[:3000]}
+
+Extract ONLY the exercise/activity questions that appear in this content (questions students are asked to answer, not rhetorical questions in the body text).
+Return a JSON array of strings, each string being one exercise question verbatim.
+If there are no exercises, return an empty array [].
+Return ONLY the JSON array, no explanation."""
+        try:
+            msg = client.messages.create(
+                model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = msg.content[0].text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            exercises = json.loads(raw.strip())
+            if isinstance(exercises, list):
+                topic.exercises = [str(e) for e in exercises if str(e).strip()]
+                updated += 1
+        except Exception:
+            continue
+
+    db.commit()
+    total_exercises = sum(len(t.exercises or []) for t in topics)
+    return {"updated_topics": updated, "total_exercises": total_exercises}
+
+
 @app.post("/api/assignment/generate")
 def generate_assignment(
     data: dict,
