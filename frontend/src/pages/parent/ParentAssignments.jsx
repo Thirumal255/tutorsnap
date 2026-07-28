@@ -1,29 +1,96 @@
 import { useState, useEffect } from 'react'
 import { listAssignments, getAssignment } from '../../api/client'
+import { jsPDF } from 'jspdf'
 
 function downloadPDF(paper) {
-  const lines = []
-  lines.push(paper.title)
-  lines.push(`Subject: ${paper.subject}  |  Grade: ${paper.grade}  |  Total Marks: ${paper.questions.reduce((s, q) => s + (q.marks || 1), 0)}`)
-  lines.push('Name: ________________________   Date: ________________')
-  lines.push('')
-  paper.questions.forEach((q, i) => {
-    lines.push(`${i + 1}. ${q.question}   [${q.marks || 1} mark${(q.marks || 1) > 1 ? 's' : ''}]`)
-    lines.push('')
+  const qs = paper.questions || []
+  const totalMarks = qs.reduce((s, q) => s + (q.marks || 1), 0)
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const ML = 15, MR = 15, MT = 15, MB = 15
+  const CW = 210 - ML - MR
+  let y = MT
+  const LINE_H = 6
+
+  function checkPage(needed = LINE_H) {
+    if (y + needed > 297 - MB) { doc.addPage(); y = MT }
+  }
+  function writeLine(text, size = 10, bold = false, color = [0,0,0], indent = 0) {
+    doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setTextColor(...color)
+    const lines = doc.splitTextToSize(text, CW - indent)
+    checkPage(lines.length * LINE_H + 2)
+    lines.forEach(l => { doc.text(l, ML + indent, y); y += LINE_H })
+  }
+
+  writeLine(paper.title, 14, true)
+  y += 1
+  writeLine(`Subject: ${paper.subject || ''}   |   Grade: ${paper.grade || ''}   |   Total Marks: ${totalMarks}`, 9, false, [80,80,80])
+  y += 2
+  writeLine('Name: _______________________________   Date: ________________   Score: _____ / ' + totalMarks, 9)
+  y += 3
+  doc.setDrawColor(100,100,100); doc.setLineWidth(0.4); doc.line(ML, y, 210-MR, y); y += 4
+
+  const sections = {}
+  qs.forEach(q => { const s = q.section || 'A'; if (!sections[s]) sections[s] = []; sections[s].push(q) })
+
+  Object.entries(sections).forEach(([secLabel, secQs]) => {
+    const secMarks = secQs.reduce((s, q) => s + (q.marks || 1), 0)
+    writeLine(`Section ${secLabel}  (${secQs.length} questions · ${secMarks} marks)`, 11, true)
+    y += 2; doc.setDrawColor(200,200,200); doc.setLineWidth(0.2); doc.line(ML, y, 210-MR, y); y += 3
+
+    secQs.forEach((q, qi) => {
+      const marks = q.marks || 1
+      checkPage(10)
+      const numW = doc.getTextWidth(`${qi+1}. `)
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(0,0,0)
+      doc.text(`${qi+1}.`, ML, y)
+      doc.setFont('helvetica', 'normal')
+      const qLines = doc.splitTextToSize(q.question, CW - numW - 15)
+      checkPage(qLines.length * LINE_H + 2)
+      qLines.forEach((l, li) => doc.text(l, ML + numW, y + li * LINE_H))
+      doc.setFontSize(9); doc.setTextColor(100,100,100)
+      doc.text(`[${marks} mark${marks>1?'s':''}]`, 210-MR, y, { align: 'right' })
+      y += qLines.length * LINE_H + 1
+
+      if (q.format === 'mcq' && q.options) {
+        Object.entries(q.options).forEach(([opt, text]) => {
+          const lines = doc.splitTextToSize(`${opt})  ${text}`, CW/2 - 8)
+          checkPage(lines.length * 5 + 1)
+          doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40)
+          lines.forEach((l, li) => doc.text(l, ML+8, y + li*5))
+          y += lines.length * 5
+        })
+        y += 2
+      } else {
+        const ansLines = q.format === 'long_answer' ? 6 : q.format === 'short_answer' ? 3 : 1
+        for (let i = 0; i < ansLines; i++) {
+          checkPage(LINE_H); doc.setDrawColor(200,200,200); doc.setLineWidth(0.2)
+          doc.line(ML, y + LINE_H - 2, 210-MR, y + LINE_H - 2); y += LINE_H
+        }
+      }
+      y += 3
+    })
+    y += 4
   })
+
   if (paper.include_answers) {
-    lines.push('─── ANSWER KEY ───────────────────────────────────')
-    paper.questions.forEach((q, i) => {
-      lines.push(`${i + 1}. ${q.answer}`)
+    doc.addPage(); y = MT
+    writeLine('ANSWER KEY / MARKING GUIDE', 12, true)
+    doc.setDrawColor(100,100,100); doc.setLineWidth(0.4); doc.line(ML, y, 210-MR, y); y += 4
+    Object.entries(sections).forEach(([secLabel, secQs]) => {
+      writeLine(`Section ${secLabel}`, 11, true, [0,100,180])
+      secQs.forEach((q, qi) => {
+        const ans = q.format === 'mcq'
+          ? `${q.correct_option?.toUpperCase()})  ${q.options?.[q.correct_option]||''}`
+          : (q.answer||'')
+        writeLine(`${qi+1}.  ${ans}`, 10)
+        if (q.marking_guide?.length) q.marking_guide.forEach(g => writeLine(`     • ${g}`, 9, false, [80,80,80]))
+        y += 2
+      })
+      y += 3
     })
   }
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${paper.title.replace(/\s+/g, '_')}.txt`
-  a.click()
-  URL.revokeObjectURL(url)
+
+  doc.save(`${paper.title.replace(/\s+/g, '_')}.pdf`)
 }
 
 export default function ParentAssignments() {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { jsPDF } from 'jspdf'
 import {
   getBooks, getChaptersWithExercises,
   generateAssignment, listAssignments,
@@ -15,7 +16,51 @@ function downloadPDF(paper) {
   const qs = paper.questions || []
   const totalMarks = qs.reduce((s, q) => s + (q.marks || 1), 0)
 
-  // Group by section
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const PW = 210, PH = 297
+  const ML = 15, MR = 15, MT = 15, MB = 15
+  const CW = PW - ML - MR   // content width
+  let y = MT
+
+  const FONT_TITLE  = 14
+  const FONT_HEAD   = 11
+  const FONT_BODY   = 10
+  const FONT_SMALL  = 9
+  const LINE_H      = 6
+
+  function checkPage(needed = LINE_H) {
+    if (y + needed > PH - MB) { doc.addPage(); y = MT }
+  }
+
+  function writeLine(text, opts = {}) {
+    const { size = FONT_BODY, bold = false, color = [0,0,0], indent = 0 } = opts
+    doc.setFontSize(size)
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+    doc.setTextColor(...color)
+    const lines = doc.splitTextToSize(text, CW - indent)
+    checkPage(lines.length * LINE_H + 2)
+    lines.forEach(l => { doc.text(l, ML + indent, y); y += LINE_H })
+  }
+
+  function drawHRule(light = false) {
+    checkPage(4)
+    doc.setDrawColor(...(light ? [200,200,200] : [100,100,100]))
+    doc.setLineWidth(light ? 0.2 : 0.4)
+    doc.line(ML, y, PW - MR, y)
+    y += 3
+  }
+
+  // ── Header ────────────────────────────────────────────────────
+  writeLine(paper.title, { size: FONT_TITLE, bold: true })
+  y += 1
+  writeLine(`Subject: ${paper.subject || ''}   |   Grade: ${paper.grade || ''}   |   Total Marks: ${totalMarks}`, { size: FONT_SMALL, color: [80,80,80] })
+  y += 2
+  writeLine('Name: _______________________________   Date: ________________   Score: _____ / ' + totalMarks, { size: FONT_SMALL })
+  y += 3
+  drawHRule()
+  y += 2
+
+  // ── Sections ──────────────────────────────────────────────────
   const sections = {}
   qs.forEach((q, i) => {
     const sec = q.section || 'A'
@@ -23,56 +68,102 @@ function downloadPDF(paper) {
     sections[sec].push({ ...q, _i: i })
   })
 
-  const lines = []
-  lines.push(paper.title.toUpperCase())
-  lines.push(`Subject: ${paper.subject}  |  Grade: ${paper.grade}  |  Total Marks: ${totalMarks}`)
-  lines.push('Name: ________________________   Date: ________________   Score: ___ / ' + totalMarks)
-  lines.push('')
-
   Object.entries(sections).forEach(([secLabel, secQs]) => {
     const secMarks = secQs.reduce((s, q) => s + (q.marks || 1), 0)
-    lines.push(`${'─'.repeat(50)}`)
-    lines.push(`SECTION ${secLabel}  [${secMarks} marks]`)
-    lines.push(`${'─'.repeat(50)}`)
-    lines.push('')
-    secQs.forEach((q, i) => {
-      lines.push(`${i + 1}. ${q.question}   [${q.marks || 1} mark${(q.marks || 1) > 1 ? 's' : ''}]`)
+    const fmt = FORMAT_LABELS[secQs[0]?.format]?.label || secQs[0]?.format || ''
+
+    // Section heading
+    checkPage(12)
+    writeLine(`Section ${secLabel} — ${fmt}`, { size: FONT_HEAD, bold: true })
+    writeLine(`(${secQs.length} question${secQs.length > 1 ? 's' : ''} · ${secMarks} marks)`, { size: FONT_SMALL, color: [100,100,100] })
+    y += 2
+    drawHRule(true)
+    y += 1
+
+    secQs.forEach((q, qi) => {
+      const qNum = qi + 1
+      const marks = q.marks || 1
+      const marksText = `[${marks} mark${marks > 1 ? 's' : ''}]`
+
+      checkPage(10)
+      // Question number + text
+      doc.setFontSize(FONT_BODY)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0, 0, 0)
+      const numW = doc.getTextWidth(`${qNum}. `)
+      doc.text(`${qNum}.`, ML, y)
+
+      doc.setFont('helvetica', 'normal')
+      const qLines = doc.splitTextToSize(q.question, CW - numW - 15)
+      checkPage(qLines.length * LINE_H + 2)
+      qLines.forEach((l, li) => { doc.text(l, ML + numW, y + li * LINE_H) })
+
+      // Marks badge (right-aligned)
+      doc.setFontSize(FONT_SMALL)
+      doc.setTextColor(100, 100, 100)
+      doc.text(marksText, PW - MR, y, { align: 'right' })
+      y += qLines.length * LINE_H + 1
+
+      // MCQ options
       if (q.format === 'mcq' && q.options) {
-        Object.entries(q.options).forEach(([opt, text]) => {
-          lines.push(`   ${opt}) ${text}`)
+        const opts = Object.entries(q.options)
+        opts.forEach(([opt, text]) => {
+          const optLines = doc.splitTextToSize(`${opt})  ${text}`, (CW / 2) - 8)
+          checkPage(optLines.length * (LINE_H - 1) + 1)
+          doc.setFontSize(FONT_SMALL)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(40, 40, 40)
+          optLines.forEach((l, li) => doc.text(l, ML + 8, y + li * (LINE_H - 1)))
+          y += optLines.length * (LINE_H - 1)
         })
+        y += 2
       }
-      lines.push('')
+
+      // Answer lines for non-MCQ
+      if (q.format !== 'mcq') {
+        const ansLines = q.format === 'long_answer' ? 6 : q.format === 'short_answer' ? 3 : 1
+        for (let i = 0; i < ansLines; i++) {
+          checkPage(LINE_H)
+          doc.setDrawColor(200, 200, 200)
+          doc.setLineWidth(0.2)
+          doc.line(ML, y + LINE_H - 2, PW - MR, y + LINE_H - 2)
+          y += LINE_H
+        }
+      }
+
+      y += 3
     })
+
+    y += 4
   })
 
+  // ── Answer Key ────────────────────────────────────────────────
   if (paper.include_answers) {
-    lines.push(`${'═'.repeat(50)}`)
-    lines.push('ANSWER KEY / MARKING GUIDE')
-    lines.push(`${'═'.repeat(50)}`)
-    lines.push('')
+    doc.addPage()
+    y = MT
+    drawHRule()
+    writeLine('ANSWER KEY / MARKING GUIDE', { size: FONT_HEAD, bold: true })
+    drawHRule()
+    y += 3
+
     Object.entries(sections).forEach(([secLabel, secQs]) => {
-      lines.push(`Section ${secLabel}:`)
-      secQs.forEach((q, i) => {
+      writeLine(`Section ${secLabel}`, { size: FONT_HEAD, bold: true, color: [0, 100, 180] })
+      y += 1
+      secQs.forEach((q, qi) => {
         const ans = q.format === 'mcq'
-          ? `${q.correct_option?.toUpperCase()}) ${q.options?.[q.correct_option]}`
-          : q.answer
-        lines.push(`  ${i + 1}. ${ans}`)
+          ? `${q.correct_option?.toUpperCase()})  ${q.options?.[q.correct_option] || ''}`
+          : (q.answer || '')
+        writeLine(`${qi + 1}.  ${ans}`, { size: FONT_BODY })
         if (q.marking_guide?.length) {
-          q.marking_guide.forEach(g => lines.push(`     • ${g}`))
+          q.marking_guide.forEach(g => writeLine(`     • ${g}`, { size: FONT_SMALL, color: [80,80,80] }))
         }
+        y += 2
       })
-      lines.push('')
+      y += 3
     })
   }
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${paper.title.replace(/\s+/g, '_')}.txt`
-  a.click()
-  URL.revokeObjectURL(url)
+  doc.save(`${paper.title.replace(/\s+/g, '_')}.pdf`)
 }
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
