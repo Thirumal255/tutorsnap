@@ -12,21 +12,60 @@ const TYPE_LABELS = { value_changed: '🔢 Value-changed (different numbers)', r
 
 // ── PDF Download ──────────────────────────────────────────────────────────────
 function downloadPDF(paper) {
-  const lines = []
-  lines.push(paper.title)
-  lines.push(`Subject: ${paper.subject}  |  Grade: ${paper.grade}  |  Total Marks: ${paper.questions.reduce((s, q) => s + (q.marks || 1), 0)}`)
-  lines.push('Name: ________________________   Date: ________________')
-  lines.push('')
-  paper.questions.forEach((q, i) => {
-    lines.push(`${i + 1}. ${q.question}   [${q.marks || 1} mark${(q.marks || 1) > 1 ? 's' : ''}]`)
-    lines.push('')
+  const qs = paper.questions || []
+  const totalMarks = qs.reduce((s, q) => s + (q.marks || 1), 0)
+
+  // Group by section
+  const sections = {}
+  qs.forEach((q, i) => {
+    const sec = q.section || 'A'
+    if (!sections[sec]) sections[sec] = []
+    sections[sec].push({ ...q, _i: i })
   })
+
+  const lines = []
+  lines.push(paper.title.toUpperCase())
+  lines.push(`Subject: ${paper.subject}  |  Grade: ${paper.grade}  |  Total Marks: ${totalMarks}`)
+  lines.push('Name: ________________________   Date: ________________   Score: ___ / ' + totalMarks)
+  lines.push('')
+
+  Object.entries(sections).forEach(([secLabel, secQs]) => {
+    const secMarks = secQs.reduce((s, q) => s + (q.marks || 1), 0)
+    lines.push(`${'─'.repeat(50)}`)
+    lines.push(`SECTION ${secLabel}  [${secMarks} marks]`)
+    lines.push(`${'─'.repeat(50)}`)
+    lines.push('')
+    secQs.forEach((q, i) => {
+      lines.push(`${i + 1}. ${q.question}   [${q.marks || 1} mark${(q.marks || 1) > 1 ? 's' : ''}]`)
+      if (q.format === 'mcq' && q.options) {
+        Object.entries(q.options).forEach(([opt, text]) => {
+          lines.push(`   ${opt}) ${text}`)
+        })
+      }
+      lines.push('')
+    })
+  })
+
   if (paper.include_answers) {
-    lines.push('─── ANSWER KEY ───────────────────────────────────')
-    paper.questions.forEach((q, i) => {
-      lines.push(`${i + 1}. ${q.answer}`)
+    lines.push(`${'═'.repeat(50)}`)
+    lines.push('ANSWER KEY / MARKING GUIDE')
+    lines.push(`${'═'.repeat(50)}`)
+    lines.push('')
+    Object.entries(sections).forEach(([secLabel, secQs]) => {
+      lines.push(`Section ${secLabel}:`)
+      secQs.forEach((q, i) => {
+        const ans = q.format === 'mcq'
+          ? `${q.correct_option?.toUpperCase()}) ${q.options?.[q.correct_option]}`
+          : q.answer
+        lines.push(`  ${i + 1}. ${ans}`)
+        if (q.marking_guide?.length) {
+          q.marking_guide.forEach(g => lines.push(`     • ${g}`))
+        }
+      })
+      lines.push('')
     })
   }
+
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -95,9 +134,10 @@ function AssignmentRow({ paper, onView, onDelete }) {
 }
 
 // ── Preview panel ─────────────────────────────────────────────────────────────
-function PreviewPanel({ paper, onBack, onRegenQ }) {
-  const [regenIdx, setRegenIdx] = useState(null)
+function PreviewPanel({ paper, onBack }) {
   const [questions, setQuestions] = useState(paper.questions)
+  const [regenIdx, setRegenIdx]   = useState(null)
+  const [showAnswers, setShowAnswers] = useState(paper.include_answers)
 
   async function handleRegen(idx) {
     setRegenIdx(idx)
@@ -109,6 +149,14 @@ function PreviewPanel({ paper, onBack, onRegenQ }) {
 
   const totalMarks = questions.reduce((s, q) => s + (q.marks || 1), 0)
 
+  // Group questions by section
+  const sections = {}
+  questions.forEach((q, i) => {
+    const sec = q.section || 'A'
+    if (!sections[sec]) sections[sec] = []
+    sections[sec].push({ ...q, _idx: i })
+  })
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -117,6 +165,10 @@ function PreviewPanel({ paper, onBack, onRegenQ }) {
           <p className="text-sm text-[#8892B0]">{paper.subject} · Grade {paper.grade} · {questions.length} questions · {totalMarks} marks total</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowAnswers(a => !a)}
+            className={`text-sm px-3 py-2 border rounded-xl transition-all ${showAnswers ? 'border-[#00D68F] text-[#00D68F] bg-[#00D68F]/10' : 'border-[#2D2B5A] text-[#8892B0] hover:text-white'}`}>
+            {showAnswers ? '🔑 Hide Answers' : '🔑 Show Answers'}
+          </button>
           <button onClick={onBack}
             className="text-sm px-4 py-2 border border-[#2D2B5A] text-[#8892B0] rounded-xl hover:border-[#00A2FF] hover:text-white transition-all">
             ← Back
@@ -132,41 +184,88 @@ function PreviewPanel({ paper, onBack, onRegenQ }) {
       <div className="bg-[#1A1A3E] border border-[#2D2B5A] rounded-2xl p-6 mb-6">
         <div className="border-b border-[#2D2B5A] pb-4 mb-6">
           <p className="text-lg font-bold text-white text-center">{paper.title}</p>
-          <p className="text-sm text-[#8892B0] text-center">{paper.subject} · Grade {paper.grade}</p>
+          <p className="text-sm text-[#8892B0] text-center">{paper.subject} · Grade {paper.grade} · Total: {totalMarks} marks</p>
           <p className="text-xs text-[#4A5568] text-center mt-1">Name: ________________________   Date: ________________</p>
         </div>
 
-        <div className="space-y-4">
-          {questions.map((q, idx) => (
-            <div key={idx} className="group relative">
-              <div className="flex gap-3">
-                <span className="text-[#00A2FF] font-bold text-sm min-w-[24px] mt-0.5">{q.index || idx + 1}.</span>
-                <div className="flex-1">
-                  <p className="text-white text-sm leading-relaxed">{q.question}</p>
-                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#2D2B5A] text-[#8892B0]">{q.type?.replace('_', ' ')}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#2D2B5A] text-[#8892B0]">{q.level}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#2D2B5A] text-[#8892B0]">{q.marks || 1} mark{(q.marks || 1) > 1 ? 's' : ''}</span>
-                    <span className="text-xs text-[#4A5568]">{q.source_topic}</span>
-                  </div>
-                  {paper.include_answers && (
-                    <div className="mt-2 p-2 bg-[#00D68F]/5 border border-[#00D68F]/20 rounded-lg">
-                      <p className="text-xs text-[#00D68F]">Answer: {q.answer}</p>
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleRegen(idx)}
-                  disabled={regenIdx !== null}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 bg-[#C77DFF]/10 text-[#C77DFF] border border-[#C77DFF]/30 rounded-lg hover:bg-[#C77DFF]/20 self-start flex-shrink-0"
-                  title="Regenerate this question"
-                >
-                  {regenIdx === idx ? '…' : '↺'}
-                </button>
+        {Object.entries(sections).map(([secLabel, secQuestions]) => (
+          <div key={secLabel} className="mb-8">
+            {/* Section header */}
+            <div className="flex items-center gap-3 mb-4 pb-2 border-b border-[#2D2B5A]">
+              <span className="w-8 h-8 rounded-lg bg-[#00A2FF]/20 text-[#00A2FF] font-bold text-sm flex items-center justify-center flex-shrink-0">
+                {secLabel}
+              </span>
+              <div>
+                <p className="text-sm font-bold text-white">Section {secLabel}</p>
+                <p className="text-xs text-[#4A5568]">
+                  {FORMAT_LABELS[secQuestions[0]?.format]?.label || secQuestions[0]?.format} ·
+                  {secQuestions.length} question{secQuestions.length > 1 ? 's' : ''} ·
+                  {secQuestions.reduce((s, q) => s + (q.marks || 1), 0)} marks
+                </p>
               </div>
             </div>
-          ))}
-        </div>
+
+            <div className="space-y-5">
+              {secQuestions.map((q) => (
+                <div key={q._idx} className="group relative">
+                  <div className="flex gap-3">
+                    <span className="text-[#00A2FF] font-bold text-sm min-w-[24px] mt-0.5">{q.index || q._idx + 1}.</span>
+                    <div className="flex-1">
+                      <p className="text-white text-sm leading-relaxed">{q.question}</p>
+
+                      {/* MCQ options */}
+                      {q.format === 'mcq' && q.options && (
+                        <div className="mt-2 grid grid-cols-2 gap-1.5">
+                          {Object.entries(q.options).map(([opt, text]) => (
+                            <div key={opt} className={`flex items-start gap-2 p-2 rounded-lg border text-xs ${
+                              showAnswers && q.correct_option === opt
+                                ? 'bg-[#00D68F]/10 border-[#00D68F]/40 text-[#00D68F]'
+                                : 'border-[#2D2B5A] text-[#8892B0]'
+                            }`}>
+                              <span className="font-bold flex-shrink-0">{opt})</span>
+                              <span>{text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Tags */}
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-[#2D2B5A] text-[#8892B0]">{q.level}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-[#2D2B5A] text-[#8892B0]">{q.marks || 1} mark{(q.marks || 1) > 1 ? 's' : ''}</span>
+                        {q.objective && <span className="text-xs text-[#4A5568] italic truncate max-w-xs">{q.objective}</span>}
+                      </div>
+
+                      {/* Answer + marking guide */}
+                      {showAnswers && (
+                        <div className="mt-2 p-3 bg-[#00D68F]/5 border border-[#00D68F]/20 rounded-lg space-y-1">
+                          <p className="text-xs text-[#00D68F] font-semibold">
+                            {q.format === 'mcq' ? `Correct: ${q.correct_option?.toUpperCase()}) ${q.options?.[q.correct_option]}` : `Answer: ${q.answer}`}
+                          </p>
+                          {q.marking_guide && q.marking_guide.length > 0 && (
+                            <div className="mt-1 space-y-0.5">
+                              {q.marking_guide.map((g, i) => (
+                                <p key={i} className="text-[10px] text-[#4A5568]">• {g}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleRegen(q._idx)}
+                      disabled={regenIdx !== null}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 bg-[#C77DFF]/10 text-[#C77DFF] border border-[#C77DFF]/30 rounded-lg hover:bg-[#C77DFF]/20 self-start flex-shrink-0"
+                      title="Regenerate this question"
+                    >
+                      {regenIdx === q._idx ? '…' : '↺'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       <p className="text-xs text-[#4A5568] text-center">Hover any question and click ↺ to regenerate it individually</p>
@@ -174,16 +273,31 @@ function PreviewPanel({ paper, onBack, onRegenQ }) {
   )
 }
 
+const FORMAT_LABELS = {
+  mcq:          { label: 'MCQ',          icon: '🔘', desc: '4-option multiple choice with mistake-based distractors' },
+  fill_blank:   { label: 'Fill Blank',   icon: '✏️',  desc: 'Key term or value in a blank' },
+  short_answer: { label: 'Short Answer', icon: '📝',  desc: 'Real-world context, 3–5 line answer' },
+  long_answer:  { label: 'Long Answer',  icon: '📄',  desc: 'Multi-part (a)(b)(c) scaffolded question' },
+}
+
+const DEFAULT_SECTIONS = [
+  { label: 'A', format: 'mcq',          count: 5,  marks_each: 1 },
+  { label: 'B', format: 'short_answer',  count: 4,  marks_each: 3 },
+  { label: 'C', format: 'long_answer',   count: 2,  marks_each: 5 },
+]
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function AdminAssignments() {
-  const [step, setStep]               = useState(0)   // 0–3
+  const [step, setStep]               = useState(0)
   const [books, setBooks]             = useState([])
   const [selectedBook, setSelectedBook] = useState(null)
   const [chapters, setChapters]       = useState([])
   const [selectedChapters, setSelectedChapters] = useState([])
   const [config, setConfig]           = useState({
-    title: '', question_count: 10, types: ['value_changed', 'reformulated'],
-    level: 'mixed', include_answers: false,
+    title: '',
+    include_answers: false,
+    sections: DEFAULT_SECTIONS,
+    level_distribution: { easy: 30, medium: 50, hard: 20 },
   })
   const [generating, setGenerating]   = useState(false)
   const [genError, setGenError]       = useState('')
@@ -231,16 +345,46 @@ export default function AdminAssignments() {
     )
   }
 
-  function toggleType(t) {
+  function updateSection(idx, field, value) {
+    setConfig(c => {
+      const sections = c.sections.map((s, i) => i === idx ? { ...s, [field]: value } : s)
+      return { ...c, sections }
+    })
+  }
+
+  function addSection() {
+    const labels = 'ABCDEFGH'
     setConfig(c => ({
       ...c,
-      types: c.types.includes(t) ? c.types.filter(x => x !== t) : [...c.types, t],
+      sections: [...c.sections, { label: labels[c.sections.length] || String(c.sections.length + 1), format: 'short_answer', count: 3, marks_each: 2 }],
     }))
   }
 
+  function removeSection(idx) {
+    setConfig(c => ({ ...c, sections: c.sections.filter((_, i) => i !== idx) }))
+  }
+
+  function updateLevel(key, value) {
+    setConfig(c => {
+      const dist = { ...c.level_distribution, [key]: Number(value) }
+      // Clamp so total = 100
+      const total = dist.easy + dist.medium + dist.hard
+      if (total !== 100) {
+        const others = Object.keys(dist).filter(k => k !== key)
+        const remaining = 100 - dist[key]
+        const sum = others.reduce((s, k) => s + dist[k], 0)
+        if (sum > 0) others.forEach(k => { dist[k] = Math.round(dist[k] * remaining / sum) })
+      }
+      return { ...c, level_distribution: dist }
+    })
+  }
+
+  const totalMarks = config.sections.reduce((s, sec) => s + sec.count * sec.marks_each, 0)
+  const totalQuestions = config.sections.reduce((s, sec) => s + sec.count, 0)
+
   async function handleGenerate() {
     if (!config.title.trim()) { setGenError('Please enter a title'); return }
-    if (config.types.length === 0) { setGenError('Select at least one question type'); return }
+    if (config.sections.length === 0) { setGenError('Add at least one section'); return }
     setGenError('')
     setGenerating(true)
     try {
@@ -248,9 +392,8 @@ export default function AdminAssignments() {
         book_id: selectedBook.book_id ?? selectedBook.id,
         chapter_ids: selectedChapters,
         title: config.title,
-        question_count: config.question_count,
-        types: config.types,
-        level: config.level,
+        sections: config.sections,
+        level_distribution: config.level_distribution,
         include_answers: config.include_answers,
       })
       const paper = res.data
@@ -416,96 +559,136 @@ export default function AdminAssignments() {
 
       {/* Step 2 — Configure */}
       {step === 2 && (
-        <div>
-          <h2 className="text-sm font-semibold text-[#8892B0] uppercase tracking-wider mb-4">Configure Assignment</h2>
-          <div className="space-y-5">
-            {/* Title */}
-            <div>
-              <label className="block text-xs text-[#8892B0] font-semibold uppercase tracking-wider mb-1.5">Title</label>
-              <input
-                value={config.title}
-                onChange={e => setConfig(c => ({ ...c, title: e.target.value }))}
-                className="w-full bg-[#1A1A3E] border border-[#2D2B5A] rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF]"
-                placeholder="e.g. Chapter 3 Practice Test"
-              />
-            </div>
+        <div className="space-y-6">
+          {/* Title */}
+          <div>
+            <label className="block text-xs text-[#8892B0] font-semibold uppercase tracking-wider mb-1.5">Paper Title</label>
+            <input
+              value={config.title}
+              onChange={e => setConfig(c => ({ ...c, title: e.target.value }))}
+              className="w-full bg-[#1A1A3E] border border-[#2D2B5A] rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF]"
+              placeholder="e.g. Chapter 3 Practice Test"
+            />
+          </div>
 
-            {/* Question count */}
-            <div>
-              <label className="block text-xs text-[#8892B0] font-semibold uppercase tracking-wider mb-1.5">
-                Number of Questions: <span className="text-white">{config.question_count}</span>
-              </label>
-              <input type="range" min={3} max={30} value={config.question_count}
-                onChange={e => setConfig(c => ({ ...c, question_count: Number(e.target.value) }))}
-                className="w-full accent-[#00A2FF]"
-              />
-              <div className="flex justify-between text-xs text-[#4A5568] mt-1"><span>3</span><span>30</span></div>
-            </div>
-
-            {/* Question types */}
-            <div>
-              <label className="block text-xs text-[#8892B0] font-semibold uppercase tracking-wider mb-2">Question Types</label>
-              <div className="space-y-2">
-                {Object.entries(TYPE_LABELS).map(([t, label]) => {
-                  const needsExercises = t !== 'reformulated'
-                  const unavailable = needsExercises && totalExercises === 0
-                  return (
-                    <button key={t} onClick={() => !unavailable && toggleType(t)} disabled={unavailable}
-                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-center gap-3 ${
-                        unavailable ? 'opacity-40 cursor-not-allowed border-[#2D2B5A] bg-[#1A1A3E]' :
-                        config.types.includes(t) ? 'bg-[#00A2FF]/10 border-[#00A2FF]' : 'bg-[#1A1A3E] border-[#2D2B5A] hover:border-[#00A2FF]/50'
-                      }`}>
-                      <span className={`w-5 h-5 rounded flex items-center justify-center text-xs border flex-shrink-0 ${
-                        config.types.includes(t) ? 'bg-[#00A2FF] border-[#00A2FF] text-white' : 'border-[#4A5568]'
-                      }`}>{config.types.includes(t) ? '✓' : ''}</span>
-                      <span className={`text-sm ${config.types.includes(t) ? 'text-white' : 'text-[#8892B0]'}`}>{label}</span>
-                      {unavailable && <span className="ml-auto text-xs text-[#FFD700]">No exercises in selection</span>}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Difficulty */}
-            <div>
-              <label className="block text-xs text-[#8892B0] font-semibold uppercase tracking-wider mb-2">Difficulty Level</label>
-              <div className="flex flex-wrap gap-2">
-                {LEVELS.map(l => (
-                  <button key={l} onClick={() => setConfig(c => ({ ...c, level: l }))}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      config.level === l ? 'bg-[#C77DFF]/20 border-[#C77DFF] text-[#C77DFF]' : 'border-[#2D2B5A] text-[#8892B0] hover:border-[#C77DFF]/50'
-                    }`}>
-                    {LEVEL_LABELS[l]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Include answers */}
-            <div className="flex items-center justify-between p-4 bg-[#1A1A3E] border border-[#2D2B5A] rounded-xl">
+          {/* Section builder */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
               <div>
-                <p className="text-sm font-semibold text-white">Include Answer Key</p>
-                <p className="text-xs text-[#4A5568]">Append model answers at the end of the paper</p>
+                <p className="text-xs text-[#8892B0] font-semibold uppercase tracking-wider">Paper Sections</p>
+                <p className="text-xs text-[#4A5568] mt-0.5">Total: {totalQuestions} questions · {totalMarks} marks</p>
               </div>
-              <button onClick={() => setConfig(c => ({ ...c, include_answers: !c.include_answers }))}
-                className={`w-12 h-6 rounded-full transition-all relative ${config.include_answers ? 'bg-[#00D68F]' : 'bg-[#2D2B5A]'}`}>
-                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${config.include_answers ? 'left-6' : 'left-0.5'}`} />
+              <button onClick={addSection}
+                className="text-xs px-3 py-1.5 border border-[#2D2B5A] text-[#8892B0] rounded-lg hover:border-[#00A2FF] hover:text-white transition-all">
+                + Add Section
               </button>
             </div>
-
-            {genError && <p className="text-sm text-[#FF3333] bg-[#FF3333]/10 border border-[#FF3333]/30 rounded-xl px-4 py-3">{genError}</p>}
-
-            <div className="flex items-center justify-between pt-2">
-              <button onClick={() => setStep(1)} className="text-sm px-4 py-2 border border-[#2D2B5A] text-[#8892B0] rounded-xl hover:text-white transition-all">← Back</button>
-              <button onClick={handleGenerate} disabled={generating || config.types.length === 0}
-                className="px-6 py-2.5 bg-[#00A2FF] text-white rounded-xl font-semibold text-sm disabled:opacity-40 hover:bg-[#0088DD] transition-all flex items-center gap-2">
-                {generating ? (
-                  <><span className="animate-spin">⟳</span> Generating…</>
-                ) : (
-                  <>✨ Generate {config.question_count} Questions</>
-                )}
-              </button>
+            <div className="space-y-3">
+              {config.sections.map((sec, idx) => (
+                <div key={idx} className="p-4 bg-[#1A1A3E] border border-[#2D2B5A] rounded-xl">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-7 h-7 rounded-lg bg-[#00A2FF]/20 text-[#00A2FF] text-xs font-bold flex items-center justify-center">
+                      {sec.label}
+                    </span>
+                    <p className="text-sm font-semibold text-white flex-1">Section {sec.label}</p>
+                    {config.sections.length > 1 && (
+                      <button onClick={() => removeSection(idx)} className="text-xs text-[#FF3333]/60 hover:text-[#FF3333] transition-colors">✕</button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Format */}
+                    <div>
+                      <label className="block text-[10px] text-[#4A5568] uppercase tracking-wider mb-1">Format</label>
+                      <select value={sec.format} onChange={e => updateSection(idx, 'format', e.target.value)}
+                        className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
+                        {Object.entries(FORMAT_LABELS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.icon} {v.label}</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-[#4A5568] mt-1 leading-tight">{FORMAT_LABELS[sec.format]?.desc}</p>
+                    </div>
+                    {/* Count */}
+                    <div>
+                      <label className="block text-[10px] text-[#4A5568] uppercase tracking-wider mb-1">Questions</label>
+                      <input type="number" min={1} max={20} value={sec.count}
+                        onChange={e => updateSection(idx, 'count', Math.max(1, Number(e.target.value)))}
+                        className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"
+                      />
+                    </div>
+                    {/* Marks */}
+                    <div>
+                      <label className="block text-[10px] text-[#4A5568] uppercase tracking-wider mb-1">Marks each</label>
+                      <input type="number" min={1} max={10} value={sec.marks_each}
+                        onChange={e => updateSection(idx, 'marks_each', Math.max(1, Number(e.target.value)))}
+                        className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-[#4A5568] mt-2">
+                    Subtotal: {sec.count} × {sec.marks_each} = <span className="text-white font-semibold">{sec.count * sec.marks_each} marks</span>
+                  </p>
+                </div>
+              ))}
             </div>
+          </div>
+
+          {/* Cognitive level distribution */}
+          <div>
+            <label className="block text-xs text-[#8892B0] font-semibold uppercase tracking-wider mb-3">
+              Cognitive Level Distribution
+              <span className="ml-2 text-[#4A5568] normal-case font-normal">(should add to 100%)</span>
+            </label>
+            <div className="space-y-3">
+              {[
+                { key: 'easy',   label: 'Easy (L1–L2)',   color: '#00D68F', desc: 'Recall, define, identify' },
+                { key: 'medium', label: 'Medium (L3)',     color: '#00A2FF', desc: 'Apply, calculate, solve' },
+                { key: 'hard',   label: 'Hard (L4–L5)',   color: '#C77DFF', desc: 'Analyse, justify, evaluate' },
+              ].map(({ key, label, color, desc }) => (
+                <div key={key}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-white font-semibold" style={{ color }}>{label}</span>
+                    <span className="text-xs text-white font-bold">{config.level_distribution[key]}%</span>
+                  </div>
+                  <input type="range" min={0} max={100} value={config.level_distribution[key]}
+                    onChange={e => updateLevel(key, e.target.value)}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                    style={{ accentColor: color }}
+                  />
+                  <p className="text-[10px] text-[#4A5568] mt-0.5">{desc}</p>
+                </div>
+              ))}
+              <p className="text-xs text-[#4A5568]">
+                Total: <span className={`font-bold ${Object.values(config.level_distribution).reduce((a,b)=>a+b,0) === 100 ? 'text-[#00D68F]' : 'text-[#FF3333]'}`}>
+                  {Object.values(config.level_distribution).reduce((a,b)=>a+b,0)}%
+                </span>
+              </p>
+            </div>
+          </div>
+
+          {/* Include answers */}
+          <div className="flex items-center justify-between p-4 bg-[#1A1A3E] border border-[#2D2B5A] rounded-xl">
+            <div>
+              <p className="text-sm font-semibold text-white">Include Answer Key + Marking Guide</p>
+              <p className="text-xs text-[#4A5568]">Append model answers with step-by-step marking guide</p>
+            </div>
+            <button onClick={() => setConfig(c => ({ ...c, include_answers: !c.include_answers }))}
+              className={`w-12 h-6 rounded-full transition-all relative flex-shrink-0 ${config.include_answers ? 'bg-[#00D68F]' : 'bg-[#2D2B5A]'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${config.include_answers ? 'left-6' : 'left-0.5'}`} />
+            </button>
+          </div>
+
+          {genError && <p className="text-sm text-[#FF3333] bg-[#FF3333]/10 border border-[#FF3333]/30 rounded-xl px-4 py-3">{genError}</p>}
+
+          <div className="flex items-center justify-between pt-2">
+            <button onClick={() => setStep(1)} className="text-sm px-4 py-2 border border-[#2D2B5A] text-[#8892B0] rounded-xl hover:text-white transition-all">← Back</button>
+            <button onClick={handleGenerate} disabled={generating}
+              className="px-6 py-2.5 bg-[#00A2FF] text-white rounded-xl font-semibold text-sm disabled:opacity-40 hover:bg-[#0088DD] transition-all flex items-center gap-2">
+              {generating ? (
+                <><span className="animate-spin inline-block">⟳</span> Generating paper…</>
+              ) : (
+                <>✨ Generate Paper · {totalQuestions} questions · {totalMarks} marks</>
+              )}
+            </button>
           </div>
         </div>
       )}

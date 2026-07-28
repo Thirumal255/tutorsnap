@@ -6626,86 +6626,123 @@ def _generate_assignment_questions(
     topics: list,
     book_subject: str,
     book_grade: int,
-    question_count: int,
-    types: list,
-    level: str,
+    sections: list,
+    level_distribution: dict,
 ) -> list:
-    """Call Claude to produce a structured assignment paper from book exercises."""
+    """Call Claude to produce a structured, objective-first assignment paper."""
 
-    # Build topic context blocks
+    # Build rich topic context
     topic_blocks = []
-    all_exercises = []
     for t in topics:
+        objs = t.learning_objectives or []
+        concepts = t.key_concepts or []
         exs = t.exercises or []
-        concepts = ", ".join((t.key_concepts or [])[:5])
-        block = f"Topic: {t.title}\nKey concepts: {concepts}\n"
+        block = f"TOPIC: {t.title}\n"
+        if objs:
+            block += "Learning objectives (what students must be able to DO):\n"
+            block += "\n".join(f"  • {o}" for o in objs)
+            block += "\n"
+        if concepts:
+            block += f"Key concepts: {', '.join(concepts[:6])}\n"
         if exs:
-            block += "Book exercises:\n" + "\n".join(f"  - {e}" for e in exs[:25])
+            block += "Book exercises (reference only — do NOT copy verbatim):\n"
+            block += "\n".join(f"  - {e}" for e in exs[:15])
         else:
-            block += f"Textbook content: {(t.raw_content or '')[:800]}"
+            block += f"Content summary: {(t.raw_content or '')[:600]}"
         topic_blocks.append(block)
-        all_exercises.extend(exs)
 
-    has_exercises = len(all_exercises) > 0
-    type_instructions = []
-    # verbatim disabled — PDF extraction is lossy and corrupts math signs/formatting
-    if "value_changed" in types and has_exercises:
-        type_instructions.append('- "value_changed": take a book exercise and substitute different numbers/names, keeping same structure')
-    if "reformulated" in types:
-        type_instructions.append('- "reformulated": write a new question testing the same concept, grounded strictly in the provided content')
+    # Build section spec for the prompt
+    section_specs = []
+    total_questions = 0
+    for s in sections:
+        fmt = s["format"]
+        count = s["count"]
+        marks = s["marks_each"]
+        total_questions += count
+        if fmt == "mcq":
+            section_specs.append(
+                f'Section {s["label"]} — {count} MCQ questions, {marks} mark each.\n'
+                f'  Each MCQ must have exactly 4 options (a, b, c, d).\n'
+                f'  Wrong options must represent COMMON STUDENT MISTAKES, not random wrong values.\n'
+                f'  Identify the correct option by letter.'
+            )
+        elif fmt == "fill_blank":
+            section_specs.append(
+                f'Section {s["label"]} — {count} fill-in-the-blank questions, {marks} mark each.\n'
+                f'  Use ___ to indicate the blank. Keep blanks to key terms, values, or concepts.'
+            )
+        elif fmt == "short_answer":
+            section_specs.append(
+                f'Section {s["label"]} — {count} short-answer questions, {marks} marks each.\n'
+                f'  Use real-world contexts (temperature, money, sports, travel, nature).\n'
+                f'  Answer should be achievable in 3–5 lines.'
+            )
+        elif fmt == "long_answer":
+            section_specs.append(
+                f'Section {s["label"]} — {count} multi-part long-answer questions, {marks} marks each.\n'
+                f'  Structure as (a), (b), (c) sub-parts that SCAFFOLD — each part slightly harder.\n'
+                f'  Allocate marks per sub-part. Use a real-world scenario for the full question.\n'
+                f'  For the answer: show step-by-step working and state marks per step.'
+            )
 
-    if not type_instructions:
-        type_instructions = ['- "reformulated": write a new question testing the same concept, grounded strictly in the provided content']
+    # Level distribution instruction
+    easy_pct = level_distribution.get("easy", 30)
+    medium_pct = level_distribution.get("medium", 50)
+    hard_pct = level_distribution.get("hard", 20)
+    easy_count = max(1, round(total_questions * easy_pct / 100))
+    medium_count = max(1, round(total_questions * medium_pct / 100))
+    hard_count = max(0, total_questions - easy_count - medium_count)
 
-    level_instruction = (
-        "Use a mix of difficulty levels L1 (recall) through L3 (application)."
-        if level == "mixed"
-        else f"All questions must be at difficulty {level}."
-    )
+    prompt = f"""You are an expert Grade {book_grade} {book_subject} teacher preparing an assignment paper.
 
-    prompt = f"""You are generating an assignment paper for Grade {book_grade} {book_subject}.
+YOUR TASK:
+Generate questions that test whether students have achieved the learning objectives below.
+Do NOT simply copy or rephrase book exercises. Instead, design fresh scenarios that require
+applying the same concepts — new contexts, new numbers, same cognitive skill.
 
-STRICT RULES:
-1. Every question MUST be based only on the topics and exercises provided below.
-2. For EVERY question, compute the answer yourself from scratch based on the exact question text you write. Never copy an answer from the source exercise if you changed any numbers or wording.
-3. For "value_changed" questions: after substituting new numbers, carefully work out the correct answer for those new numbers before writing it down.
-4. Double-check every numerical answer before including it.
-
+TOPICS AND LEARNING OBJECTIVES:
 {chr(10).join(topic_blocks)}
 
-Generate exactly {question_count} assignment questions.
+PAPER STRUCTURE — generate questions exactly as specified per section:
+{chr(10).join(section_specs)}
 
-Question types:
-{chr(10).join(type_instructions)}
+COGNITIVE LEVEL DISTRIBUTION across all questions:
+- {easy_count} questions at L1/L2 (recall, define, identify, describe)
+- {medium_count} questions at L3 (apply, calculate, solve, use in context)
+- {hard_count} questions at L4/L5 (analyse, compare, justify, evaluate)
 
-{level_instruction}
+QUESTION FRAMING RULES:
+1. Start from the learning objective, not the exercise. Ask: "What must the student be able to DO?"
+2. Use real-world contexts for application questions (temperatures, bank balances, sea depth, sports scores, elevation, shopping).
+3. The question stem must NOT reveal the method. Let the student decide the approach.
+4. For multi-part questions: part (a) is straightforward, part (b) applies the same idea, part (c) extends to a new situation.
+5. For MCQ wrong options: each wrong option must reflect a specific, realistic mistake a student would make.
+6. COMPUTE EVERY ANSWER YOURSELF from scratch. Show working for all numerical answers. Never guess.
+7. Distribute questions across topics proportionally.
 
-Distribute question types roughly evenly across: {', '.join(types)}.
-
-IMPORTANT for answers:
-- "verbatim": copy the book question exactly, then compute/verify the correct answer yourself.
-- "value_changed": show your working in the answer so the teacher can verify (e.g. "a) 7  b) 9  c) 18 — Working: 5+2=7, 6+3=9, 8+10=18").
-- "reformulated": provide a clear model answer.
-
-Return a JSON array only, no other text. Each element:
+Return a JSON array only — no other text. Each element must have:
 {{
-  "index": <1-based integer>,
-  "question": "<question text>",
-  "type": "<verbatim|value_changed|reformulated>",
-  "source_topic": "<topic title this question is from>",
+  "section": "<section label, e.g. A>",
+  "format": "<mcq|fill_blank|short_answer|long_answer>",
+  "index": <1-based integer within section>,
+  "objective": "<the learning objective this question tests>",
+  "question": "<full question text>",
+  "options": {{"a": "...", "b": "...", "c": "...", "d": "..."}} or null if not MCQ,
+  "correct_option": "<a|b|c|d>" or null if not MCQ,
+  "source_topic": "<topic title>",
   "level": "<L1|L2|L3|L4|L5>",
-  "marks": <integer 1-4>,
-  "answer": "<correct model answer — must match the exact question you wrote>"
+  "marks": <total marks for this question>,
+  "answer": "<model answer with working>",
+  "marking_guide": ["<1 mark: ...>", "<1 mark: ...>"]
 }}"""
 
     client = _get_assign_client()
     msg = client.messages.create(
         model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
-        max_tokens=4000,
+        max_tokens=8000,
         messages=[{"role": "user", "content": prompt}],
     )
     raw = msg.content[0].text.strip()
-    # Strip markdown code fences if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -6767,20 +6804,23 @@ def extract_exercises(
     for topic in topics:
         if not topic.raw_content or len(topic.raw_content.strip()) < 30:
             continue
-        prompt = f"""You are extracting exercise questions from a textbook page.
+        prompt = f"""You are analysing a textbook topic page for a Grade {book.grade} {book.subject} textbook.
 
 Topic: {topic.title}
 Content:
 {topic.raw_content[:3000]}
 
-Extract ONLY the exercise/activity questions that appear in this content (questions students are asked to answer, not rhetorical questions in the body text).
-Return a JSON array of strings, each string being one exercise question verbatim.
-If there are no exercises, return an empty array [].
-Return ONLY the JSON array, no explanation."""
+Return a JSON object with exactly these two keys:
+
+"learning_objectives": A list of 2–5 short strings describing what a student should be ABLE TO DO after studying this topic. Start each with an action verb (Calculate, Explain, Identify, Compare, Apply, Describe, Solve). Example: ["Calculate the sum of positive and negative integers", "Apply integer rules to real-world temperature problems"]
+
+"exercises": A list of exercise/activity questions that appear verbatim in this content — questions students are asked to answer, NOT rhetorical questions in the body text. Preserve all numbers, signs (+/-), and formatting exactly as they appear. If none exist, return [].
+
+Return ONLY the JSON object, no explanation."""
         try:
             msg = client.messages.create(
                 model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
-                max_tokens=1500,
+                max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = msg.content[0].text.strip()
@@ -6788,16 +6828,20 @@ Return ONLY the JSON array, no explanation."""
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
                     raw = raw[4:]
-            exercises = json.loads(raw.strip())
-            if isinstance(exercises, list):
-                topic.exercises = [str(e) for e in exercises if str(e).strip()]
+            parsed = json.loads(raw.strip())
+            if isinstance(parsed, dict):
+                exs = parsed.get("exercises", [])
+                objs = parsed.get("learning_objectives", [])
+                topic.exercises = [str(e) for e in exs if str(e).strip()]
+                topic.learning_objectives = [str(o) for o in objs if str(o).strip()]
                 updated += 1
         except Exception:
             continue
 
     db.commit()
     total_exercises = sum(len(t.exercises or []) for t in topics)
-    return {"updated_topics": updated, "total_exercises": total_exercises}
+    total_objectives = sum(len(t.learning_objectives or []) for t in topics)
+    return {"updated_topics": updated, "total_exercises": total_exercises, "total_objectives": total_objectives}
 
 
 @app.post("/api/assignment/generate")
@@ -6810,13 +6854,17 @@ def generate_assignment(
     if current_user.role not in ("admin", "parent"):
         raise HTTPException(status_code=403, detail="Admin or parent access required")
 
-    book_id       = data.get("book_id")
-    chapter_ids   = data.get("chapter_ids", [])
-    title         = data.get("title", "Assignment")
-    question_count = min(int(data.get("question_count", 10)), 30)
-    types         = data.get("types", ["verbatim", "value_changed", "reformulated"])
-    level         = data.get("level", "mixed")
-    include_answers = bool(data.get("include_answers", False))
+    book_id          = data.get("book_id")
+    chapter_ids      = data.get("chapter_ids", [])
+    title            = data.get("title", "Assignment")
+    include_answers  = bool(data.get("include_answers", False))
+    # New: sections array and level distribution
+    sections         = data.get("sections", [
+        {"label": "A", "format": "mcq",          "count": 5,  "marks_each": 1},
+        {"label": "B", "format": "short_answer",  "count": 4,  "marks_each": 3},
+        {"label": "C", "format": "long_answer",   "count": 2,  "marks_each": 5},
+    ])
+    level_distribution = data.get("level_distribution", {"easy": 30, "medium": 50, "hard": 20})
 
     if not book_id or not chapter_ids:
         raise HTTPException(status_code=400, detail="book_id and chapter_ids are required")
@@ -6825,7 +6873,6 @@ def generate_assignment(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    # Fetch all topics for the selected chapters
     topics = (db.query(Topic)
               .join(Chapter)
               .filter(Chapter.id.in_(chapter_ids), Chapter.book_id == book_id)
@@ -6837,9 +6884,8 @@ def generate_assignment(
         topics=topics,
         book_subject=book.subject,
         book_grade=book.grade,
-        question_count=question_count,
-        types=types,
-        level=level,
+        sections=sections,
+        level_distribution=level_distribution,
     )
 
     paper = AssignmentPaper(
