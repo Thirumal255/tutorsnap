@@ -204,17 +204,19 @@ export default function AdminAssignments() {
     setSelectedChapters([])
     setExtractMsg('')
     setConfig(c => ({ ...c, title: `${book.subject || ''} Grade ${book.grade} Assignment` }))
-    getChaptersWithExercises(book.id).then(r => setChapters(r.data.chapters)).catch(() => {})
+    const id = book.book_id ?? book.id
+    getChaptersWithExercises(id).then(r => setChapters(r.data.chapters)).catch(() => {})
     setStep(1)
   }
 
   async function handleExtractExercises() {
     setExtracting(true)
     setExtractMsg('')
+    const bookId = selectedBook.book_id ?? selectedBook.id
     try {
-      const res = await extractExercises(selectedBook.id)
+      const res = await extractExercises(bookId)
       setExtractMsg(`Done — ${res.data.total_exercises} exercises extracted across ${res.data.updated_topics} topics.`)
-      const r = await getChaptersWithExercises(selectedBook.id)
+      const r = await getChaptersWithExercises(bookId)
       setChapters(r.data.chapters)
     } catch {
       setExtractMsg('Extraction failed. Please try again.')
@@ -243,7 +245,7 @@ export default function AdminAssignments() {
     setGenerating(true)
     try {
       const res = await generateAssignment({
-        book_id: selectedBook.id,
+        book_id: selectedBook.book_id ?? selectedBook.id,
         chapter_ids: selectedChapters,
         title: config.title,
         question_count: config.question_count,
@@ -324,7 +326,7 @@ export default function AdminAssignments() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {books.map(b => (
-                <button key={b.id} onClick={() => selectBook(b)}
+                <button key={b.book_id ?? b.id} onClick={() => selectBook(b)}
                   className="text-left p-4 bg-[#1A1A3E] border border-[#2D2B5A] rounded-xl hover:border-[#00A2FF] transition-all group">
                   <p className="font-semibold text-white group-hover:text-[#00A2FF] transition-colors">{b.title || b.filename}</p>
                   <p className="text-xs text-[#8892B0] mt-1">{b.subject} · Grade {b.grade} · {b.chapter_count} chapters</p>
