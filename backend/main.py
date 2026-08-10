@@ -6728,7 +6728,7 @@ Return a JSON array only — no other text. Each element must have:
     client = _get_assign_client()
     msg = client.messages.create(
         model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
-        max_tokens=8000,
+        max_tokens=16000,
         messages=[{"role": "user", "content": prompt}],
     )
     raw = msg.content[0].text.strip()
@@ -6736,7 +6736,22 @@ Return a JSON array only — no other text. Each element must have:
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw.strip())
+        raw = raw.rsplit("```", 1)[0]
+    raw = raw.strip()
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Response was likely truncated — find last complete object and close the array
+        last_close = raw.rfind("}")
+        if last_close != -1:
+            trimmed = raw[: last_close + 1]
+            # Ensure it's a valid array
+            if not trimmed.lstrip().startswith("["):
+                trimmed = "[" + trimmed
+            trimmed = trimmed + "]"
+            return json.loads(trimmed)
+        raise
 
 
 @app.get("/api/books/{book_id}/chapters-with-exercises")
