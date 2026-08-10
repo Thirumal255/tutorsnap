@@ -11,6 +11,35 @@ const LEVELS = ['L1', 'L2', 'L3', 'L4', 'L5', 'mixed']
 const LEVEL_LABELS = { L1: 'L1 – Recall', L2: 'L2 – Understanding', L3: 'L3 – Application', L4: 'L4 – Analysis', L5: 'L5 – Synthesis', mixed: 'Mixed' }
 const TYPE_LABELS = { value_changed: '🔢 Value-changed (different numbers)', reformulated: '✨ Reformulated (same concept, new phrasing)' }
 
+// ── PDF text sanitizer — jsPDF Helvetica has no Unicode math/super/subscripts ──
+function san(text) {
+  if (!text) return ''
+  return String(text)
+    // Superscript digits → ^n
+    .replace(/⁰/g, '^0').replace(/¹/g, '^1').replace(/²/g, '^2').replace(/³/g, '^3')
+    .replace(/⁴/g, '^4').replace(/⁵/g, '^5').replace(/⁶/g, '^6').replace(/⁷/g, '^7')
+    .replace(/⁸/g, '^8').replace(/⁹/g, '^9')
+    // Subscript digits → _n
+    .replace(/₀/g, '_0').replace(/₁/g, '_1').replace(/₂/g, '_2').replace(/₃/g, '_3')
+    .replace(/₄/g, '_4').replace(/₅/g, '_5').replace(/₆/g, '_6').replace(/₇/g, '_7')
+    .replace(/₈/g, '_8').replace(/₉/g, '_9')
+    // Math operators
+    .replace(/×/g, 'x').replace(/÷/g, '/').replace(/−/g, '-')
+    .replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/≠/g, '!=')
+    .replace(/√/g, 'sqrt').replace(/π/g, 'pi').replace(/∞/g, 'infinity')
+    // Degree, currency, quotes
+    .replace(/°/g, 'deg ').replace(/℃/g, 'deg C').replace(/℉/g, 'deg F')
+    .replace(/£/g, 'GBP ').replace(/€/g, 'EUR ').replace(/₹/g, 'Rs ')
+    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+    // Fractions
+    .replace(/½/g, '1/2').replace(/⅓/g, '1/3').replace(/¼/g, '1/4')
+    .replace(/¾/g, '3/4').replace(/⅔/g, '2/3').replace(/⅛/g, '1/8')
+    // Arrows and misc
+    .replace(/→/g, '->').replace(/←/g, '<-').replace(/↑/g, '^').replace(/↓/g, 'v')
+    // Strip any remaining non-latin1 chars that Helvetica can't render
+    .replace(/[^\x00-\xFF]/g, '?')
+}
+
 // ── PDF Download ──────────────────────────────────────────────────────────────
 function downloadPDF(paper) {
   const qs = paper.questions || []
@@ -37,7 +66,7 @@ function downloadPDF(paper) {
     doc.setFontSize(size)
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.setTextColor(...color)
-    const lines = doc.splitTextToSize(text, CW - indent)
+    const lines = doc.splitTextToSize(san(text), CW - indent)
     checkPage(lines.length * LINE_H + 2)
     lines.forEach(l => { doc.text(l, ML + indent, y); y += LINE_H })
   }
@@ -94,7 +123,7 @@ function downloadPDF(paper) {
       doc.text(`${qNum}.`, ML, y)
 
       doc.setFont('helvetica', 'normal')
-      const qLines = doc.splitTextToSize(q.question, CW - numW - 15)
+      const qLines = doc.splitTextToSize(san(q.question), CW - numW - 15)
       checkPage(qLines.length * LINE_H + 2)
       qLines.forEach((l, li) => { doc.text(l, ML + numW, y + li * LINE_H) })
 
@@ -108,7 +137,7 @@ function downloadPDF(paper) {
       if (q.format === 'mcq' && q.options) {
         const opts = Object.entries(q.options)
         opts.forEach(([opt, text]) => {
-          const optLines = doc.splitTextToSize(`${opt})  ${text}`, (CW / 2) - 8)
+          const optLines = doc.splitTextToSize(`${opt})  ${san(text)}`, (CW / 2) - 8)
           checkPage(optLines.length * (LINE_H - 1) + 1)
           doc.setFontSize(FONT_SMALL)
           doc.setFont('helvetica', 'normal')

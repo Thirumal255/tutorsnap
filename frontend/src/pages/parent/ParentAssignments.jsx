@@ -2,6 +2,26 @@ import { useState, useEffect } from 'react'
 import { listAssignments, getAssignment } from '../../api/client'
 import { jsPDF } from 'jspdf'
 
+function san(text) {
+  if (!text) return ''
+  return String(text)
+    .replace(/⁰/g,'^0').replace(/¹/g,'^1').replace(/²/g,'^2').replace(/³/g,'^3')
+    .replace(/⁴/g,'^4').replace(/⁵/g,'^5').replace(/⁶/g,'^6').replace(/⁷/g,'^7')
+    .replace(/⁸/g,'^8').replace(/⁹/g,'^9')
+    .replace(/₀/g,'_0').replace(/₁/g,'_1').replace(/₂/g,'_2').replace(/₃/g,'_3')
+    .replace(/₄/g,'_4').replace(/₅/g,'_5').replace(/₆/g,'_6').replace(/₇/g,'_7')
+    .replace(/₈/g,'_8').replace(/₉/g,'_9')
+    .replace(/×/g,'x').replace(/÷/g,'/').replace(/−/g,'-')
+    .replace(/≤/g,'<=').replace(/≥/g,'>=').replace(/≠/g,'!=')
+    .replace(/√/g,'sqrt').replace(/π/g,'pi').replace(/∞/g,'infinity')
+    .replace(/°/g,'deg ').replace(/℃/g,'deg C').replace(/℉/g,'deg F')
+    .replace(/£/g,'GBP ').replace(/€/g,'EUR ').replace(/₹/g,'Rs ')
+    .replace(/['']/g,"'").replace(/[""]/g,'"')
+    .replace(/½/g,'1/2').replace(/⅓/g,'1/3').replace(/¼/g,'1/4').replace(/¾/g,'3/4')
+    .replace(/→/g,'->').replace(/←/g,'<-').replace(/↑/g,'^').replace(/↓/g,'v')
+    .replace(/[^\x00-\xFF]/g,'?')
+}
+
 function downloadPDF(paper) {
   const qs = paper.questions || []
   const totalMarks = qs.reduce((s, q) => s + (q.marks || 1), 0)
@@ -16,7 +36,7 @@ function downloadPDF(paper) {
   }
   function writeLine(text, size = 10, bold = false, color = [0,0,0], indent = 0) {
     doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setTextColor(...color)
-    const lines = doc.splitTextToSize(text, CW - indent)
+    const lines = doc.splitTextToSize(san(text), CW - indent)
     checkPage(lines.length * LINE_H + 2)
     lines.forEach(l => { doc.text(l, ML + indent, y); y += LINE_H })
   }
@@ -44,7 +64,7 @@ function downloadPDF(paper) {
       doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(0,0,0)
       doc.text(`${qi+1}.`, ML, y)
       doc.setFont('helvetica', 'normal')
-      const qLines = doc.splitTextToSize(q.question, CW - numW - 15)
+      const qLines = doc.splitTextToSize(san(q.question), CW - numW - 15)
       checkPage(qLines.length * LINE_H + 2)
       qLines.forEach((l, li) => doc.text(l, ML + numW, y + li * LINE_H))
       doc.setFontSize(9); doc.setTextColor(100,100,100)
@@ -53,7 +73,7 @@ function downloadPDF(paper) {
 
       if (q.format === 'mcq' && q.options) {
         Object.entries(q.options).forEach(([opt, text]) => {
-          const lines = doc.splitTextToSize(`${opt})  ${text}`, CW/2 - 8)
+          const lines = doc.splitTextToSize(`${opt})  ${san(text)}`, CW/2 - 8)
           checkPage(lines.length * 5 + 1)
           doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40)
           lines.forEach((l, li) => doc.text(l, ML+8, y + li*5))
