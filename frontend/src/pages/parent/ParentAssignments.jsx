@@ -5,6 +5,10 @@ import { jsPDF } from 'jspdf'
 function san(text) {
   if (!text) return ''
   return String(text)
+    .replace(/½/g,'1/2').replace(/⅓/g,'1/3').replace(/⅔/g,'2/3')
+    .replace(/¼/g,'1/4').replace(/¾/g,'3/4').replace(/⅛/g,'1/8')
+    .replace(/⅜/g,'3/8').replace(/⅝/g,'5/8').replace(/⅞/g,'7/8')
+    .replace(/[⁄∕]/g,'/')
     .replace(/⁰/g,'^0').replace(/¹/g,'^1').replace(/²/g,'^2').replace(/³/g,'^3')
     .replace(/⁴/g,'^4').replace(/⁵/g,'^5').replace(/⁶/g,'^6').replace(/⁷/g,'^7')
     .replace(/⁸/g,'^8').replace(/⁹/g,'^9')
@@ -14,12 +18,13 @@ function san(text) {
     .replace(/×/g,'x').replace(/÷/g,'/').replace(/−/g,'-')
     .replace(/≤/g,'<=').replace(/≥/g,'>=').replace(/≠/g,'!=')
     .replace(/√/g,'sqrt').replace(/π/g,'pi').replace(/∞/g,'infinity')
-    .replace(/°/g,'deg ').replace(/℃/g,'deg C').replace(/℉/g,'deg F')
+    .replace(/°/g,' deg').replace(/℃/g,' deg C').replace(/℉/g,' deg F')
     .replace(/£/g,'GBP ').replace(/€/g,'EUR ').replace(/₹/g,'Rs ')
     .replace(/['']/g,"'").replace(/[""]/g,'"')
-    .replace(/½/g,'1/2').replace(/⅓/g,'1/3').replace(/¼/g,'1/4').replace(/¾/g,'3/4')
-    .replace(/→/g,'->').replace(/←/g,'<-').replace(/↑/g,'^').replace(/↓/g,'v')
-    .replace(/[^\x00-\xFF]/g,'?')
+    .replace(/→/g,'->').replace(/←/g,'<-')
+    .replace(/[^\x00-\xFF]/g,'')
+    .replace(/(\d)\^(\d+)\/_(\d+)/g,'$1 $2/$3')
+    .replace(/\^(\d+)\/_(\d+)/g,'$1/$2')
 }
 
 function downloadPDF(paper) {
