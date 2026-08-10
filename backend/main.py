@@ -6887,6 +6887,9 @@ def generate_assignment(
     db.commit()
     db.refresh(paper)
 
+    chapters = db.query(Chapter).filter(Chapter.id.in_(chapter_ids)).order_by(Chapter.chapter_number).all()
+    chapter_titles = [ch.title for ch in chapters]
+
     return {
         "assignment_id": paper.id,
         "title": paper.title,
@@ -6895,6 +6898,7 @@ def generate_assignment(
         "grade": book.grade,
         "include_answers": paper.include_answers,
         "questions": paper.questions,
+        "chapter_titles": chapter_titles,
         "created_at": paper.created_at.isoformat(),
     }
 
@@ -6954,6 +6958,11 @@ def get_assignment(
     if not paper:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
+    chapters = (db.query(Chapter)
+                .filter(Chapter.id.in_(paper.chapter_ids or []))
+                .order_by(Chapter.chapter_number).all())
+    chapter_titles = [ch.title for ch in chapters]
+
     return {
         "id": paper.id,
         "title": paper.title,
@@ -6962,6 +6971,7 @@ def get_assignment(
         "subject": paper.book.subject,
         "grade": paper.book.grade,
         "chapter_ids": paper.chapter_ids,
+        "chapter_titles": chapter_titles,
         "include_answers": paper.include_answers,
         "questions": paper.questions,
         "created_at": paper.created_at.isoformat(),

@@ -44,6 +44,15 @@ function downloadPDF(paper) {
   writeLine(paper.title, 14, true)
   y += 1
   writeLine(`Subject: ${paper.subject || ''}   |   Grade: ${paper.grade || ''}   |   Total Marks: ${totalMarks}`, 9, false, [80,80,80])
+  if (paper.chapter_titles && paper.chapter_titles.length > 0) {
+    const abbrev = t => {
+      const cleaned = t.replace(/^(chapter|ch\.?)\s*\d+[\s:.\-–]*/i, '').trim() || t
+      return cleaned.length > 25
+        ? cleaned.split(/\s+/).map(w => w[0]?.toUpperCase()).join('') + '.'
+        : cleaned
+    }
+    writeLine(`Chapters: ${paper.chapter_titles.map(abbrev).join('  |  ')}`, 8, false, [100, 80, 160])
+  }
   y += 2
   writeLine('Name: _______________________________   Date: ________________   Score: _____ / ' + totalMarks, 9)
   y += 3

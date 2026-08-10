@@ -83,6 +83,17 @@ function downloadPDF(paper) {
   writeLine(paper.title, { size: FONT_TITLE, bold: true })
   y += 1
   writeLine(`Subject: ${paper.subject || ''}   |   Grade: ${paper.grade || ''}   |   Total Marks: ${totalMarks}`, { size: FONT_SMALL, color: [80,80,80] })
+  if (paper.chapter_titles && paper.chapter_titles.length > 0) {
+    const abbrev = t => {
+      // Strip leading "Chapter N" / "Ch. N" prefix, collapse remaining words to initials if > 25 chars
+      const cleaned = t.replace(/^(chapter|ch\.?)\s*\d+[\s:.\-–]*/i, '').trim() || t
+      return cleaned.length > 25
+        ? cleaned.split(/\s+/).map(w => w[0]?.toUpperCase()).join('') + '.'
+        : cleaned
+    }
+    const chapLine = paper.chapter_titles.map(abbrev).join('  |  ')
+    writeLine(`Chapters: ${chapLine}`, { size: FONT_SMALL - 1, color: [100, 80, 160] })
+  }
   y += 2
   writeLine('Name: _______________________________   Date: ________________   Score: _____ / ' + totalMarks, { size: FONT_SMALL })
   y += 3
