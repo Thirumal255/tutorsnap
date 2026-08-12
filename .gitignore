@@ -8,6 +8,7 @@ migration/new_project_values.txt
 backend_start.log
 set_gh_secrets.py
 import_notion_tasks.py
+backup_*.json
 
 __pycache__/
 *.py[cod]
