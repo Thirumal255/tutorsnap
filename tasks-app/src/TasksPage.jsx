@@ -2079,8 +2079,8 @@ function FinanceTab() {
             const acctItems = budgetItems.filter(i => i.account_id === a.id)
             const proposed  = acctItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
             const spent     = acctItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
-            const remaining = live - spent
-            const sufficient = remaining >= 0
+            const remaining = live - (proposed - spent)
+            const sufficient = (live + spent) >= proposed
             const spentPct  = proposed > 0 ? Math.min((spent / proposed) * 100, 100) : 0
             return (
               <div key={a.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
@@ -2098,7 +2098,7 @@ function FinanceTab() {
                     ['Funds Available', fmtINR(live),               'text-gray-800'],
                     ['Proposed Expense',fmtINR(proposed),           'text-gray-400'],
                     ['Spent',           fmtINR(spent),               'text-green-600'],
-                    ['Remaining',       fmtINR(Math.abs(remaining)), remaining < 0 ? 'text-red-600' : 'text-blue-600'],
+                    [remaining < 0 ? 'Shortfall' : 'Surplus', fmtINR(Math.abs(remaining)), remaining < 0 ? 'text-red-600' : 'text-blue-600'],
                   ].map(([lbl, val, cls]) => (
                     <div key={lbl} className="p-3 text-center">
                       <p className="text-gray-400 text-[10px] font-semibold">{lbl}</p>
