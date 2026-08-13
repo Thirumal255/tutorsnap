@@ -12,6 +12,7 @@ import {
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
   getCategoryAccounts, getAccountBreakdown,
   getBudgetItems, createBudgetItem, updateBudgetItem, deleteBudgetItem,
+  getFinanceReceipts, createFinanceReceipt, deleteFinanceReceipt,
 } from './api/client'
 
 
@@ -2014,17 +2015,107 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
 // ── Finance Tab (Project Financials) ──────────────────────────────────────────
 
 
+function AddFundsForm({ account, onSave, onClose }) {
+  const inp = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-400"
+  const lbl = "block text-xs text-gray-400 font-semibold mb-1.5"
+  const [form, setForm] = useState({
+    amount: '',
+    description: '',
+    source_type: 'Own Contribution',
+    received_date: new Date().toISOString().split('T')[0],
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  async function handleSave() {
+    const amount = parseFloat(form.amount)
+    if (isNaN(amount) || amount <= 0) return setError('Enter a valid amount')
+    setSaving(true); setError('')
+    const desc = [form.source_type, form.description].filter(Boolean).join(' — ')
+    try {
+      await createFinanceReceipt({
+        account_id: account.id,
+        amount,
+        description: desc || null,
+        received_date: form.received_date,
+        source_id: null,
+      })
+      await onSave(); onClose()
+    } catch(e) { setError(e.response?.data?.detail || 'Save failed') }
+    finally { setSaving(false) }
+  }
+
+  const SOURCE_TYPES = ['Own Contribution', 'Bank Loan', 'NHB Subsidy', 'Grant', 'Other']
+
+  return (
+    <div className="p-5 space-y-4">
+      <div className="bg-green-50 border border-green-200 rounded-2xl p-3">
+        <p className="text-green-600 text-[10px] font-bold uppercase">Adding funds to</p>
+        <p className="text-gray-800 font-bold text-sm mt-0.5">{account.name}</p>
+      </div>
+      <div>
+        <label className={lbl}>Source Type</label>
+        <div className="flex flex-wrap gap-2">
+          {SOURCE_TYPES.map(s => (
+            <button key={s} onClick={() => set('source_type', s)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                form.source_type === s ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-400 border-gray-200'
+              }`}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={lbl}>Amount (₹) *</label>
+          <input type="number" value={form.amount} onChange={e => set('amount', e.target.value)}
+            className={inp} placeholder="0" min="0" autoFocus/>
+        </div>
+        <div>
+          <label className={lbl}>Date *</label>
+          <input type="date" value={form.received_date} onChange={e => set('received_date', e.target.value)} className={inp}/>
+        </div>
+      </div>
+      <div>
+        <label className={lbl}>Description / Note</label>
+        <input value={form.description} onChange={e => set('description', e.target.value)}
+          className={inp} placeholder="e.g. Tranche 1, Phase 2 release"/>
+      </div>
+      {error && <p className="text-red-600 text-xs bg-red-50 rounded-xl p-3">{error}</p>}
+      <button onClick={handleSave} disabled={saving}
+        className="w-full bg-green-600 text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 active:scale-[0.98] transition-all">
+        {saving ? 'Saving…' : `Add ${form.source_type}`}
+      </button>
+    </div>
+  )
+}
+
 function FinanceTab() {
   const [accounts, setAccounts] = useState([])
   const [budgetItems, setBudgetItems] = useState([])
+  const [receipts, setReceipts] = useState([])
   const [loading, setLoading] = useState(true)
   const [subtab, setSubtab] = useState('accounts')
+  const [addFundsFor, setAddFundsFor] = useState(null) // account object
+  const [expandedInflows, setExpandedInflows] = useState({}) // {accountId: bool}
 
   const load = useCallback(async () => {
-    const [a, b] = await Promise.all([getFinanceAccounts(), getBudgetItems()])
-    setAccounts(a.data); setBudgetItems(b.data); setLoading(false)
+    const [a, b, r] = await Promise.all([getFinanceAccounts(), getBudgetItems(), getFinanceReceipts()])
+    setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
+
+  function toggleInflows(id) {
+    setExpandedInflows(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  async function handleDeleteReceipt(id) {
+    if (!confirm('Remove this fund inflow?')) return
+    try { await deleteFinanceReceipt(id); await load() }
+    catch(e) { alert(e.response?.data?.detail || 'Delete failed') }
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center h-40">
@@ -2082,21 +2173,27 @@ function FinanceTab() {
             const remaining = live - (proposed - spent)
             const sufficient = (live + spent) >= proposed
             const spentPct  = proposed > 0 ? Math.min((spent / proposed) * 100, 100) : 0
+            const acctReceipts = receipts.filter(r => r.account_id === a.id)
+              .sort((x, y) => y.received_date?.localeCompare(x.received_date))
+            const inflowsOpen = expandedInflows[a.id]
             return (
               <div key={a.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                {/* Account header */}
                 <div className="flex items-center justify-between px-4 py-3 bg-green-600">
                   <div>
-                    <p className="text-gray-800 text-[10px] font-bold uppercase">Account</p>
-                    <p className="text-gray-800 font-bold text-base">{a.name}</p>
+                    <p className="text-white text-[10px] font-bold uppercase">Account</p>
+                    <p className="text-white font-bold text-base">{a.name}</p>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${sufficient ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                    {sufficient ? 'Sufficient' : 'Shortfall'}
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${sufficient ? 'bg-white/20 text-white' : 'bg-red-100 text-red-600'}`}>
+                    {sufficient ? '✓ Sufficient' : '⚠ Shortfall'}
                   </span>
                 </div>
+
+                {/* KPI grid */}
                 <div className="grid grid-cols-2 divide-x divide-y divide-gray-200">
                   {[
                     ['Funds Available', fmtINR(live),               'text-gray-800'],
-                    ['Proposed Expense',fmtINR(proposed),           'text-gray-400'],
+                    ['Proposed Expense',fmtINR(proposed),           'text-gray-500'],
                     ['Spent',           fmtINR(spent),               'text-green-600'],
                     [remaining < 0 ? 'Shortfall' : 'Surplus', fmtINR(Math.abs(remaining)), remaining < 0 ? 'text-red-600' : 'text-blue-600'],
                   ].map(([lbl, val, cls]) => (
@@ -2106,11 +2203,13 @@ function FinanceTab() {
                     </div>
                   ))}
                 </div>
+
+                {/* Progress bar */}
                 {proposed > 0 && (
-                  <div className="px-4 pb-3">
+                  <div className="px-4 pt-1 pb-3">
                     <div className="flex justify-between text-[10px] text-gray-400 mb-1">
                       <span>Spent {spentPct.toFixed(0)}% of proposed</span>
-                      <span>{fmtINR(proposed - spent)} left</span>
+                      <span>{fmtINR(proposed - spent)} remaining</span>
                     </div>
                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${spentPct >= 100 ? 'bg-red-500' : spentPct > 80 ? 'bg-amber-400' : 'bg-green-500'}`}
@@ -2118,6 +2217,49 @@ function FinanceTab() {
                     </div>
                   </div>
                 )}
+
+                {/* Fund Inflows section */}
+                <div className="border-t border-gray-100">
+                  <button onClick={() => toggleInflows(a.id)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-600">💵 Funds Received</span>
+                      {acctReceipts.length > 0 && (
+                        <span className="bg-green-100 text-green-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          {acctReceipts.length} · {fmtINR(acctReceipts.reduce((s, r) => s + r.amount, 0))}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={e => { e.stopPropagation(); setAddFundsFor(a) }}
+                        className="bg-green-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg">
+                        + Add
+                      </button>
+                      <span className="text-gray-300 text-xs">{inflowsOpen ? '▲' : '▼'}</span>
+                    </div>
+                  </button>
+
+                  {inflowsOpen && (
+                    <div className="px-4 pb-3 space-y-2">
+                      {acctReceipts.length === 0 ? (
+                        <p className="text-gray-400 text-xs italic py-2">No funds recorded yet. Tap "+ Add" to log a receipt.</p>
+                      ) : (
+                        acctReceipts.map(r => (
+                          <div key={r.id} className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-xl px-3 py-2.5">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-gray-800 text-xs font-semibold">{fmtINR(r.amount)}</p>
+                              <p className="text-gray-400 text-[10px] truncate">
+                                {r.description || '—'} · {fmtShort(r.received_date)}
+                              </p>
+                            </div>
+                            <button onClick={() => handleDeleteReceipt(r.id)}
+                              className="text-gray-300 hover:text-red-500 text-lg leading-none flex-shrink-0">×</button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -2147,6 +2289,11 @@ function FinanceTab() {
           })()}
         </div>
       )}
+
+      <BottomSheet show={!!addFundsFor} onClose={() => setAddFundsFor(null)}
+        title={addFundsFor ? `Add Funds — ${addFundsFor.name}` : ''}>
+        {addFundsFor && <AddFundsForm account={addFundsFor} onSave={load} onClose={() => setAddFundsFor(null)}/>}
+      </BottomSheet>
 
       {subtab === 'cashflow' && (
         <div className="px-4 space-y-3">
