@@ -103,8 +103,8 @@ function StatusPicker({ task, onSelect, onClose }) {
     <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'center',justifyContent:'center'}}>
       <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}} onClick={onClose}/>
       <div style={{position:'relative',background:'#16213E',border:'1px solid #2D2B5A',borderRadius:20,padding:20,width:260,zIndex:1}}>
-        <p className="text-white font-bold text-sm mb-3">Change Status</p>
-        <p className="text-[#8892B0] text-xs mb-4 truncate">{task.title}</p>
+        <p className="text-gray-800 font-bold text-sm mb-3">Change Status</p>
+        <p className="text-gray-400 text-xs mb-4 truncate">{task.title}</p>
         <div className="space-y-2">
           {Object.entries(S).map(([key,meta])=>(
             <button key={key} onClick={()=>onSelect(key)}
@@ -113,7 +113,7 @@ function StatusPicker({ task, onSelect, onClose }) {
               }`}>
               <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${meta.dot}`}/>
               <span className={`text-sm font-semibold ${meta.color}`}>{meta.label}</span>
-              {task.status===key&&<span className="ml-auto text-xs text-[#8892B0]">current</span>}
+              {task.status===key&&<span className="ml-auto text-xs text-gray-400">current</span>}
             </button>
           ))}
         </div>
@@ -148,12 +148,12 @@ function daysLeft(d) {
 }
 
 const S = {
-  not_started:{ label:'Not Started', color:'text-[#8892B0]', bg:'bg-[#8892B0]/10', dot:'bg-[#8892B0]' },
-  in_progress: { label:'In Progress', color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10', dot:'bg-[#00A2FF]' },
-  completed:   { label:'Completed',   color:'text-[#00CC88]', bg:'bg-[#00CC88]/10', dot:'bg-[#00CC88]' },
-  on_hold:     { label:'On Hold',     color:'text-[#FFB347]', bg:'bg-[#FFB347]/10', dot:'bg-[#FFB347]' },
+  not_started:{ label:'Not Started', color:'text-gray-400', bg:'bg-gray-100', dot:'bg-[#8892B0]' },
+  in_progress: { label:'In Progress', color:'text-blue-600', bg:'bg-blue-50', dot:'bg-blue-600' },
+  completed:   { label:'Completed',   color:'text-green-600', bg:'bg-green-50', dot:'bg-green-500' },
+  on_hold:     { label:'On Hold',     color:'text-amber-500', bg:'bg-amber-50', dot:'bg-amber-400' },
 }
-const PRI_BORDER = { high:'border-l-[#FF3333]', medium:'border-l-[#FFB347]', low:'border-l-[#00CC88]' }
+const PRI_BORDER = { high:'border-l-red-500', medium:'border-l-amber-400', low:'border-l-green-500' }
 
 // ── Small Components ───────────────────────────────────────────────────────────
 
@@ -171,13 +171,13 @@ function BudgetBar({ budget, spent, compact=false }) {
   if (!budget||budget<=0) return null
   const pct = Math.min((spent/budget)*100,100)
   const over = spent>budget
-  const barColor = over?'bg-[#FF3333]':pct>80?'bg-[#FFB347]':'bg-[#00CC88]'
+  const barColor = over?'bg-red-500':pct>80?'bg-amber-400':'bg-green-500'
   if (compact) return (
     <div className="space-y-0.5">
-      <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${barColor}`} style={{width:`${pct}%`}}/>
       </div>
-      <div className="flex justify-between text-[10px] text-[#8892B0]">
+      <div className="flex justify-between text-[10px] text-gray-400">
         <span>{fmtINR(spent)} spent</span><span>{fmtINR(budget)} budget</span>
       </div>
     </div>
@@ -185,15 +185,15 @@ function BudgetBar({ budget, spent, compact=false }) {
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs">
-        <span className="text-[#8892B0]">Budget: <span className="text-white font-semibold">{fmtINR(budget)}</span></span>
-        <span className={over?'text-[#FF3333] font-bold':'text-[#00CC88] font-semibold'}>
+        <span className="text-gray-400">Budget: <span className="text-gray-800 font-semibold">{fmtINR(budget)}</span></span>
+        <span className={over?'text-red-600 font-bold':'text-green-600 font-semibold'}>
           {over?`Over by ${fmtINR(spent-budget)}`:`${fmtINR(budget-spent)} left`}
         </span>
       </div>
-      <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all ${barColor}`} style={{width:`${pct}%`}}/>
       </div>
-      <div className="flex justify-between text-xs text-[#8892B0]">
+      <div className="flex justify-between text-xs text-gray-400">
         <span>Spent: {fmtINR(spent)}</span><span>{pct.toFixed(0)}% used</span>
       </div>
     </div>
@@ -207,14 +207,14 @@ function BottomSheet({ show, onClose, title, children }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}/>
-      <div className="relative bg-[#16213E] border-t border-[#2D2B5A] rounded-t-3xl max-h-[92vh] flex flex-col">
+      <div className="relative bg-white border-t border-gray-200 rounded-t-3xl max-h-[92vh] flex flex-col">
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-          <div className="w-10 h-1 bg-[#2D2B5A] rounded-full"/>
+          <div className="w-10 h-1 bg-gray-200 rounded-full"/>
         </div>
         {title && (
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[#2D2B5A] flex-shrink-0">
-            <h2 className="text-white font-bold text-base">{title}</h2>
-            <button onClick={onClose} className="text-[#8892B0] hover:text-white text-xl w-8 h-8 flex items-center justify-center">✕</button>
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
+            <h2 className="text-gray-800 font-bold text-base">{title}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-800 text-xl w-8 h-8 flex items-center justify-center">✕</button>
           </div>
         )}
         <div className="overflow-y-auto flex-1 pb-8">{children}</div>
@@ -232,12 +232,12 @@ function SubtaskPill({ subtasks }) {
   const pct = Math.round((done/total)*100)
   const all_done = done===total
   return (
-    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${all_done?'bg-[#00CC88]/15 text-[#00CC88]':'bg-[#2D2B5A]/50 text-[#8892B0]'}`}>
+    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${all_done?'bg-green-100 text-green-600':'bg-gray-200/50 text-gray-400'}`}>
       <span>{all_done?'✓':done+'/'+total}</span>
       <span>{total===1?'subtask':'subtasks'}</span>
       {!all_done&&(
-        <div className="w-10 h-1 bg-[#0F0F23] rounded-full overflow-hidden">
-          <div className="h-full bg-[#00A2FF] rounded-full" style={{width:`${pct}%`}}/>
+        <div className="w-10 h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-blue-600 rounded-full" style={{width:`${pct}%`}}/>
         </div>
       )}
     </div>
@@ -273,7 +273,7 @@ function TaskCard({ task, onClick, onStatusChange }) {
   return (
     <>
       <div {...longPress}
-        className={`bg-[#16213E] border border-[#2D2B5A] border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} rounded-2xl overflow-hidden select-none ${overdue?'border-[#FF3333]/30':''}`}>
+        className={`bg-white border border-gray-200 border-l-4 ${PRI_BORDER[task.priority]||'border-l-gray-300'} rounded-2xl overflow-hidden select-none ${overdue?'border-red-500/30':''}`}>
 
         {/* ── Collapsed header (always visible) ── */}
         <div className="flex items-center gap-2.5 p-3 cursor-pointer active:scale-[0.99] transition-all"
@@ -281,44 +281,44 @@ function TaskCard({ task, onClick, onStatusChange }) {
           {/* Complete button */}
           <button onClick={handleComplete} disabled={completing}
             className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-              isDone ? 'bg-[#00CC88] border-[#00CC88] text-white'
-                     : 'border-[#2D2B5A] text-transparent hover:border-[#00CC88] hover:text-[#00CC88]'
+              isDone ? 'bg-green-500 border-green-500 text-gray-800'
+                     : 'border-gray-200 text-transparent hover:border-green-500 hover:text-green-600'
             }`}>
             <span className="text-xs font-bold leading-none">✓</span>
           </button>
 
           {/* Title */}
-          <h3 className={`flex-1 min-w-0 font-semibold text-sm leading-snug truncate ${isDone?'line-through text-[#8892B0]':'text-white'}`}>
+          <h3 className={`flex-1 min-w-0 font-semibold text-sm leading-snug truncate ${isDone?'line-through text-gray-400':'text-gray-800'}`}>
             {task.title}
           </h3>
 
           {/* Right: urgent hint + chevron */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {overdue&&<span className="text-[#FF3333] text-xs font-bold">{Math.abs(days)}d late</span>}
-            {!overdue&&days!=null&&days<=3&&<span className="text-[#FFB347] text-xs font-semibold">{days}d left</span>}
-            <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
+            {overdue&&<span className="text-red-600 text-xs font-bold">{Math.abs(days)}d late</span>}
+            {!overdue&&days!=null&&days<=3&&<span className="text-amber-500 text-xs font-semibold">{days}d left</span>}
+            <span className="text-gray-400 text-[10px]">{isOpen?'▲':'▼'}</span>
           </div>
         </div>
 
         {/* ── Expanded detail ── */}
         {isOpen&&(
-          <div className="px-3 pb-3 space-y-2 border-t border-[#2D2B5A]/60">
+          <div className="px-3 pb-3 space-y-2 border-t border-gray-200/60">
             {/* Notes */}
             {task.notes&&!isDone&&(
-              <p className="text-[#8892B0] text-xs pt-2">{task.notes}</p>
+              <p className="text-gray-400 text-xs pt-2">{task.notes}</p>
             )}
 
             {/* Category + status */}
             <div className="flex items-center gap-2 flex-wrap pt-1">
-              <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{task.category}</span>
+              <span className="text-gray-400 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">{task.category}</span>
               <StatusBadge status={task.status}/>
             </div>
 
             {/* Date */}
             {(task.start_date||task.end_date)&&(
               <div className="flex items-center gap-1 text-xs">
-                <span className={overdue?'text-[#FF3333]':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}>{overdue?'⚠️':'📅'}</span>
-                <span className={overdue?'text-[#FF3333] font-semibold':days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}>
+                <span className={overdue?'text-red-600':days!=null&&days<=2?'text-amber-500':'text-gray-400'}>{overdue?'⚠️':'📅'}</span>
+                <span className={overdue?'text-red-600 font-semibold':days!=null&&days<=2?'text-amber-500':'text-gray-400'}>
                   {task.start_date&&fmtShort(task.start_date)}
                   {task.start_date&&task.end_date&&<span className="text-[#2D2B5A]"> → </span>}
                   {task.end_date&&fmtShort(task.end_date)}
@@ -333,7 +333,7 @@ function TaskCard({ task, onClick, onStatusChange }) {
 
             {/* Open full detail */}
             <button onClick={e=>{e.stopPropagation();onClick(task)}}
-              className="w-full py-1.5 rounded-lg bg-[#00A2FF]/10 text-[#00A2FF] text-xs font-semibold mt-1">
+              className="w-full py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold mt-1">
               Open Task →
             </button>
           </div>
@@ -349,8 +349,8 @@ function TaskCard({ task, onClick, onStatusChange }) {
 function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
   const isEdit = !!task?.id
   const [addingCat, setAddingCat] = useState(categories.length===0)
-  const inp = "w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
-  const lbl = "block text-xs text-[#8892B0] font-semibold mb-1.5"
+  const inp = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-400"
+  const lbl = "block text-xs text-gray-400 font-semibold mb-1.5"
   const [form, setForm] = useState({
     title: task?.title||'', notes: task?.notes||'',
     status: task?.status||'not_started', priority: task?.priority||'medium',
@@ -414,14 +414,14 @@ function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
         {addingCat ? (
           <div className="flex gap-2">
             <input value={form.newCategory} onChange={e=>set('newCategory',e.target.value)} className={`${inp} flex-1`} placeholder="New category name"/>
-            {categories.length>0&&<button onClick={()=>setAddingCat(false)} className="text-[#8892B0] text-sm px-3">Cancel</button>}
+            {categories.length>0&&<button onClick={()=>setAddingCat(false)} className="text-gray-400 text-sm px-3">Cancel</button>}
           </div>
         ) : (
           <div className="flex gap-2">
             <select value={form.category} onChange={e=>set('category',e.target.value)} className={`${inp} flex-1`}>
               {categories.map(c=><option key={c} value={c}>{c}</option>)}
             </select>
-            <button onClick={()=>setAddingCat(true)} className="text-[#00A2FF] text-sm px-3 border border-[#2D2B5A] rounded-xl">+ New</button>
+            <button onClick={()=>setAddingCat(true)} className="text-blue-600 text-sm px-3 border border-gray-200 rounded-xl">+ New</button>
           </div>
         )}
       </div>
@@ -453,8 +453,8 @@ function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
         <input type="number" value={form.budget} onChange={e=>set('budget',e.target.value)} className={inp} placeholder="e.g. 50000" min="0"/>
       </div>
       {!isEdit && (
-        <div className="bg-[#0F0F23] rounded-2xl p-4 space-y-3 border border-[#2D2B5A]/50">
-          <p className="text-xs text-[#8892B0] font-semibold">💰 Add Expense (optional)</p>
+        <div className="bg-gray-100 rounded-2xl p-4 space-y-3 border border-gray-200/50">
+          <p className="text-xs text-gray-400 font-semibold">💰 Add Expense (optional)</p>
           <div className="grid grid-cols-2 gap-3">
             <div><label className={lbl}>Amount (₹)</label><input type="number" value={form.expense_amount} onChange={e=>set('expense_amount',e.target.value)} className={inp} placeholder="0.00" min="0"/></div>
             <div><label className={lbl}>Date</label><input type="date" value={form.expense_date} onChange={e=>set('expense_date',e.target.value)} className={inp}/></div>
@@ -471,36 +471,36 @@ function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
       {eligibleDeps.length>0&&(
         <div>
           <label className={lbl}>🔗 Depends On <span className="font-normal">(same category)</span></label>
-          <div className="space-y-2 max-h-48 overflow-y-auto bg-[#0F0F23] rounded-xl p-3 border border-[#2D2B5A]">
+          <div className="space-y-2 max-h-48 overflow-y-auto bg-gray-100 rounded-xl p-3 border border-gray-200">
             {eligibleDeps.map(t=>{
               const checked = form.dependency_ids.includes(t.id)
               return (
                 <div key={t.id} onClick={()=>toggleDep(t.id)}
                   className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-all ${
-                    checked?'bg-[#00A2FF]/15 border border-[#00A2FF]/30':'hover:bg-[#16213E] border border-transparent'
+                    checked?'bg-blue-100 border border-blue-300':'hover:bg-white border border-transparent'
                   }`}>
                   <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
-                    checked?'bg-[#00A2FF] border-[#00A2FF]':'border-[#2D2B5A]'
+                    checked?'bg-blue-600 border-blue-500':'border-gray-200'
                   }`}>
-                    {checked&&<span className="text-white text-xs leading-none">✓</span>}
+                    {checked&&<span className="text-gray-800 text-xs leading-none">✓</span>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white text-xs font-semibold truncate">{t.title}</p>
-                    <p className={`text-xs ${S[t.status]?.color||'text-[#8892B0]'}`}>{S[t.status]?.label}</p>
+                    <p className="text-gray-800 text-xs font-semibold truncate">{t.title}</p>
+                    <p className={`text-xs ${S[t.status]?.color||'text-gray-400'}`}>{S[t.status]?.label}</p>
                   </div>
                 </div>
               )
             })}
           </div>
           {form.dependency_ids.length>0&&(
-            <p className="text-[#00A2FF] text-xs mt-1">{form.dependency_ids.length} dependenc{form.dependency_ids.length>1?'ies':'y'} selected</p>
+            <p className="text-blue-600 text-xs mt-1">{form.dependency_ids.length} dependenc{form.dependency_ids.length>1?'ies':'y'} selected</p>
           )}
         </div>
       )}
 
-      {error&&<p className="text-[#FF3333] text-xs bg-[#FF3333]/10 rounded-xl p-3">{error}</p>}
+      {error&&<p className="text-red-600 text-xs bg-red-50 rounded-xl p-3">{error}</p>}
       <button onClick={handleSave} disabled={saving}
-        className="w-full bg-[#00A2FF] text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 active:scale-[0.98] transition-all">
+        className="w-full bg-blue-600 text-gray-800 font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 active:scale-[0.98] transition-all">
         {saving?'Saving…':isEdit?'Save Changes':'Create Task'}
       </button>
     </div>
@@ -510,8 +510,8 @@ function TaskForm({ task, categories, allTasks=[], onSave, onClose }) {
 // ── Add Expense Form ───────────────────────────────────────────────────────────
 
 function AddExpenseForm({ task, onSave, onClose }) {
-  const inp = "w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
-  const lbl = "block text-xs text-[#8892B0] font-semibold mb-1.5"
+  const inp = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-400"
+  const lbl = "block text-xs text-gray-400 font-semibold mb-1.5"
   const [form, setForm] = useState({ amount:'', description:'', expense_date: new Date().toISOString().split('T')[0], status:'planned', account_id:'' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -542,17 +542,17 @@ function AddExpenseForm({ task, onSave, onClose }) {
 
   return (
     <div className="p-5 space-y-4">
-      <div className="bg-[#0F0F23] rounded-2xl p-3">
-        <p className="text-[#8892B0] text-xs">Adding expense to</p>
-        <p className="text-white font-semibold text-sm mt-0.5">{task.title}</p>
-        {task.category&&<p className="text-[#00A2FF] text-xs mt-0.5">Category: {task.category}</p>}
+      <div className="bg-gray-100 rounded-2xl p-3">
+        <p className="text-gray-400 text-xs">Adding expense to</p>
+        <p className="text-gray-800 font-semibold text-sm mt-0.5">{task.title}</p>
+        {task.category&&<p className="text-blue-600 text-xs mt-0.5">Category: {task.category}</p>}
       </div>
       {/* Status toggle */}
       <div className="flex gap-2">
-        {[{key:'planned',label:'🕐 Planned',color:'border-[#FFB347] bg-[#FFB347]/10 text-[#FFB347]'},
-          {key:'paid',   label:'✅ Paid',   color:'border-[#00CC88] bg-[#00CC88]/10 text-[#00CC88]'}].map(s=>(
+        {[{key:'planned',label:'🕐 Planned',color:'border-amber-400 bg-amber-50 text-amber-500'},
+          {key:'paid',   label:'✅ Paid',   color:'border-green-500 bg-green-50 text-green-600'}].map(s=>(
           <button key={s.key} onClick={()=>set('status',s.key)}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${form.status===s.key?s.color:'border-[#2D2B5A] text-[#8892B0]'}`}>
+            className={`flex-1 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${form.status===s.key?s.color:'border-gray-200 text-gray-400'}`}>
             {s.label}
           </button>
         ))}
@@ -565,8 +565,8 @@ function AddExpenseForm({ task, onSave, onClose }) {
       {/* Account selector — shown always, required when paid */}
       <div>
         <label className={lbl}>
-          Paid from account {form.status==='paid'&&<span className="text-[#FF3333]">*</span>}
-          {catAccounts.length===0&&task.category&&<span className="text-[#8892B0] font-normal"> (link accounts to "{task.category}" in Finance → Accounts)</span>}
+          Paid from account {form.status==='paid'&&<span className="text-red-600">*</span>}
+          {catAccounts.length===0&&task.category&&<span className="text-gray-400 font-normal"> (link accounts to "{task.category}" in Finance → Accounts)</span>}
         </label>
         <select className={inp} value={form.account_id} onChange={e=>set('account_id',e.target.value)}>
           <option value="">{form.status==='planned'?'— Not paid yet —':'Select account'}</option>
@@ -577,9 +577,9 @@ function AddExpenseForm({ task, onSave, onClose }) {
           ))}
         </select>
       </div>
-      {error&&<p className="text-[#FF3333] text-xs">{error}</p>}
+      {error&&<p className="text-red-600 text-xs">{error}</p>}
       <button onClick={handleSave} disabled={saving}
-        className={`w-full text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 ${form.status==='paid'?'bg-[#00CC88]':'bg-[#FFB347]'}`}>
+        className={`w-full text-gray-800 font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 ${form.status==='paid'?'bg-green-500':'bg-amber-400'}`}>
         {saving?'Adding…':`Add as ${form.status==='paid'?'Paid':'Planned'}`}
       </button>
     </div>
@@ -589,7 +589,7 @@ function AddExpenseForm({ task, onSave, onClose }) {
 // ── Set Budget Form ────────────────────────────────────────────────────────────
 
 function SetBudgetForm({ task, allTasks, onSave, onClose }) {
-  const inp = "w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
+  const inp = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-400"
   const totalExp = (task.expenses||[]).reduce((s,e)=>s+e.amount,0)
   const subTotal = (task.subtasks||[]).reduce((s,t)=>s+(t.total_expense||0),0)
   const minBudget = totalExp+subTotal
@@ -612,21 +612,21 @@ function SetBudgetForm({ task, allTasks, onSave, onClose }) {
 
   return (
     <div className="p-5 space-y-4">
-      <div className="bg-[#0F0F23] rounded-2xl p-3">
-        <p className="text-[#8892B0] text-xs">Budget for</p>
-        <p className="text-white font-semibold text-sm mt-0.5">{task.title}</p>
-        {minBudget>0&&<p className="text-[#8892B0] text-xs mt-1">Min: {fmtINR(minBudget)} (total expenses)</p>}
+      <div className="bg-gray-100 rounded-2xl p-3">
+        <p className="text-gray-400 text-xs">Budget for</p>
+        <p className="text-gray-800 font-semibold text-sm mt-0.5">{task.title}</p>
+        {minBudget>0&&<p className="text-gray-400 text-xs mt-1">Min: {fmtINR(minBudget)} (total expenses)</p>}
       </div>
       <div>
-        <label className="block text-xs text-[#8892B0] font-semibold mb-1.5">Amount (₹)</label>
+        <label className="block text-xs text-gray-400 font-semibold mb-1.5">Amount (₹)</label>
         <input type="number" value={val} onChange={e=>setVal(e.target.value)} className={inp} placeholder="Leave empty to clear" min="0" autoFocus/>
       </div>
-      {error&&<p className="text-[#FF3333] text-xs">{error}</p>}
-      <button onClick={()=>doSave()} disabled={saving} className="w-full bg-[#00A2FF] text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50">
+      {error&&<p className="text-red-600 text-xs">{error}</p>}
+      <button onClick={()=>doSave()} disabled={saving} className="w-full bg-blue-600 text-gray-800 font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50">
         {saving?'Saving…':task.budget?'Update Budget':'Set Budget'}
       </button>
       {task.budget>0&&(
-        <button onClick={()=>doSave('0')} className="w-full border border-[#FF3333]/40 text-[#FF3333] py-3 rounded-2xl text-sm">
+        <button onClick={()=>doSave('0')} className="w-full border border-red-200 text-red-600 py-3 rounded-2xl text-sm">
           Clear Budget
         </button>
       )}
@@ -661,18 +661,18 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
   if (action === 'status') return (
     <div className="p-5 space-y-3">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-white font-bold text-sm">Change Status</p>
-        <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
+        <p className="text-gray-800 font-bold text-sm">Change Status</p>
+        <button onClick={()=>setAction(null)} className="text-gray-400 text-xl">×</button>
       </div>
-      <p className="text-[#8892B0] text-xs truncate mb-3">{task.title}</p>
+      <p className="text-gray-400 text-xs truncate mb-3">{task.title}</p>
       {Object.entries(S).map(([key,meta])=>(
         <button key={key} onClick={()=>handleStatusSelect(key)}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all border ${
-            task.status===key?`${meta.bg} border-current`:`hover:${meta.bg} border-[#2D2B5A]`
+            task.status===key?`${meta.bg} border-current`:`hover:${meta.bg} border-gray-200`
           }`}>
           <span className={`w-3 h-3 rounded-full flex-shrink-0 ${meta.dot}`}/>
           <span className={`text-sm font-semibold ${meta.color}`}>{meta.label}</span>
-          {task.status===key&&<span className="ml-auto text-xs text-[#8892B0]">current</span>}
+          {task.status===key&&<span className="ml-auto text-xs text-gray-400">current</span>}
         </button>
       ))}
     </div>
@@ -685,25 +685,25 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
   if (action === 'deps') return (
     <div className="p-5 space-y-3">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-white font-bold text-sm">🔗 Dependencies</p>
-        <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
+        <p className="text-gray-800 font-bold text-sm">🔗 Dependencies</p>
+        <button onClick={()=>setAction(null)} className="text-gray-400 text-xl">×</button>
       </div>
-      <p className="text-[#8892B0] text-xs mb-2">{task.category} tasks</p>
+      <p className="text-gray-400 text-xs mb-2">{task.category} tasks</p>
       {eligible.length===0
-        ? <p className="text-[#8892B0] text-xs italic py-4 text-center">No other tasks in this category</p>
+        ? <p className="text-gray-400 text-xs italic py-4 text-center">No other tasks in this category</p>
         : <div className="space-y-2 max-h-56 overflow-y-auto">
             {eligible.map(t=>{
               const checked = selDeps.includes(t.id)
               return (
                 <div key={t.id} onClick={()=>toggleDep(t.id)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all border ${
-                    checked?'bg-[#00A2FF]/15 border-[#00A2FF]/30':'bg-[#0F0F23] border-transparent hover:border-[#2D2B5A]'
+                    checked?'bg-blue-100 border-blue-300':'bg-gray-100 border-transparent hover:border-gray-200'
                   }`}>
-                  <div className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center ${checked?'bg-[#00A2FF] border-[#00A2FF]':'border-[#2D2B5A]'}`}>
-                    {checked&&<span className="text-white text-xs">✓</span>}
+                  <div className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center ${checked?'bg-blue-600 border-blue-500':'border-gray-200'}`}>
+                    {checked&&<span className="text-gray-800 text-xs">✓</span>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white text-xs font-semibold truncate">{t.title}</p>
+                    <p className="text-gray-800 text-xs font-semibold truncate">{t.title}</p>
                     <p className={`text-xs ${S[t.status]?.color}`}>{S[t.status]?.label}</p>
                   </div>
                 </div>
@@ -712,7 +712,7 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
           </div>
       }
       <button onClick={()=>saveDeps(selDeps)}
-        className="w-full bg-[#00A2FF] text-white font-bold py-3 rounded-2xl text-sm">
+        className="w-full bg-blue-600 text-gray-800 font-bold py-3 rounded-2xl text-sm">
         Save
       </button>
     </div>
@@ -721,10 +721,10 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
   if (action === 'subtasks') return (
     <div className="p-5 space-y-3">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-white font-bold text-sm">📋 Sub-tasks</p>
-        <button onClick={()=>setAction(null)} className="text-[#8892B0] text-xl">×</button>
+        <p className="text-gray-800 font-bold text-sm">📋 Sub-tasks</p>
+        <button onClick={()=>setAction(null)} className="text-gray-400 text-xl">×</button>
       </div>
-      <p className="text-[#8892B0] text-xs truncate mb-2">{task.title}</p>
+      <p className="text-gray-400 text-xs truncate mb-2">{task.title}</p>
       <SubtasksSection task={task} subtasks={subtasks} onRefresh={async()=>{ await onRefresh() }}/>
     </div>
   )
@@ -733,12 +733,12 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
   return (
     <div className="p-5 space-y-4">
       {/* Task header */}
-      <div className={`border-l-4 ${PRI_BORDER[task.priority]||'border-l-[#8892B0]'} pl-3 space-y-1`}>
-        <p className="text-white font-bold text-sm leading-snug">{task.title}</p>
+      <div className={`border-l-4 ${PRI_BORDER[task.priority]||'border-l-gray-300'} pl-3 space-y-1`}>
+        <p className="text-gray-800 font-bold text-sm leading-snug">{task.title}</p>
         <div className="flex items-center gap-2">
-          <p className="text-[#8892B0] text-xs">{task.category}</p>
+          <p className="text-gray-400 text-xs">{task.category}</p>
           <StatusBadge status={task.status}/>
-          {overdue&&<span className="text-[#FF3333] text-xs font-bold">⚠️ Overdue</span>}
+          {overdue&&<span className="text-red-600 text-xs font-bold">⚠️ Overdue</span>}
         </div>
         {task.budget>0&&<BudgetBar budget={task.budget} spent={spent} compact/>}
       </div>
@@ -746,10 +746,10 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
       {/* Quick action buttons — 2×2 */}
       <div className="grid grid-cols-2 gap-3">
         {[
-          {key:'status',   icon:'⚡', label:'Change Status', color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10 border-[#00A2FF]/20'},
-          {key:'expense',  icon:'💸', label:'Add Expense',   color:'text-[#00CC88]', bg:'bg-[#00CC88]/10 border-[#00CC88]/20'},
-          {key:'subtasks', icon:'📋', label:`Sub-tasks${subtasks.length>0?` (${subtasks.length})`:''}`, color:'text-[#00A2FF]', bg:'bg-[#00A2FF]/10 border-[#00A2FF]/20'},
-          {key:'deps',     icon:'🔗', label:'Dependencies',  color:'text-[#A78BFA]', bg:'bg-[#A78BFA]/10 border-[#A78BFA]/20'},
+          {key:'status',   icon:'⚡', label:'Change Status', color:'text-blue-600', bg:'bg-blue-50 border-blue-200'},
+          {key:'expense',  icon:'💸', label:'Add Expense',   color:'text-green-600', bg:'bg-green-50 border-green-200'},
+          {key:'subtasks', icon:'📋', label:`Sub-tasks${subtasks.length>0?` (${subtasks.length})`:''}`, color:'text-blue-600', bg:'bg-blue-50 border-blue-200'},
+          {key:'deps',     icon:'🔗', label:'Dependencies',  color:'text-violet-500', bg:'bg-violet-50 border-violet-200'},
         ].map(btn=>(
           <button key={btn.key} onClick={()=>setAction(btn.key)}
             className={`flex flex-col items-center gap-2 border rounded-2xl p-4 active:scale-95 transition-all ${btn.bg}`}>
@@ -760,7 +760,7 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
       </div>
 
       <button onClick={onFullDetail}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-[#8892B0] hover:text-white transition-colors">
+        className="w-full flex items-center justify-between px-4 py-2.5 text-gray-400 hover:text-gray-800 transition-colors">
         <span className="text-sm">View full details</span>
         <span>→</span>
       </button>
@@ -776,7 +776,7 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [editTitle, setEditTitle] = useState('')
-  const inp = "flex-1 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
+  const inp = "flex-1 bg-white border border-gray-300 rounded-xl px-3 py-2 text-gray-800 text-xs focus:outline-none focus:border-blue-500 placeholder-gray-400"
 
   async function addSubtask() {
     const title = input.trim()
@@ -814,11 +814,11 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[#8892B0] text-xs font-semibold">
+        <p className="text-gray-400 text-xs font-semibold">
           Sub-tasks {subtasks.length>0&&`(${done}/${subtasks.length} done)`}
         </p>
         <button onClick={()=>{setAdding(a=>!a);setEditingId(null)}}
-          className="text-[#00A2FF] text-xs font-semibold">
+          className="text-blue-600 text-xs font-semibold">
           {adding?'Cancel':'+ Add'}
         </button>
       </div>
@@ -826,14 +826,14 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
       {subtasks.length>0&&(
         <div className="space-y-1.5 mb-2">
           {subtasks.map(st=>(
-            <div key={st.id} className="bg-[#0F0F23] rounded-xl px-3 py-2 space-y-1.5">
+            <div key={st.id} className="bg-gray-100 rounded-xl px-3 py-2 space-y-1.5">
               {editingId===st.id ? (
                 <div className="flex gap-2">
                   <input value={editTitle} onChange={e=>setEditTitle(e.target.value)}
                     onKeyDown={e=>{ if(e.key==='Enter') saveEdit(st); if(e.key==='Escape') setEditingId(null) }}
                     className={inp} autoFocus/>
-                  <button onClick={()=>saveEdit(st)} className="text-[#00A2FF] text-xs font-bold px-2">Save</button>
-                  <button onClick={()=>setEditingId(null)} className="text-[#8892B0] text-xs px-1">✕</button>
+                  <button onClick={()=>saveEdit(st)} className="text-blue-600 text-xs font-bold px-2">Save</button>
+                  <button onClick={()=>setEditingId(null)} className="text-gray-400 text-xs px-1">✕</button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -842,14 +842,14 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
                     className={`flex-shrink-0 px-1.5 py-0.5 rounded-md text-xs font-semibold ${S[st.status]?.bg} ${S[st.status]?.color}`}>
                     {S[st.status]?.label}
                   </button>
-                  <span className={`text-xs flex-1 truncate ${st.status==='completed'?'text-[#8892B0] line-through':'text-white'}`}>
+                  <span className={`text-xs flex-1 truncate ${st.status==='completed'?'text-gray-400 line-through':'text-gray-800'}`}>
                     {st.title}
                   </span>
                   {/* Edit */}
                   <button onClick={()=>{setEditingId(st.id);setEditTitle(st.title);setAdding(false)}}
-                    className="text-[#8892B0] hover:text-[#00A2FF] text-xs px-1">✏️</button>
+                    className="text-gray-400 hover:text-blue-600 text-xs px-1">✏️</button>
                   {/* Delete */}
-                  <button onClick={()=>deleteSubtask(st)} className="text-[#8892B0] hover:text-[#FF3333] text-base leading-none">×</button>
+                  <button onClick={()=>deleteSubtask(st)} className="text-gray-400 hover:text-red-600 text-base leading-none">×</button>
                 </div>
               )}
             </div>
@@ -863,14 +863,14 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
             onKeyDown={e=>{ if(e.key==='Enter') addSubtask() }}
             className={inp} placeholder="Sub-task title…" autoFocus/>
           <button onClick={addSubtask} disabled={saving||!input.trim()}
-            className="bg-[#00A2FF] text-white text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40">
+            className="bg-blue-600 text-gray-800 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40">
             {saving?'…':'Add'}
           </button>
         </div>
       )}
 
       {subtasks.length===0&&!adding&&(
-        <p className="text-[#8892B0] text-xs italic">No sub-tasks yet</p>
+        <p className="text-gray-400 text-xs italic">No sub-tasks yet</p>
       )}
     </div>
   )
@@ -951,10 +951,10 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
       <div className="p-5 space-y-5">
         {/* Header */}
         <div className="flex items-start gap-3">
-          <div className={`w-1 self-stretch rounded-full flex-shrink-0 ${task.priority==='high'?'bg-[#FF3333]':task.priority==='medium'?'bg-[#FFB347]':'bg-[#00CC88]'}`}/>
+          <div className={`w-1 self-stretch rounded-full flex-shrink-0 ${task.priority==='high'?'bg-red-500':task.priority==='medium'?'bg-amber-400':'bg-green-500'}`}/>
           <div className="flex-1 min-w-0">
-            <h2 className="text-white font-bold text-lg leading-snug">{task.title}</h2>
-            <p className="text-[#8892B0] text-sm mt-0.5">{task.category}</p>
+            <h2 className="text-gray-800 font-bold text-lg leading-snug">{task.title}</h2>
+            <p className="text-gray-400 text-sm mt-0.5">{task.category}</p>
           </div>
           <StatusBadge status={task.status}/>
         </div>
@@ -964,33 +964,33 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
         {/* Meta */}
         <div className="grid grid-cols-2 gap-3">
           {task.start_date&&(
-            <div className="bg-[#0F0F23] rounded-2xl p-3">
-              <p className="text-[#8892B0] text-xs">Start</p>
-              <p className="text-white text-sm font-semibold mt-0.5">{fmtDate(task.start_date)}</p>
+            <div className="bg-gray-100 rounded-2xl p-3">
+              <p className="text-gray-400 text-xs">Start</p>
+              <p className="text-gray-800 text-sm font-semibold mt-0.5">{fmtDate(task.start_date)}</p>
             </div>
           )}
           {task.end_date&&(
-            <div className={`rounded-2xl p-3 ${overdue?'bg-[#FF3333]/10 border border-[#FF3333]/20':'bg-[#0F0F23]'}`}>
-              <p className={`text-xs ${overdue?'text-[#FF3333]':'text-[#8892B0]'}`}>{overdue?'⚠️ Overdue':'Due'}</p>
-              <p className="text-white text-sm font-semibold mt-0.5">{fmtDate(task.end_date)}</p>
+            <div className={`rounded-2xl p-3 ${overdue?'bg-red-50 border border-red-200':'bg-gray-100'}`}>
+              <p className={`text-xs ${overdue?'text-red-600':'text-gray-400'}`}>{overdue?'⚠️ Overdue':'Due'}</p>
+              <p className="text-gray-800 text-sm font-semibold mt-0.5">{fmtDate(task.end_date)}</p>
             </div>
           )}
-          <div className="bg-[#0F0F23] rounded-2xl p-3">
-            <p className="text-[#8892B0] text-xs">Priority</p>
-            <p className={`text-sm font-semibold mt-0.5 ${task.priority==='high'?'text-[#FF3333]':task.priority==='medium'?'text-[#FFB347]':'text-[#00CC88]'}`}>
+          <div className="bg-gray-100 rounded-2xl p-3">
+            <p className="text-gray-400 text-xs">Priority</p>
+            <p className={`text-sm font-semibold mt-0.5 ${task.priority==='high'?'text-red-600':task.priority==='medium'?'text-amber-500':'text-green-600'}`}>
               {task.priority?.charAt(0).toUpperCase()+task.priority?.slice(1)}
             </p>
           </div>
-          <div className="bg-[#0F0F23] rounded-2xl p-3">
-            <p className="text-[#8892B0] text-xs">Budget</p>
-            <p className="text-white text-sm font-semibold mt-0.5">{task.budget?fmtINR(task.budget):'—'}</p>
+          <div className="bg-gray-100 rounded-2xl p-3">
+            <p className="text-gray-400 text-xs">Budget</p>
+            <p className="text-gray-800 text-sm font-semibold mt-0.5">{task.budget?fmtINR(task.budget):'—'}</p>
           </div>
         </div>
 
         {task.notes&&(
-          <div className="bg-[#0F0F23] rounded-2xl p-4">
-            <p className="text-[#8892B0] text-xs font-semibold mb-1">Notes</p>
-            <p className="text-white text-sm leading-relaxed">{task.notes}</p>
+          <div className="bg-gray-100 rounded-2xl p-4">
+            <p className="text-gray-400 text-xs font-semibold mb-1">Notes</p>
+            <p className="text-gray-800 text-sm leading-relaxed">{task.notes}</p>
           </div>
         )}
 
@@ -1002,16 +1002,16 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
           const deps = task.dependency_ids.map(id=>allTasks.find(t=>t.id===id)).filter(Boolean)
           return deps.length>0 ? (
             <div>
-              <p className="text-[#8892B0] text-xs font-semibold mb-2">🔗 Depends On ({deps.length})</p>
+              <p className="text-gray-400 text-xs font-semibold mb-2">🔗 Depends On ({deps.length})</p>
               <div className="space-y-2">
                 {deps.map(dep=>(
-                  <div key={dep.id} className="flex items-center gap-3 bg-[#0F0F23] rounded-xl px-3 py-2.5">
+                  <div key={dep.id} className="flex items-center gap-3 bg-gray-100 rounded-xl px-3 py-2.5">
                     <StatusBadge status={dep.status}/>
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-xs font-semibold truncate">{dep.title}</p>
-                      <p className="text-[#8892B0] text-xs">{dep.category}</p>
+                      <p className="text-gray-800 text-xs font-semibold truncate">{dep.title}</p>
+                      <p className="text-gray-400 text-xs">{dep.category}</p>
                     </div>
-                    {dep.status!=='completed'&&<span className="text-[#FFB347] text-xs">⚠️ Pending</span>}
+                    {dep.status!=='completed'&&<span className="text-amber-500 text-xs">⚠️ Pending</span>}
                   </div>
                 ))}
               </div>
@@ -1026,29 +1026,29 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
             const paid    = task.expenses.filter(e=>e.status==='paid').reduce((s,e)=>s+e.amount,0)
             const planned = task.expenses.filter(e=>e.status==='planned').reduce((s,e)=>s+e.amount,0)
             return (
-              <div className="bg-[#0F0F23] rounded-2xl p-3 mb-3 grid grid-cols-3 gap-2 text-center">
+              <div className="bg-gray-100 rounded-2xl p-3 mb-3 grid grid-cols-3 gap-2 text-center">
                 <div>
-                  <p className="text-[#8892B0] text-xs">Allocated</p>
-                  <p className="text-white font-bold text-sm">{fmtINR(paid+planned)}</p>
+                  <p className="text-gray-400 text-xs">Allocated</p>
+                  <p className="text-gray-800 font-bold text-sm">{fmtINR(paid+planned)}</p>
                 </div>
                 <div>
-                  <p className="text-[#8892B0] text-xs">Paid</p>
-                  <p className="text-[#00CC88] font-bold text-sm">{fmtINR(paid)}</p>
+                  <p className="text-gray-400 text-xs">Paid</p>
+                  <p className="text-green-600 font-bold text-sm">{fmtINR(paid)}</p>
                 </div>
                 <div>
-                  <p className="text-[#8892B0] text-xs">Planned</p>
-                  <p className="text-[#FFB347] font-bold text-sm">{fmtINR(planned)}</p>
+                  <p className="text-gray-400 text-xs">Planned</p>
+                  <p className="text-amber-500 font-bold text-sm">{fmtINR(planned)}</p>
                 </div>
               </div>
             )
           })()}
 
-          <p className="text-[#8892B0] text-xs font-semibold mb-2">Expenses</p>
+          <p className="text-gray-400 text-xs font-semibold mb-2">Expenses</p>
           {task.expenses?.length>0 ? (
             <div className="space-y-2">
               {task.expenses.map(e=>(
                 <div key={e.id} className={`rounded-xl border overflow-hidden ${
-                  e.status==='paid'?'bg-[#00CC88]/5 border-[#00CC88]/20':'bg-[#FFB347]/5 border-[#FFB347]/20'
+                  e.status==='paid'?'bg-green-500/5 border-green-200':'bg-amber-400/5 border-amber-200'
                 }`}>
                   {editingExpId===e.id ? (
                     /* Edit mode */
@@ -1059,8 +1059,8 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
                           <button key={s} onClick={()=>setEditingExp(f=>({...f,status:s,account_id:s==='planned'?'':f.account_id}))}
                             className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                               editingExp.status===s
-                                ? s==='paid'?'bg-[#00CC88]/20 border-[#00CC88] text-[#00CC88]':'bg-[#FFB347]/20 border-[#FFB347] text-[#FFB347]'
-                                : 'border-[#2D2B5A] text-[#8892B0]'
+                                ? s==='paid'?'bg-green-500/20 border-green-500 text-green-600':'bg-amber-400/20 border-amber-400 text-amber-500'
+                                : 'border-gray-200 text-gray-400'
                             }`}>
                             {s==='paid'?'✅ Paid':'🕐 Planned'}
                           </button>
@@ -1070,30 +1070,30 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
                       {editingExp.status==='paid'&&(
                         <div>
                           <select value={editingExp.account_id||''} onChange={ev=>setEditingExp(f=>({...f,account_id:ev.target.value}))}
-                            className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]">
+                            className="w-full bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-gray-800 text-xs focus:outline-none focus:border-blue-500">
                             <option value="">{catAccounts.length>0?'Select account paid from':'No accounts linked to this category'}</option>
                             {catAccounts.map(a=>(
                               <option key={a.id} value={a.id}>{a.name} — {fmtINR(a.live_balance||a.current_balance)}</option>
                             ))}
                           </select>
                           {catAccounts.length===0&&(
-                            <p className="text-[#8892B0] text-xs mt-1">Link accounts to "{task.category}" in Finance → Accounts tab</p>
+                            <p className="text-gray-400 text-xs mt-1">Link accounts to "{task.category}" in Finance → Accounts tab</p>
                           )}
                         </div>
                       )}
                       <div className="grid grid-cols-2 gap-2">
                         <input type="number" value={editingExp.amount} onChange={e=>setEditingExp(f=>({...f,amount:e.target.value}))}
-                          className="bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"
+                          className="bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-gray-800 text-xs focus:outline-none focus:border-blue-500"
                           placeholder="Amount"/>
                         <input type="date" value={editingExp.expense_date} onChange={e=>setEditingExp(f=>({...f,expense_date:e.target.value}))}
-                          className="bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"/>
+                          className="bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-gray-800 text-xs focus:outline-none focus:border-blue-500"/>
                       </div>
                       <input value={editingExp.description} onChange={e=>setEditingExp(f=>({...f,description:e.target.value}))}
-                        className="w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#00A2FF]"
+                        className="w-full bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-gray-800 text-xs focus:outline-none focus:border-blue-500"
                         placeholder="Description"/>
                       <div className="flex gap-2">
-                        <button onClick={()=>saveEditExp(e.id)} className="flex-1 bg-[#00A2FF] text-white text-xs font-bold py-1.5 rounded-lg">Save</button>
-                        <button onClick={()=>setEditingExpId(null)} className="px-3 text-[#8892B0] text-xs border border-[#2D2B5A] rounded-lg">Cancel</button>
+                        <button onClick={()=>saveEditExp(e.id)} className="flex-1 bg-blue-600 text-gray-800 text-xs font-bold py-1.5 rounded-lg">Save</button>
+                        <button onClick={()=>setEditingExpId(null)} className="px-3 text-gray-400 text-xs border border-gray-200 rounded-lg">Cancel</button>
                       </div>
                     </div>
                   ) : (
@@ -1102,35 +1102,35 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
                       <button onClick={()=>handleQuickToggle(e)}
                         title={e.status==='planned'?'Tap to mark as paid (select account)':'Tap to revert to planned'}
                         className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-lg transition-all ${
-                          e.status==='paid'?'bg-[#00CC88]/20 text-[#00CC88]':'bg-[#FFB347]/20 text-[#FFB347]'
+                          e.status==='paid'?'bg-green-500/20 text-green-600':'bg-amber-400/20 text-amber-500'
                         }`}>
                         {e.status==='paid'?'✅':'🕐'}
                       </button>
                       <div className="flex-1 min-w-0" onClick={()=>startEditExp(e)}>
-                        <p className="text-white text-xs font-semibold">{fmtINR(e.amount)}</p>
-                        <p className="text-[#8892B0] text-xs truncate">
+                        <p className="text-gray-800 text-xs font-semibold">{fmtINR(e.amount)}</p>
+                        <p className="text-gray-400 text-xs truncate">
                           {e.description||'—'} · {fmtShort(e.expense_date)}
-                          {e.account_name&&<span className="text-[#00A2FF]"> · {e.account_name}</span>}
+                          {e.account_name&&<span className="text-blue-600"> · {e.account_name}</span>}
                         </p>
                       </div>
-                      <button onClick={()=>startEditExp(e)} className="text-[#8892B0] hover:text-[#00A2FF] text-xs flex-shrink-0">✏️</button>
-                      <button onClick={()=>handleDeleteExp(e.id)} className="text-[#8892B0] hover:text-[#FF3333] text-xl leading-none flex-shrink-0">×</button>
+                      <button onClick={()=>startEditExp(e)} className="text-gray-400 hover:text-blue-600 text-xs flex-shrink-0">✏️</button>
+                      <button onClick={()=>handleDeleteExp(e.id)} className="text-gray-400 hover:text-red-600 text-xl leading-none flex-shrink-0">×</button>
                     </div>
                   )}
                 </div>
               ))}
             </div>
-          ) : <p className="text-[#8892B0] text-xs italic">No expenses yet</p>}
+          ) : <p className="text-gray-400 text-xs italic">No expenses yet</p>}
           <button onClick={()=>setShowExp(true)}
-            className="mt-3 w-full border border-dashed border-[#2D2B5A] text-[#8892B0] hover:text-white hover:border-[#00A2FF] py-2.5 rounded-xl text-sm transition-all">
+            className="mt-3 w-full border border-dashed border-gray-200 text-gray-400 hover:text-gray-800 hover:border-blue-500 py-2.5 rounded-xl text-sm transition-all">
             + Add Expense
           </button>
         </div>
 
         {/* Actions */}
         <div className="flex gap-3 pt-2">
-          <button onClick={onEdit} className="flex-1 bg-[#00A2FF]/15 text-[#00A2FF] font-semibold py-3 rounded-2xl text-sm">Edit</button>
-          <button onClick={handleDelete} disabled={deleting} className="flex-1 bg-[#FF3333]/10 text-[#FF3333] font-semibold py-3 rounded-2xl text-sm disabled:opacity-50">
+          <button onClick={onEdit} className="flex-1 bg-blue-100 text-blue-600 font-semibold py-3 rounded-2xl text-sm">Edit</button>
+          <button onClick={handleDelete} disabled={deleting} className="flex-1 bg-red-50 text-red-600 font-semibold py-3 rounded-2xl text-sm disabled:opacity-50">
             {deleting?'Deleting…':'Delete'}
           </button>
         </div>
@@ -1191,7 +1191,7 @@ function BudgetTab() {
 
   if (loading) return (
     <div className="flex items-center justify-center h-40">
-      <div className="w-6 h-6 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin"/>
+      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/>
     </div>
   )
 
@@ -1200,12 +1200,12 @@ function BudgetTab() {
       {/* Totals */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          ['Planned', fmtINR(totalPlanned), 'text-white'],
-          ['Actual',  fmtINR(totalActual),  'text-[#00CC88]'],
-          ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)), totalPlanned - totalActual < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'],
+          ['Planned', fmtINR(totalPlanned), 'text-gray-800'],
+          ['Actual',  fmtINR(totalActual),  'text-green-600'],
+          ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)), totalPlanned - totalActual < 0 ? 'text-red-600' : 'text-blue-600'],
         ].map(([l, v, c]) => (
-          <div key={l} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-3 text-center">
-            <p className="text-[#8892B0] text-[10px] font-semibold">{l}</p>
+          <div key={l} className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
+            <p className="text-gray-400 text-[10px] font-semibold">{l}</p>
             <p className={`font-bold text-sm mt-0.5 ${c}`}>{v}</p>
           </div>
         ))}
@@ -1217,7 +1217,7 @@ function BudgetTab() {
           {['all', ...components].map(c => (
             <button key={c} onClick={() => setFilterComp(c)}
               className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 ${
-                filterComp === c ? 'bg-[#00A2FF]/15 text-[#00A2FF]' : 'bg-[#16213E] border border-[#2D2B5A] text-[#8892B0]'
+                filterComp === c ? 'bg-blue-100 text-blue-600' : 'bg-white border border-gray-200 text-gray-400'
               }`}>
               {c === 'all' ? 'All' : c}
             </button>
@@ -1230,14 +1230,14 @@ function BudgetTab() {
         const cp = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
         const ca = compItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
         return (
-          <div key={comp} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 bg-[#1B3A2D]">
-              <span className="text-[#74C69D] font-bold text-xs">{comp}</span>
-              <span className="text-[#8892B0] text-xs">
-                {fmtINR(cp)} planned · <span className="text-[#00CC88]">{fmtINR(ca)}</span> actual
+          <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-green-600">
+              <span className="text-gray-800 font-bold text-xs">{comp}</span>
+              <span className="text-gray-400 text-xs">
+                {fmtINR(cp)} planned · <span className="text-green-600">{fmtINR(ca)}</span> actual
               </span>
             </div>
-            <div className="divide-y divide-[#2D2B5A]/40">
+            <div className="divide-y divide-gray-200/40">
               {compItems.map(item => {
                 const variance = (item.planned_amount || 0) - (item.actual_amount || 0)
                 const editing = editId === item.id
@@ -1245,14 +1245,14 @@ function BudgetTab() {
                   <div key={item.id} className="px-4 py-3 space-y-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-xs font-semibold leading-snug">{item.name}</p>
-                        <p className="text-[#8892B0] text-[10px] mt-0.5">
+                        <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
+                        <p className="text-gray-400 text-[10px] mt-0.5">
                           {[item.category, item.sub_category].filter(Boolean).join(' › ')}
                           {item.planned_date && ` · ${fmtDate(item.planned_date)}`}
                         </p>
                       </div>
                       <div className="text-right flex-shrink-0 space-y-0.5">
-                        <p className="text-white text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
+                        <p className="text-gray-800 text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
                         {editing ? (
                           <input
                             autoFocus
@@ -1261,29 +1261,29 @@ function BudgetTab() {
                             onChange={e => setEditVal(e.target.value)}
                             onBlur={() => saveActual(item.id)}
                             onKeyDown={e => { if (e.key === 'Enter') saveActual(item.id); if (e.key === 'Escape') setEditId(null) }}
-                            className="w-24 bg-[#0F0F23] border border-[#00A2FF] rounded-lg px-2 py-0.5 text-white text-xs focus:outline-none text-right"
+                            className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
                             disabled={saving}
                           />
                         ) : (
                           <button
                             onClick={() => { setEditId(item.id); setEditVal(item.actual_amount != null ? String(item.actual_amount) : '') }}
-                            className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-[#00CC88] bg-[#00CC88]/10' : 'text-[#2D2B5A] bg-[#0F0F23]'}`}>
+                            className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-green-600 bg-green-50' : 'text-[#2D2B5A] bg-gray-100'}`}>
                             {item.actual_amount != null ? fmtINR(item.actual_amount) : '+ actual'}
                           </button>
                         )}
                         {item.actual_amount != null && (
-                          <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'}`}>
+                          <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
                             {variance < 0 ? '▲' : '▼'} {fmtINR(Math.abs(variance))}
                           </p>
                         )}
                       </div>
                     </div>
                     {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
-                      <p className="text-[#8892B0] text-[10px]">
+                      <p className="text-gray-400 text-[10px]">
                         🏦 {item.account_name || accountMap[item.account_id]}
                       </p>
                     )}
-                    {item.notes && <p className="text-[#8892B0] text-[10px] italic">{item.notes}</p>}
+                    {item.notes && <p className="text-gray-400 text-[10px] italic">{item.notes}</p>}
                   </div>
                 )
               })}
@@ -1342,8 +1342,8 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
       {/* ── Key Dates (TOP) ── */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
         <div className="px-4 py-2.5 bg-green-600 flex items-center gap-2">
-          <span className="text-white text-sm">📅</span>
-          <p className="text-white text-xs font-bold tracking-wide">KEY DATES</p>
+          <span className="text-gray-800 text-sm">📅</span>
+          <p className="text-gray-800 text-xs font-bold tracking-wide">KEY DATES</p>
         </div>
         <div className="divide-y divide-gray-100">
           {KEY_DATES.map(({ label, date }) => {
@@ -1398,8 +1398,8 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
       {/* ── Budget snapshot ── */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
         <div className="px-4 py-2.5 bg-green-600 flex items-center gap-2">
-          <span className="text-white text-sm">💰</span>
-          <p className="text-white text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
+          <span className="text-gray-800 text-sm">💰</span>
+          <p className="text-gray-800 text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
         </div>
         <div className="grid grid-cols-2 divide-x divide-gray-100">
           <div className="p-3 text-center">
@@ -1584,23 +1584,23 @@ function CalendarView({ tasks, onTaskClick }) {
   const monthLabel = cur.toLocaleDateString('en-IN',{month:'long',year:'numeric'})
   const selTasks = selDay ? tasksByDay[selDay]||[] : []
 
-  const STATUS_COLOR = { completed:'bg-[#00CC88]', in_progress:'bg-[#00A2FF]', on_hold:'bg-[#FFB347]', not_started:'bg-[#8892B0]' }
+  const STATUS_COLOR = { completed:'bg-green-500', in_progress:'bg-blue-600', on_hold:'bg-amber-400', not_started:'bg-[#8892B0]' }
 
   return (
     <div className="pb-6">
       {/* Month nav */}
       <div className="flex items-center justify-between px-4 py-3">
         <button onClick={()=>{setCur(new Date(yr,mo-1,1));setSelDay(null)}}
-          className="w-9 h-9 flex items-center justify-center bg-[#16213E] rounded-xl text-white text-lg">‹</button>
-        <p className="text-white font-bold text-sm">{monthLabel}</p>
+          className="w-9 h-9 flex items-center justify-center bg-white rounded-xl text-gray-800 text-lg">‹</button>
+        <p className="text-gray-800 font-bold text-sm">{monthLabel}</p>
         <button onClick={()=>{setCur(new Date(yr,mo+1,1));setSelDay(null)}}
-          className="w-9 h-9 flex items-center justify-center bg-[#16213E] rounded-xl text-white text-lg">›</button>
+          className="w-9 h-9 flex items-center justify-center bg-white rounded-xl text-gray-800 text-lg">›</button>
       </div>
 
       {/* Day headers */}
       <div className="grid grid-cols-7 px-4 mb-1">
         {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>(
-          <p key={d} className="text-[#8892B0] text-xs text-center font-semibold py-1">{d}</p>
+          <p key={d} className="text-gray-400 text-xs text-center font-semibold py-1">{d}</p>
         ))}
       </div>
 
@@ -1616,17 +1616,17 @@ function CalendarView({ tasks, onTaskClick }) {
           return (
             <div key={day} onClick={()=>setSelDay(sel?null:day)}
               className={`rounded-xl p-1 cursor-pointer transition-all min-h-[46px] flex flex-col items-center gap-1 ${
-                sel?'bg-[#00A2FF]/20 border border-[#00A2FF]/50':
-                isToday?'bg-[#00A2FF]/10 border border-[#00A2FF]/30':
-                'hover:bg-[#16213E] border border-transparent'
+                sel?'bg-blue-600/20 border border-blue-500/50':
+                isToday?'bg-blue-50 border border-blue-300':
+                'hover:bg-white border border-transparent'
               }`}>
-              <p className={`text-xs font-bold leading-none pt-0.5 ${isToday?'text-[#00A2FF]':sel?'text-white':'text-[#8892B0]'}`}>{day}</p>
+              <p className={`text-xs font-bold leading-none pt-0.5 ${isToday?'text-blue-600':sel?'text-gray-800':'text-gray-400'}`}>{day}</p>
               {dayTasks.length>0&&(
                 <div className="flex flex-wrap gap-0.5 justify-center">
                   {dayTasks.slice(0,4).map(t=>(
-                    <div key={t.id} className={`w-1.5 h-1.5 rounded-full ${isOverdue(t)?'bg-[#FF3333]':STATUS_COLOR[t.status]||'bg-[#8892B0]'}`}/>
+                    <div key={t.id} className={`w-1.5 h-1.5 rounded-full ${isOverdue(t)?'bg-red-500':STATUS_COLOR[t.status]||'bg-[#8892B0]'}`}/>
                   ))}
-                  {dayTasks.length>4&&<div className="w-1.5 h-1.5 rounded-full bg-[#FFB347]"/>}
+                  {dayTasks.length>4&&<div className="w-1.5 h-1.5 rounded-full bg-amber-400"/>}
                 </div>
               )}
             </div>
@@ -1636,23 +1636,23 @@ function CalendarView({ tasks, onTaskClick }) {
 
       {/* Legend */}
       <div className="flex gap-4 px-4 mt-3 flex-wrap">
-        {[['bg-[#00A2FF]','In Progress'],['bg-[#00CC88]','Completed'],['bg-[#FFB347]','On Hold'],['bg-[#FF3333]','Overdue'],['bg-[#8892B0]','Not Started']].map(([c,l])=>(
-          <div key={l} className="flex items-center gap-1"><div className={`w-2 h-2 rounded-full ${c}`}/><p className="text-[#8892B0] text-xs">{l}</p></div>
+        {[['bg-blue-600','In Progress'],['bg-green-500','Completed'],['bg-amber-400','On Hold'],['bg-red-500','Overdue'],['bg-[#8892B0]','Not Started']].map(([c,l])=>(
+          <div key={l} className="flex items-center gap-1"><div className={`w-2 h-2 rounded-full ${c}`}/><p className="text-gray-400 text-xs">{l}</p></div>
         ))}
       </div>
 
       {/* Selected day task list */}
       {selDay&&(
         <div className="px-4 mt-4 space-y-2">
-          <p className="text-[#8892B0] text-xs font-semibold">{selTasks.length} task{selTasks.length!==1?'s':''} due {selDay} {monthLabel}</p>
+          <p className="text-gray-400 text-xs font-semibold">{selTasks.length} task{selTasks.length!==1?'s':''} due {selDay} {monthLabel}</p>
           {selTasks.length===0
-            ? <p className="text-[#8892B0] text-xs italic">No tasks due this day</p>
+            ? <p className="text-gray-400 text-xs italic">No tasks due this day</p>
             : selTasks.map(t=>(
               <div key={t.id} onClick={()=>onTaskClick(t)}
-                className={`border-l-4 ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'} bg-[#16213E] border border-[#2D2B5A] rounded-xl px-3 py-2.5 cursor-pointer flex items-center gap-3`}>
+                className={`border-l-4 ${PRI_BORDER[t.priority]||'border-l-gray-300'} bg-white border border-gray-200 rounded-xl px-3 py-2.5 cursor-pointer flex items-center gap-3`}>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white text-xs font-semibold truncate">{t.title}</p>
-                  <p className="text-[#8892B0] text-xs">{t.category}</p>
+                  <p className="text-gray-800 text-xs font-semibold truncate">{t.title}</p>
+                  <p className="text-gray-400 text-xs">{t.category}</p>
                 </div>
                 <StatusBadge status={t.status}/>
               </div>
@@ -1679,7 +1679,7 @@ function TimelineView({ tasks, onTaskClick }) {
   events.sort((a,b)=>a.dateStr.localeCompare(b.dateStr))
 
   if (events.length===0) return (
-    <div className="flex items-center justify-center py-20 text-[#8892B0] text-sm">No tasks with dates</div>
+    <div className="flex items-center justify-center py-20 text-gray-400 text-sm">No tasks with dates</div>
   )
 
   // Group by date
@@ -1693,8 +1693,8 @@ function TimelineView({ tasks, onTaskClick }) {
   const todayStr = today.toISOString().split('T')[0]
 
   const TYPE_STYLE = {
-    start:{ icon:'🚀', label:'Starts', color:'text-[#00A2FF]', dot:'bg-[#00A2FF]' },
-    due:  { icon:'🏁', label:'Due',    color:'text-[#FFB347]', dot:'bg-[#FFB347]' },
+    start:{ icon:'🚀', label:'Starts', color:'text-blue-600', dot:'bg-blue-600' },
+    due:  { icon:'🏁', label:'Due',    color:'text-amber-500', dot:'bg-amber-400' },
   }
 
   return (
@@ -1709,19 +1709,19 @@ function TimelineView({ tasks, onTaskClick }) {
             {/* Spine */}
             <div className="flex flex-col items-center flex-shrink-0" style={{width:40}}>
               <div className={`w-3 h-3 rounded-full flex-shrink-0 mt-1 border-2 ${
-                isToday?'bg-[#00A2FF] border-[#00A2FF]':
-                isPast?'bg-[#2D2B5A] border-[#2D2B5A]':'bg-[#0F0F23] border-[#8892B0]'
+                isToday?'bg-blue-600 border-blue-500':
+                isPast?'bg-gray-200 border-gray-200':'bg-gray-100 border-[#8892B0]'
               }`}/>
-              {gi<Object.keys(grouped).length-1&&<div className="w-0.5 flex-1 bg-[#2D2B5A] mt-1"/>}
+              {gi<Object.keys(grouped).length-1&&<div className="w-0.5 flex-1 bg-gray-200 mt-1"/>}
             </div>
 
             {/* Content */}
             <div className="flex-1 pb-5 min-w-0">
               <div className="flex items-center gap-2 mb-2">
-                <p className={`text-xs font-bold ${isToday?'text-[#00A2FF]':isPast?'text-[#8892B0]':'text-white'}`}>
+                <p className={`text-xs font-bold ${isToday?'text-blue-600':isPast?'text-gray-400':'text-gray-800'}`}>
                   {isToday?'Today · ':''}{dayLabel}
                 </p>
-                {isToday&&<span className="bg-[#00A2FF] text-white text-xs px-1.5 py-0.5 rounded-full font-bold">TODAY</span>}
+                {isToday&&<span className="bg-blue-600 text-gray-800 text-xs px-1.5 py-0.5 rounded-full font-bold">TODAY</span>}
               </div>
               <div className="space-y-2">
                 {evs.map((ev,ei)=>{
@@ -1729,20 +1729,20 @@ function TimelineView({ tasks, onTaskClick }) {
                   const over = ev.type==='due'&&isOverdue(ev.task)
                   return (
                     <div key={`${ev.task.id}-${ev.type}-${ei}`} onClick={()=>onTaskClick(ev.task)}
-                      className={`border-l-4 ${PRI_BORDER[ev.task.priority]||'border-l-[#8892B0]'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all ${
-                        over?'bg-[#FF3333]/8 border border-[#FF3333]/20':'bg-[#16213E] border border-[#2D2B5A]'
+                      className={`border-l-4 ${PRI_BORDER[ev.task.priority]||'border-l-gray-300'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all ${
+                        over?'bg-red-50 border border-red-200':'bg-white border border-gray-200'
                       }`}>
                       <div className="flex items-start gap-2">
                         <span className="text-sm flex-shrink-0">{over?'⚠️':ts.icon}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-white text-xs font-semibold">{ev.task.title}</p>
-                            <span className={`text-xs font-semibold ${over?'text-[#FF3333]':ts.color}`}>
+                            <p className="text-gray-800 text-xs font-semibold">{ev.task.title}</p>
+                            <span className={`text-xs font-semibold ${over?'text-red-600':ts.color}`}>
                               · {over?'OVERDUE':ts.label}
                             </span>
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-[#8892B0] text-xs">{ev.task.category}</p>
+                            <p className="text-gray-400 text-xs">{ev.task.category}</p>
                             <StatusBadge status={ev.task.status}/>
                           </div>
                         </div>
@@ -1790,13 +1790,13 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
       {/* ── Search + view switcher on one row ── */}
       <div className="px-4 pt-4 pb-2 flex items-center gap-2">
         <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892B0] text-sm">🔍</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input value={search} onChange={e=>setSearch(e.target.value)}
-            className="w-full bg-[#16213E] border border-[#2D2B5A] rounded-xl pl-9 pr-8 py-2.5 text-white text-sm focus:outline-none focus:border-[#00A2FF] placeholder-[#8892B0]"
+            className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-8 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-400"
             placeholder="Search tasks…"/>
           {search&&(
             <button onClick={()=>setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8892B0] hover:text-white text-lg leading-none">×</button>
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-800 text-lg leading-none">×</button>
           )}
         </div>
         {/* View icon buttons */}
@@ -1804,7 +1804,7 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
           {VIEWS.map(v=>(
             <button key={v.key} onClick={()=>setView(v.key)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center text-base transition-all border ${
-                view===v.key?'bg-[#00A2FF] text-white border-[#00A2FF]':'bg-[#16213E] text-[#8892B0] border-[#2D2B5A]'
+                view===v.key?'bg-blue-600 text-gray-800 border-blue-500':'bg-white text-gray-400 border-gray-200'
               }`}>
               {v.icon}
             </button>
@@ -1820,7 +1820,7 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
             {STATUSES.map(f=>(
               <button key={f.key} onClick={()=>setFilterStatus(f.key)}
                 className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                  filterStatus===f.key?'bg-[#00A2FF] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                  filterStatus===f.key?'bg-blue-600 text-gray-800':'bg-white text-gray-400 border border-gray-200'
                 }`}>{f.label}</button>
             ))}
           </div>
@@ -1828,12 +1828,12 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
           <div className="px-4 flex gap-2 overflow-x-auto" style={{scrollbarWidth:'none'}}>
             <button onClick={()=>setFilterCat('all')}
               className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                filterCat==='all'?'bg-[#A78BFA] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                filterCat==='all'?'bg-[#A78BFA] text-gray-800':'bg-white text-gray-400 border border-gray-200'
               }`}>All</button>
             {categories.map(c=>(
               <button key={c} onClick={()=>setFilterCat(filterCat===c?'all':c)}
                 className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                  filterCat===c?'bg-[#A78BFA] text-white':'bg-[#16213E] text-[#8892B0] border border-[#2D2B5A]'
+                  filterCat===c?'bg-[#A78BFA] text-gray-800':'bg-white text-gray-400 border border-gray-200'
                 }`}>{c}</button>
             ))}
           </div>
@@ -1843,7 +1843,7 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
       {/* Search result hint */}
       {q&&(
         <div className="px-4 pb-2">
-          <p className="text-[#8892B0] text-xs">{filtered.length} result{filtered.length!==1?'s':''} for "{search}"</p>
+          <p className="text-gray-400 text-xs">{filtered.length} result{filtered.length!==1?'s':''} for "{search}"</p>
         </div>
       )}
 
@@ -1851,7 +1851,7 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
       {view==='list'&&(
         <div className="px-4 space-y-3">
           {filtered.length===0
-            ? <div className="text-center py-16"><p className="text-4xl mb-3">{q?'🔍':'✅'}</p><p className="text-[#8892B0] text-sm">{q?'No tasks match your search':'No tasks match this filter'}</p></div>
+            ? <div className="text-center py-16"><p className="text-4xl mb-3">{q?'🔍':'✅'}</p><p className="text-gray-400 text-sm">{q?'No tasks match your search':'No tasks match this filter'}</p></div>
             : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick} onStatusChange={onStatusChange}/>)}
         </div>
       )}
@@ -1879,7 +1879,7 @@ function FinanceTab() {
 
   if (loading) return (
     <div className="flex items-center justify-center h-40">
-      <div className="w-6 h-6 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin"/>
+      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/>
     </div>
   )
 
@@ -1913,7 +1913,7 @@ function FinanceTab() {
         {SUBTABS.map(s => (
           <button key={s.key} onClick={() => setSubtab(s.key)}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
-              subtab === s.key ? 'bg-[#00A2FF]/15 text-[#00A2FF]' : 'bg-[#16213E] border border-[#2D2B5A] text-[#8892B0]'
+              subtab === s.key ? 'bg-blue-100 text-blue-600' : 'bg-white border border-gray-200 text-gray-400'
             }`}>
             {s.label}
           </button>
@@ -1923,7 +1923,7 @@ function FinanceTab() {
       {subtab === 'accounts' && (
         <div className="px-4 space-y-4">
           {accounts.length === 0 && (
-            <p className="text-[#8892B0] text-sm text-center py-12">No accounts found.</p>
+            <p className="text-gray-400 text-sm text-center py-12">No accounts found.</p>
           )}
           {accounts.map(a => {
             const live      = a.live_balance != null ? a.live_balance : (a.current_balance || 0)
@@ -1934,37 +1934,37 @@ function FinanceTab() {
             const sufficient = remaining >= 0
             const spentPct  = proposed > 0 ? Math.min((spent / proposed) * 100, 100) : 0
             return (
-              <div key={a.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 bg-[#1B3A2D]">
+              <div key={a.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-green-600">
                   <div>
-                    <p className="text-[#74C69D] text-[10px] font-bold uppercase">Account</p>
-                    <p className="text-white font-bold text-base">{a.name}</p>
+                    <p className="text-gray-800 text-[10px] font-bold uppercase">Account</p>
+                    <p className="text-gray-800 font-bold text-base">{a.name}</p>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${sufficient ? 'bg-[#00CC88]/15 text-[#00CC88]' : 'bg-[#FF3333]/15 text-[#FF3333]'}`}>
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${sufficient ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                     {sufficient ? 'Sufficient' : 'Shortfall'}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 divide-x divide-y divide-[#2D2B5A]">
+                <div className="grid grid-cols-2 divide-x divide-y divide-gray-200">
                   {[
-                    ['Funds Available', fmtINR(live),               'text-white'],
-                    ['Proposed Expense',fmtINR(proposed),           'text-[#8892B0]'],
-                    ['Spent',           fmtINR(spent),               'text-[#00CC88]'],
-                    ['Remaining',       fmtINR(Math.abs(remaining)), remaining < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'],
+                    ['Funds Available', fmtINR(live),               'text-gray-800'],
+                    ['Proposed Expense',fmtINR(proposed),           'text-gray-400'],
+                    ['Spent',           fmtINR(spent),               'text-green-600'],
+                    ['Remaining',       fmtINR(Math.abs(remaining)), remaining < 0 ? 'text-red-600' : 'text-blue-600'],
                   ].map(([lbl, val, cls]) => (
                     <div key={lbl} className="p-3 text-center">
-                      <p className="text-[#8892B0] text-[10px] font-semibold">{lbl}</p>
+                      <p className="text-gray-400 text-[10px] font-semibold">{lbl}</p>
                       <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
                     </div>
                   ))}
                 </div>
                 {proposed > 0 && (
                   <div className="px-4 pb-3">
-                    <div className="flex justify-between text-[10px] text-[#8892B0] mb-1">
+                    <div className="flex justify-between text-[10px] text-gray-400 mb-1">
                       <span>Spent {spentPct.toFixed(0)}% of proposed</span>
                       <span>{fmtINR(proposed - spent)} left</span>
                     </div>
-                    <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${spentPct >= 100 ? 'bg-[#FF3333]' : spentPct > 80 ? 'bg-[#FFB347]' : 'bg-[#00CC88]'}`}
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${spentPct >= 100 ? 'bg-red-500' : spentPct > 80 ? 'bg-amber-400' : 'bg-green-500'}`}
                         style={{ width: `${spentPct}%` }} />
                     </div>
                   </div>
@@ -1977,18 +1977,18 @@ function FinanceTab() {
             const totAlloc = accounts.reduce((s, a) => s + budgetItems.filter(i => i.account_id === a.id).reduce((t, i) => t + (i.planned_amount || 0), 0), 0)
             const totPaid  = accounts.reduce((s, a) => s + budgetItems.filter(i => i.account_id === a.id).reduce((t, i) => t + (i.actual_amount  || 0), 0), 0)
             return (
-              <div className="bg-[#16213E] border border-[#1B3A2D] rounded-2xl overflow-hidden">
-                <div className="px-4 py-2 bg-[#1B3A2D]">
-                  <p className="text-[#74C69D] text-[10px] font-bold">TOTAL — ALL ACCOUNTS</p>
+              <div className="bg-white border border-green-100 rounded-2xl overflow-hidden">
+                <div className="px-4 py-2 bg-green-600">
+                  <p className="text-gray-800 text-[10px] font-bold">TOTAL — ALL ACCOUNTS</p>
                 </div>
-                <div className="grid grid-cols-3 divide-x divide-[#2D2B5A]">
+                <div className="grid grid-cols-3 divide-x divide-gray-200">
                   {[
-                    ['Available', fmtINR(totLive),  'text-white'],
-                    ['Proposed',  fmtINR(totAlloc), 'text-[#8892B0]'],
-                    ['Spent',     fmtINR(totPaid),  'text-[#00CC88]'],
+                    ['Available', fmtINR(totLive),  'text-gray-800'],
+                    ['Proposed',  fmtINR(totAlloc), 'text-gray-400'],
+                    ['Spent',     fmtINR(totPaid),  'text-green-600'],
                   ].map(([lbl, val, cls]) => (
                     <div key={lbl} className="p-3 text-center">
-                      <p className="text-[#8892B0] text-[10px] font-semibold">{lbl}</p>
+                      <p className="text-gray-400 text-[10px] font-semibold">{lbl}</p>
                       <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
                     </div>
                   ))}
@@ -2001,38 +2001,38 @@ function FinanceTab() {
 
       {subtab === 'cashflow' && (
         <div className="px-4 space-y-3">
-          <p className="text-[#8892B0] text-xs">Monthly outflow from budget line items</p>
+          <p className="text-gray-400 text-xs">Monthly outflow from budget line items</p>
           {cashFlowMonths.length === 0 && (
-            <p className="text-[#8892B0] text-sm text-center py-12">No budget items with dates.</p>
+            <p className="text-gray-400 text-sm text-center py-12">No budget items with dates.</p>
           )}
           {cashFlowMonths.map(({ month, label, planned, actual }) => {
             const barPct = maxFlow > 0 ? (planned / maxFlow) * 100 : 0
             const actPct = planned > 0 ? Math.min((actual / planned) * 100, 100) : 0
             const isCurrent = month === new Date().toISOString().slice(0, 7)
             return (
-              <div key={month} className={`bg-[#16213E] border rounded-2xl p-4 space-y-2 ${isCurrent ? 'border-[#00A2FF]/40' : 'border-[#2D2B5A]'}`}>
+              <div key={month} className={`bg-white border rounded-2xl p-4 space-y-2 ${isCurrent ? 'border-blue-300' : 'border-gray-200'}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-white text-sm font-bold">{label}</span>
-                    {isCurrent && <span className="text-[10px] bg-[#00A2FF]/15 text-[#00A2FF] px-2 py-0.5 rounded-full font-bold">NOW</span>}
+                    <span className="text-gray-800 text-sm font-bold">{label}</span>
+                    {isCurrent && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">NOW</span>}
                   </div>
-                  <span className="text-white text-sm font-bold">{fmtINR(planned)}</span>
+                  <span className="text-gray-800 text-sm font-bold">{fmtINR(planned)}</span>
                 </div>
-                <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#00A2FF]/40 rounded-full" style={{ width: `${barPct}%` }} />
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-600/40 rounded-full" style={{ width: `${barPct}%` }} />
                 </div>
                 {actual > 0 ? (
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] text-[#8892B0]">
-                      <span>Actual: <span className="text-[#00CC88] font-semibold">{fmtINR(actual)}</span></span>
+                    <div className="flex justify-between text-[10px] text-gray-400">
+                      <span>Actual: <span className="text-green-600 font-semibold">{fmtINR(actual)}</span></span>
                       <span>{actPct.toFixed(0)}% of planned</span>
                     </div>
-                    <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${actPct >= 100 ? 'bg-[#FF3333]' : 'bg-[#00CC88]'}`} style={{ width: `${actPct}%` }} />
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${actPct >= 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${actPct}%` }} />
                     </div>
                   </div>
                 ) : (
-                  <p className="text-[#8892B0] text-[10px]">No actuals yet</p>
+                  <p className="text-gray-400 text-[10px]">No actuals yet</p>
                 )}
               </div>
             )
@@ -2041,16 +2041,16 @@ function FinanceTab() {
             const tp = cashFlowMonths.reduce((s, m) => s + m.planned, 0)
             const ta = cashFlowMonths.reduce((s, m) => s + m.actual, 0)
             return (
-              <div className="bg-[#1B3A2D] border border-[#2D6A4F]/40 rounded-2xl p-4">
-                <p className="text-[#74C69D] text-[10px] font-bold mb-2">PROJECT TOTAL</p>
+              <div className="bg-green-600 border border-green-200/40 rounded-2xl p-4">
+                <p className="text-gray-800 text-[10px] font-bold mb-2">PROJECT TOTAL</p>
                 <div className="flex justify-between">
                   <div>
-                    <p className="text-[#8892B0] text-[10px]">Total Planned</p>
-                    <p className="text-white font-bold text-base">{fmtINR(tp)}</p>
+                    <p className="text-gray-400 text-[10px]">Total Planned</p>
+                    <p className="text-gray-800 font-bold text-base">{fmtINR(tp)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[#8892B0] text-[10px]">Total Actual</p>
-                    <p className="text-[#00CC88] font-bold text-base">{fmtINR(ta)}</p>
+                    <p className="text-gray-400 text-[10px]">Total Actual</p>
+                    <p className="text-green-600 font-bold text-base">{fmtINR(ta)}</p>
                   </div>
                 </div>
               </div>
@@ -2183,7 +2183,7 @@ export default function TasksPage({ onLogout }) {
               <div className="relative">
                 <span className="text-xl leading-none">{n.icon}</span>
                 {n.badge>0&&(
-                  <span className="absolute -top-1 -right-2 bg-[#FF3333] text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                  <span className="absolute -top-1 -right-2 bg-red-500 text-gray-800 text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
                     {n.badge}
                   </span>
                 )}
@@ -2222,3 +2222,5 @@ export default function TasksPage({ onLogout }) {
     </div>
   )
 }
+
+
