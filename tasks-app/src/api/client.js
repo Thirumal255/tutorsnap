@@ -41,7 +41,7 @@ export const deleteTaskExpense     = (taskId, expId) => api.delete(`/admin/tasks
 // Finance
 export const getFinanceSummary     = (period)       => api.get('/finance/summary', { params: period ? { period } : {} })
 export const getFinanceAccounts    = ()             => api.get('/finance/accounts')
-export const getFinanceReceipts    = ()             => api.get('/finance/receipts')
+export const getFinanceReceipts    = (period)       => api.get('/finance/receipts', { params: period ? { period } : {} })
 export const createFinanceReceipt  = (data)         => api.post('/finance/receipts', data)
 export const deleteFinanceReceipt  = (id)           => api.delete(`/finance/receipts/${id}`)
 export const getBudgetItems        = ()             => api.get('/finance/budget-items')
@@ -55,9 +55,6 @@ export const getFinanceSources     = ()             => api.get('/finance/sources
 export const createFinanceSource   = (data)         => api.post('/finance/sources', data)
 export const updateFinanceSource   = (id, data)     => api.put(`/finance/sources/${id}`, data)
 export const deleteFinanceSource   = (id)           => api.delete(`/finance/sources/${id}`)
-export const getFinanceReceipts    = (period)       => api.get('/finance/receipts', { params: period ? { period } : {} })
-export const createFinanceReceipt  = (data)         => api.post('/finance/receipts', data)
-export const deleteFinanceReceipt  = (id)           => api.delete(`/finance/receipts/${id}`)
 export const getFinanceAllocations      = (period)              => api.get('/finance/allocations', { params: period ? { period } : {} })
 export const upsertFinanceAllocation    = (data)                => api.post('/finance/allocations', data)
 export const deleteFinanceAllocation    = (id)                  => api.delete(`/finance/allocations/${id}`)
