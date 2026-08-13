@@ -6093,7 +6093,6 @@ def delete_budget_item(item_id: int, db: Session = Depends(get_db), _: User = De
 def reset_and_seed_polyhouse(
     force: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
     x_seed_secret: Optional[str] = Header(None),
 ):
     """
