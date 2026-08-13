@@ -41,6 +41,8 @@ export const deleteTaskExpense     = (taskId, expId) => api.delete(`/admin/tasks
 // Finance
 export const getFinanceSummary     = (period)       => api.get('/finance/summary', { params: period ? { period } : {} })
 export const getFinanceAccounts    = ()             => api.get('/finance/accounts')
+export const getBudgetItems        = ()             => api.get('/finance/budget-items')
+export const updateBudgetItem      = (id, data)     => api.put(`/finance/budget-items/${id}`, data)
 export const createFinanceAccount  = (data)         => api.post('/finance/accounts', data)
 export const updateFinanceAccount  = (id, data)     => api.put(`/finance/accounts/${id}`, data)
 export const deleteFinanceAccount  = (id)           => api.delete(`/finance/accounts/${id}`)

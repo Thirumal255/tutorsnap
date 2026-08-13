@@ -11,6 +11,7 @@ import {
   getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation, unlinkFinanceAllocation,
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
   getCategoryAccounts, getAccountBreakdown,
+  getBudgetItems, updateBudgetItem,
 } from './api/client'
 
 
@@ -1147,9 +1148,167 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
 
 // ── Overview Tab ───────────────────────────────────────────────────────────────
 
+// ── Budget Tab ─────────────────────────────────────────────────────────────────
+
+function BudgetTab() {
+  const [items, setItems]       = useState([])
+  const [accounts, setAccounts] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [editId, setEditId]     = useState(null)
+  const [editVal, setEditVal]   = useState('')
+  const [saving, setSaving]     = useState(false)
+  const [filterComp, setFilterComp] = useState('all')
+
+  const load = useCallback(async () => {
+    const [b, a] = await Promise.all([getBudgetItems(), getFinanceAccounts()])
+    setItems(b.data); setAccounts(a.data); setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const components = [...new Set(items.map(i => i.component).filter(Boolean))]
+  const visible = filterComp === 'all' ? items : items.filter(i => i.component === filterComp)
+
+  const totalPlanned = visible.reduce((s, i) => s + (i.planned_amount || 0), 0)
+  const totalActual  = visible.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+
+  // group by component
+  const grouped = {}
+  visible.forEach(item => {
+    const comp = item.component || 'Other'
+    if (!grouped[comp]) grouped[comp] = []
+    grouped[comp].push(item)
+  })
+
+  async function saveActual(id) {
+    const val = parseFloat(editVal)
+    if (isNaN(val)) return setEditId(null)
+    setSaving(true)
+    try { await updateBudgetItem(id, { actual_amount: val >= 0 ? val : null }); await load() }
+    finally { setSaving(false); setEditId(null) }
+  }
+
+  const accountMap = Object.fromEntries(accounts.map(a => [a.id, a.name]))
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-40">
+      <div className="w-6 h-6 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin"/>
+    </div>
+  )
+
+  return (
+    <div className="p-4 pb-28 space-y-4">
+      {/* Totals */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          ['Planned', fmtINR(totalPlanned), 'text-white'],
+          ['Actual',  fmtINR(totalActual),  'text-[#00CC88]'],
+          ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)), totalPlanned - totalActual < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'],
+        ].map(([l, v, c]) => (
+          <div key={l} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-3 text-center">
+            <p className="text-[#8892B0] text-[10px] font-semibold">{l}</p>
+            <p className={`font-bold text-sm mt-0.5 ${c}`}>{v}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter */}
+      {components.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {['all', ...components].map(c => (
+            <button key={c} onClick={() => setFilterComp(c)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 ${
+                filterComp === c ? 'bg-[#00A2FF]/15 text-[#00A2FF]' : 'bg-[#16213E] border border-[#2D2B5A] text-[#8892B0]'
+              }`}>
+              {c === 'all' ? 'All' : c}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Per-component groups */}
+      {Object.entries(grouped).map(([comp, compItems]) => {
+        const cp = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
+        const ca = compItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+        return (
+          <div key={comp} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-[#1B3A2D]">
+              <span className="text-[#74C69D] font-bold text-xs">{comp}</span>
+              <span className="text-[#8892B0] text-xs">
+                {fmtINR(cp)} planned · <span className="text-[#00CC88]">{fmtINR(ca)}</span> actual
+              </span>
+            </div>
+            <div className="divide-y divide-[#2D2B5A]/40">
+              {compItems.map(item => {
+                const variance = (item.planned_amount || 0) - (item.actual_amount || 0)
+                const editing = editId === item.id
+                return (
+                  <div key={item.id} className="px-4 py-3 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-xs font-semibold leading-snug">{item.name}</p>
+                        <p className="text-[#8892B0] text-[10px] mt-0.5">
+                          {[item.category, item.sub_category].filter(Boolean).join(' › ')}
+                          {item.planned_date && ` · ${fmtDate(item.planned_date)}`}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0 space-y-0.5">
+                        <p className="text-white text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
+                        {editing ? (
+                          <input
+                            autoFocus
+                            type="number"
+                            value={editVal}
+                            onChange={e => setEditVal(e.target.value)}
+                            onBlur={() => saveActual(item.id)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveActual(item.id); if (e.key === 'Escape') setEditId(null) }}
+                            className="w-24 bg-[#0F0F23] border border-[#00A2FF] rounded-lg px-2 py-0.5 text-white text-xs focus:outline-none text-right"
+                            disabled={saving}
+                          />
+                        ) : (
+                          <button
+                            onClick={() => { setEditId(item.id); setEditVal(item.actual_amount != null ? String(item.actual_amount) : '') }}
+                            className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-[#00CC88] bg-[#00CC88]/10' : 'text-[#2D2B5A] bg-[#0F0F23]'}`}>
+                            {item.actual_amount != null ? fmtINR(item.actual_amount) : '+ actual'}
+                          </button>
+                        )}
+                        {item.actual_amount != null && (
+                          <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'}`}>
+                            {variance < 0 ? '▲' : '▼'} {fmtINR(Math.abs(variance))}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
+                      <p className="text-[#8892B0] text-[10px]">
+                        🏦 {item.account_name || accountMap[item.account_id]}
+                      </p>
+                    )}
+                    {item.notes && <p className="text-[#8892B0] text-[10px] italic">{item.notes}</p>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Key dates (static) ─────────────────────────────────────────────────────────
+
+const KEY_DATES = [
+  { label: 'Bank sanction',       date: '2026-08-17' },
+  { label: 'NHB approval target', date: '2026-10-15' },
+  { label: 'Construction start',  date: '2026-11-01' },
+  { label: 'Construction end',    date: '2027-02-28' },
+  { label: 'Plantation start',    date: '2027-03-01' },
+  { label: 'First harvest',       date: '2027-05-01' },
+]
+
 // ── Home Tab ───────────────────────────────────────────────────────────────────
 
-function HomeTab({ tasks, onTaskClick }) {
+function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const today = new Date(new Date().toDateString())
   const in7days = new Date(today); in7days.setDate(today.getDate()+7)
   const root = tasks.filter(t=>!t.parent_id)
@@ -1170,8 +1329,81 @@ function HomeTab({ tasks, onTaskClick }) {
   const totalOngoing   = overdueTasks.length + activeTasks.length
   const today_str      = today.toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short'})
 
+  const byStatus = summary?.by_status || {}
+  const total    = summary?.total || 0
+  const completed = byStatus.completed || 0
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0
+  const totalAvail = accounts.reduce((s, a) => s + (a.live_balance ?? a.current_balance ?? 0), 0)
+  const totalSpent = accounts.reduce((s, a) => s + (a.paid_expenses || 0), 0)
+
   return (
     <div className="p-4 pb-28 space-y-4">
+
+      {/* ── Project header card ── */}
+      <div className="bg-gradient-to-r from-[#1B3A2D] to-[#16213E] border border-[#2D6A4F]/40 rounded-2xl p-4">
+        <p className="text-[#74C69D] text-[10px] font-bold">NVPH POLYHOUSE · KURCHAPALLY</p>
+        <div className="flex items-center justify-between mt-1 mb-3">
+          <h2 className="text-white font-bold text-sm">Overall Progress</h2>
+          <span className="text-[#00CC88] font-bold text-lg">{pct}%</span>
+        </div>
+        <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden mb-1">
+          <div className="h-full bg-gradient-to-r from-[#2D6A4F] to-[#00CC88] rounded-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-[#8892B0] text-[10px]">{completed} of {total} tasks completed</p>
+      </div>
+
+      {/* ── KPI chips ── */}
+      <div className="grid grid-cols-4 gap-2">
+        {[
+          ['✅', 'Done',    completed,                   'text-[#00CC88]'],
+          ['🔄', 'Active',  byStatus.in_progress || 0,   'text-[#00A2FF]'],
+          ['⚠️', 'Delayed', byStatus.on_hold || 0,       'text-[#FFB347]'],
+          ['⏳', 'Pending', byStatus.not_started || 0,   'text-[#8892B0]'],
+        ].map(([icon, label, val, cls]) => (
+          <div key={label} className="bg-[#16213E] border border-[#2D2B5A] rounded-xl p-2 text-center">
+            <span className="text-base">{icon}</span>
+            <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
+            <p className="text-[#8892B0] text-[9px] font-semibold">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Budget snapshot ── */}
+      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+        <div className="px-4 py-2 bg-[#1B3A2D]">
+          <p className="text-[#74C69D] text-[10px] font-bold">💰 BUDGET SNAPSHOT</p>
+        </div>
+        <div className="grid grid-cols-2 divide-x divide-[#2D2B5A]">
+          <div className="p-3 text-center">
+            <p className="text-[#8892B0] text-[10px]">Funds Available</p>
+            <p className="text-white font-bold text-sm mt-0.5">{fmtINR(totalAvail)}</p>
+          </div>
+          <div className="p-3 text-center">
+            <p className="text-[#8892B0] text-[10px]">Spent</p>
+            <p className="text-[#00CC88] font-bold text-sm mt-0.5">{fmtINR(totalSpent)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Key Dates ── */}
+      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+        <div className="px-4 py-2 bg-[#1B3A2D]">
+          <p className="text-[#74C69D] text-[10px] font-bold">📅 KEY DATES</p>
+        </div>
+        <div className="divide-y divide-[#2D2B5A]/50">
+          {KEY_DATES.map(({ label, date }) => {
+            const isPast = new Date(date) < new Date()
+            return (
+              <div key={label} className="flex items-center justify-between px-4 py-2.5">
+                <span className="text-white text-xs">{label}</span>
+                <span className={`text-xs font-semibold ${isPast ? 'text-[#8892B0]' : 'text-[#00A2FF]'}`}>
+                  {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
 
       {/* ── Summary strip ── */}
       <div className="flex items-center justify-between">
@@ -2762,11 +2994,12 @@ function FinanceTab() {
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function TasksPage({ onLogout }) {
-  const [tasks, setTasks] = useState([])
-  const [summary, setSummary] = useState({})
+  const [tasks, setTasks]       = useState([])
+  const [summary, setSummary]   = useState({})
+  const [accounts, setAccounts] = useState([])
   const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('home')
+  const [loading, setLoading]   = useState(true)
+  const [tab, setTab]           = useState('home')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterCat, setFilterCat] = useState('all')
   const [quickTask, setQuickTask] = useState(null)   // quick action sheet
@@ -2787,8 +3020,8 @@ export default function TasksPage({ onLogout }) {
 
   const load = useCallback(async () => {
     try {
-      const [t,s,c] = await Promise.all([getAdminTasks(),getAdminTasksSummary(),getAdminTaskCategories()])
-      setTasks(t.data); setSummary(s.data); setCategories(c.data)
+      const [t,s,c,a] = await Promise.all([getAdminTasks(),getAdminTasksSummary(),getAdminTaskCategories(),getFinanceAccounts()])
+      setTasks(t.data); setSummary(s.data); setCategories(c.data); setAccounts(a.data)
       // Setup notifications after load
       if (Notification?.permission==='granted') setupNotifications(t.data)
     } finally { setLoading(false) }
@@ -2797,8 +3030,8 @@ export default function TasksPage({ onLogout }) {
   useEffect(()=>{ load() },[load])
 
   async function refresh() {
-    const [t,s,c] = await Promise.all([getAdminTasks(),getAdminTasksSummary(),getAdminTaskCategories()])
-    setTasks(t.data); setSummary(s.data); setCategories(c.data)
+    const [t,s,c,a] = await Promise.all([getAdminTasks(),getAdminTasksSummary(),getAdminTaskCategories(),getFinanceAccounts()])
+    setTasks(t.data); setSummary(s.data); setCategories(c.data); setAccounts(a.data)
     if (selectedTask) {
       const updated = t.data.find(x=>x.id===selectedTask.id)
       if (updated) setSelectedTask(updated)
@@ -2826,8 +3059,9 @@ export default function TasksPage({ onLogout }) {
   const overdueCount = tasks.filter(t=>!t.parent_id&&isOverdue(t)).length
 
   const NAV = [
-    {key:'home',    icon:'🏠', label:'Home', badge: overdueCount},
+    {key:'home',    icon:'🏠', label:'Home',   badge: overdueCount},
     {key:'tasks',   icon:'📋', label:'Tasks'},
+    {key:'budget',  icon:'📒', label:'Budget'},
     {key:'finance', icon:'💰', label:'Finance'},
   ]
 
@@ -2861,7 +3095,8 @@ export default function TasksPage({ onLogout }) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {tab==='home'&&<HomeTab tasks={tasks} onTaskClick={openQuick}/>}
+        {tab==='home'&&<HomeTab tasks={tasks} summary={summary} accounts={accounts} onTaskClick={openQuick}/>}
+        {tab==='budget'&&<BudgetTab/>}
         {tab==='tasks'&&<TasksTab tasks={tasks} categories={categories} onTaskClick={openQuick}
           onStatusChange={handleStatusChange}
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
