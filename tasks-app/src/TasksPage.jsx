@@ -274,7 +274,9 @@ function TaskCard({ task, onClick, onStatusChange }) {
   return (
     <>
       <div {...longPress}
-        className={`bg-white border border-gray-200 border-l-4 ${PRI_BORDER[task.priority]||'border-l-gray-300'} rounded-2xl overflow-hidden select-none ${overdue?'border-red-500/30':''}`}>
+        className={`border border-l-4 ${PRI_BORDER[task.priority]||'border-l-gray-300'} rounded-2xl overflow-hidden select-none ${
+          isDone ? 'bg-green-50 border-green-200' : overdue ? 'bg-white border-red-200' : 'bg-white border-gray-200'
+        }`}>
 
         {/* ── Collapsed header (always visible) ── */}
         <div className="flex items-center gap-2.5 p-3 cursor-pointer active:scale-[0.99] transition-all"
@@ -297,7 +299,7 @@ function TaskCard({ task, onClick, onStatusChange }) {
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {overdue&&<span className="text-red-600 text-xs font-bold">{Math.abs(days)}d late</span>}
             {!overdue&&days!=null&&days<=3&&<span className="text-amber-500 text-xs font-semibold">{days}d left</span>}
-            <span className="text-gray-400 text-[10px]">{isOpen?'▲':'▼'}</span>
+            <span className="text-gray-500 text-[10px]">{isOpen?'▲':'▼'}</span>
           </div>
         </div>
 
@@ -311,7 +313,7 @@ function TaskCard({ task, onClick, onStatusChange }) {
 
             {/* Category + status */}
             <div className="flex items-center gap-2 flex-wrap pt-1">
-              <span className="text-gray-400 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">{task.category}</span>
+              <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">{task.category}</span>
               <StatusBadge status={task.status}/>
             </div>
 
@@ -820,7 +822,7 @@ function SubtasksSection({ task, subtasks, onRefresh }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-gray-400 text-xs font-semibold">
+        <p className="text-gray-500 text-xs font-semibold">
           Sub-tasks {subtasks.length>0&&`(${done}/${subtasks.length} done)`}
         </p>
         <button onClick={()=>{setAdding(a=>!a);setEditingId(null)}}
@@ -995,7 +997,7 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
 
         {task.notes&&(
           <div className="bg-gray-100 rounded-2xl p-4">
-            <p className="text-gray-400 text-xs font-semibold mb-1">Notes</p>
+            <p className="text-gray-500 text-xs font-semibold mb-1">Notes</p>
             <p className="text-gray-800 text-sm leading-relaxed">{task.notes}</p>
           </div>
         )}
@@ -1008,7 +1010,7 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
           const deps = task.dependency_ids.map(id=>allTasks.find(t=>t.id===id)).filter(Boolean)
           return deps.length>0 ? (
             <div>
-              <p className="text-gray-400 text-xs font-semibold mb-2">🔗 Depends On ({deps.length})</p>
+              <p className="text-gray-500 text-xs font-semibold mb-2">🔗 Depends On ({deps.length})</p>
               <div className="space-y-2">
                 {deps.map(dep=>(
                   <div key={dep.id} className="flex items-center gap-3 bg-gray-100 rounded-xl px-3 py-2.5">
@@ -1049,7 +1051,7 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
             )
           })()}
 
-          <p className="text-gray-400 text-xs font-semibold mb-2">Expenses</p>
+          <p className="text-gray-500 text-xs font-semibold mb-2">Expenses</p>
           {task.expenses?.length>0 ? (
             <div className="space-y-2">
               {task.expenses.map(e=>(
@@ -1318,13 +1320,13 @@ function BudgetTab() {
         <div className="flex items-center gap-2">
           <div className="flex-1 grid grid-cols-3 gap-2">
             {[
-              ['Planned', fmtINR(totalPlanned), 'text-gray-800'],
-              ['Actual',  fmtINR(totalActual),  'text-green-600'],
+              ['Planned', fmtINR(totalPlanned), 'text-gray-900'],
+              ['Actual',  fmtINR(totalActual),  'text-green-700'],
               ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)), totalPlanned - totalActual < 0 ? 'text-red-600' : 'text-blue-600'],
             ].map(([l, v, c]) => (
               <div key={l} className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
-                <p className="text-gray-400 text-[10px] font-semibold">{l}</p>
-                <p className={`font-bold text-sm mt-0.5 ${c}`}>{v}</p>
+                <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">{l}</p>
+                <p className={`font-bold text-base mt-0.5 tabular-nums ${c}`}>{v}</p>
               </div>
             ))}
           </div>
@@ -1364,7 +1366,7 @@ function BudgetTab() {
           const ca = compItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
           return (
             <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 bg-green-600">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-green-700">
                 <span className="text-white font-bold text-xs">{comp}</span>
                 <span className="text-green-100 text-xs">
                   {fmtINR(cp)} planned · <span className="text-white font-semibold">{fmtINR(ca)}</span> actual
@@ -1378,14 +1380,14 @@ function BudgetTab() {
                     <div key={item.id} className="px-4 py-3 space-y-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
-                          <p className="text-gray-400 text-[10px] mt-0.5">
+                          <p className="text-white text-xs font-semibold leading-snug">{item.name}</p>
+                          <p className="text-gray-500 text-[10px] mt-0.5">
                             {[item.category, item.sub_category].filter(Boolean).join(' › ')}
                             {item.planned_date && ` · ${fmtDate(item.planned_date)}`}
                           </p>
                         </div>
                         <div className="text-right flex-shrink-0 space-y-0.5">
-                          <p className="text-gray-800 text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
+                          <p className="text-white text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
                           {editing ? (
                             <input
                               autoFocus
@@ -1394,7 +1396,7 @@ function BudgetTab() {
                               onChange={e => setEditVal(e.target.value)}
                               onBlur={() => saveActual(item.id)}
                               onKeyDown={e => { if (e.key === 'Enter') saveActual(item.id); if (e.key === 'Escape') setEditId(null) }}
-                              className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
+                              className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-white text-xs focus:outline-none text-right"
                               disabled={saving}
                             />
                           ) : (
@@ -1419,11 +1421,11 @@ function BudgetTab() {
                         </div>
                       </div>
                       {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
-                        <p className="text-gray-400 text-[10px]">
+                        <p className="text-gray-500 text-[10px]">
                           🏦 {item.account_name || accountMap[item.account_id]}
                         </p>
                       )}
-                      {item.notes && <p className="text-gray-400 text-[10px] italic">{item.notes}</p>}
+                      {item.notes && <p className="text-gray-500 text-[10px] italic">{item.notes}</p>}
                     </div>
                   )
                 })}
@@ -1491,9 +1493,9 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
 
       {/* ── Key Dates (TOP) ── */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <div className="px-4 py-2.5 bg-green-600 flex items-center gap-2">
-          <span className="text-gray-800 text-sm">📅</span>
-          <p className="text-gray-800 text-xs font-bold tracking-wide">KEY DATES</p>
+        <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
+          <span className="text-white text-sm">📅</span>
+          <p className="text-white text-xs font-bold tracking-wide">KEY DATES</p>
         </div>
         <div className="divide-y divide-gray-100">
           {KEY_DATES.map(({ label, date }) => {
@@ -1503,7 +1505,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
               <div key={label} className={`flex items-center justify-between px-4 py-2.5 ${isNext ? 'bg-blue-50' : ''}`}>
                 <div className="flex items-center gap-2">
                   {isNext && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"/>}
-                  <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
+                  <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-white'}`}>{label}</span>
                 </div>
                 <span className={`text-xs font-bold ${isPast ? 'text-gray-400' : isNext ? 'text-blue-600' : 'text-gray-600'}`}>
                   {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -1519,53 +1521,53 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
         <div className="flex items-center justify-between mb-1">
           <div>
             <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">NVPH Polyhouse · Kurchapally</p>
-            <p className="text-gray-800 font-bold text-sm mt-0.5">Overall Progress</p>
+            <p className="text-gray-900 font-bold text-base mt-0.5">Overall Progress</p>
           </div>
-          <span className="text-green-600 font-bold text-2xl">{pct}%</span>
+          <span className="text-green-700 font-extrabold text-3xl font-variant-numeric tabular-nums">{pct}%</span>
         </div>
         <div className="h-3 bg-gray-100 rounded-full overflow-hidden mt-2 mb-1">
-          <div className="h-full bg-gradient-to-r from-green-500 to-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+          <div className="h-full bg-gradient-to-r from-green-700 to-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
         </div>
-        <p className="text-gray-400 text-[10px]">{completed} of {total} tasks completed</p>
+        <p className="text-gray-500 text-xs">{completed} of {total} tasks completed</p>
       </div>
 
       {/* ── KPI chips ── */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          ['✅', 'Done',    completed,                 'text-green-600',  'bg-green-50  border-green-200'],
+          ['✅', 'Done',    completed,                 'text-green-700',  'bg-green-50  border-green-200'],
           ['🔄', 'Active',  byStatus.in_progress || 0, 'text-blue-600',   'bg-blue-50   border-blue-200'],
-          ['⚠️', 'Delayed', byStatus.on_hold || 0,     'text-amber-600',  'bg-amber-50  border-amber-200'],
-          ['⏳', 'Pending', byStatus.not_started || 0, 'text-gray-500',   'bg-gray-50   border-gray-200'],
+          ['⚠️', 'On Hold', byStatus.on_hold || 0,     'text-amber-700',  'bg-amber-50  border-amber-200'],
+          ['⏳', 'Pending', byStatus.not_started || 0, 'text-gray-600',   'bg-gray-100  border-gray-200'],
         ].map(([icon, label, val, cls, bg]) => (
           <div key={label} className={`${bg} border rounded-xl p-2 text-center shadow-sm`}>
             <span className="text-base">{icon}</span>
-            <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
-            <p className="text-gray-400 text-[9px] font-semibold">{label}</p>
+            <p className={`font-extrabold text-lg mt-0.5 tabular-nums ${cls}`}>{val}</p>
+            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">{label}</p>
           </div>
         ))}
       </div>
 
       {/* ── Budget snapshot ── */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <div className="px-4 py-2.5 bg-green-600 flex items-center gap-2">
-          <span className="text-gray-800 text-sm">💰</span>
-          <p className="text-gray-800 text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
+        <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
+          <span className="text-white text-sm">💰</span>
+          <p className="text-white text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
         </div>
         <div className="grid grid-cols-2 divide-x divide-gray-100">
           <div className="p-3 text-center">
-            <p className="text-gray-400 text-[10px] font-semibold">Funds Available</p>
-            <p className="text-gray-800 font-bold text-sm mt-0.5">{fmtINR(totalAvail)}</p>
+            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Funds Available</p>
+            <p className="text-gray-900 font-bold text-base mt-0.5">{fmtINR(totalAvail)}</p>
           </div>
           <div className="p-3 text-center">
-            <p className="text-gray-400 text-[10px] font-semibold">Spent</p>
-            <p className="text-green-600 font-bold text-sm mt-0.5">{fmtINR(totalSpent)}</p>
+            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Spent</p>
+            <p className="text-green-700 font-bold text-base mt-0.5">{fmtINR(totalSpent)}</p>
           </div>
         </div>
       </div>
 
       {/* ── Summary strip ── */}
       <div className="flex items-center justify-between">
-        <p className="text-gray-400 text-xs font-semibold">{today_str}</p>
+        <p className="text-gray-500 text-xs font-semibold">{today_str}</p>
         <div className="flex items-center gap-2">
           {totalOngoing>0&&(
             <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">
@@ -1585,7 +1587,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
         <button className="w-full flex items-center justify-between px-4 py-3"
           onClick={()=>setFocusOpen(o=>!o)}>
           <div className="flex items-center gap-2">
-            <h2 className="text-gray-800 font-bold text-sm">Today's Focus</h2>
+            <h2 className="text-white font-bold text-sm">Today's Focus</h2>
             {totalOngoing>0&&(
               <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing}</span>
             )}
@@ -1613,7 +1615,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                       className="border-l-4 border-l-red-500 bg-red-50 border border-red-100 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2 mt-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 font-semibold text-sm leading-snug">{t.title}</p>
+                          <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
                           {t.notes&&<p className="text-gray-400 text-xs mt-0.5 truncate">{t.notes}</p>}
                         </div>
                         <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
@@ -1631,7 +1633,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                 {overdueTasks.length>0&&activeTasks.length>0&&(
                   <div className="flex items-center gap-2 py-1">
                     <div className="flex-1 h-px bg-gray-100"/>
-                    <span className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">In Progress</span>
+                    <span className="text-gray-500 text-[10px] font-semibold uppercase tracking-wider">In Progress</span>
                     <div className="flex-1 h-px bg-gray-100"/>
                   </div>
                 )}
@@ -1794,7 +1796,7 @@ function CalendarView({ tasks, onTaskClick }) {
       {/* Selected day task list */}
       {selDay&&(
         <div className="px-4 mt-4 space-y-2">
-          <p className="text-gray-400 text-xs font-semibold">{selTasks.length} task{selTasks.length!==1?'s':''} due {selDay} {monthLabel}</p>
+          <p className="text-gray-500 text-xs font-semibold">{selTasks.length} task{selTasks.length!==1?'s':''} due {selDay} {monthLabel}</p>
           {selTasks.length===0
             ? <p className="text-gray-400 text-xs italic">No tasks due this day</p>
             : selTasks.map(t=>(
@@ -2179,7 +2181,7 @@ function FinanceTab() {
             return (
               <div key={a.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
                 {/* Account header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-green-600">
+                <div className="flex items-center justify-between px-4 py-3 bg-green-700">
                   <div>
                     <p className="text-white text-[10px] font-bold uppercase">Account</p>
                     <p className="text-white font-bold text-base">{a.name}</p>
@@ -2192,14 +2194,14 @@ function FinanceTab() {
                 {/* KPI grid */}
                 <div className="grid grid-cols-2 divide-x divide-y divide-gray-200">
                   {[
-                    ['Funds Available', fmtINR(live),               'text-gray-800'],
+                    ['Funds Available', fmtINR(live),               'text-gray-900'],
                     ['Proposed Expense',fmtINR(proposed),           'text-gray-500'],
-                    ['Spent',           fmtINR(spent),               'text-green-600'],
+                    ['Spent',           fmtINR(spent),               'text-green-700'],
                     [remaining < 0 ? 'Shortfall' : 'Surplus', fmtINR(Math.abs(remaining)), remaining < 0 ? 'text-red-600' : 'text-blue-600'],
                   ].map(([lbl, val, cls]) => (
                     <div key={lbl} className="p-3 text-center">
-                      <p className="text-gray-400 text-[10px] font-semibold">{lbl}</p>
-                      <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
+                      <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">{lbl}</p>
+                      <p className={`font-bold text-base mt-0.5 tabular-nums ${cls}`}>{val}</p>
                     </div>
                   ))}
                 </div>
@@ -2247,8 +2249,8 @@ function FinanceTab() {
                         acctReceipts.map(r => (
                           <div key={r.id} className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-xl px-3 py-2.5">
                             <div className="flex-1 min-w-0">
-                              <p className="text-gray-800 text-xs font-semibold">{fmtINR(r.amount)}</p>
-                              <p className="text-gray-400 text-[10px] truncate">
+                              <p className="text-white text-xs font-semibold">{fmtINR(r.amount)}</p>
+                              <p className="text-gray-500 text-[10px] truncate">
                                 {r.description || '—'} · {fmtShort(r.received_date)}
                               </p>
                             </div>
@@ -2269,18 +2271,18 @@ function FinanceTab() {
             const totPaid  = accounts.reduce((s, a) => s + budgetItems.filter(i => i.account_id === a.id).reduce((t, i) => t + (i.actual_amount  || 0), 0), 0)
             return (
               <div className="bg-white border border-green-100 rounded-2xl overflow-hidden">
-                <div className="px-4 py-2 bg-green-600">
-                  <p className="text-gray-800 text-[10px] font-bold">TOTAL — ALL ACCOUNTS</p>
+                <div className="px-4 py-2 bg-green-700">
+                  <p className="text-white text-[10px] font-bold">TOTAL — ALL ACCOUNTS</p>
                 </div>
                 <div className="grid grid-cols-3 divide-x divide-gray-200">
                   {[
-                    ['Available', fmtINR(totLive),  'text-gray-800'],
-                    ['Proposed',  fmtINR(totAlloc), 'text-gray-400'],
-                    ['Spent',     fmtINR(totPaid),  'text-green-600'],
+                    ['Available', fmtINR(totLive),  'text-gray-900'],
+                    ['Proposed',  fmtINR(totAlloc), 'text-gray-500'],
+                    ['Spent',     fmtINR(totPaid),  'text-green-700'],
                   ].map(([lbl, val, cls]) => (
                     <div key={lbl} className="p-3 text-center">
-                      <p className="text-gray-400 text-[10px] font-semibold">{lbl}</p>
-                      <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
+                      <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">{lbl}</p>
+                      <p className={`font-bold text-base mt-0.5 tabular-nums ${cls}`}>{val}</p>
                     </div>
                   ))}
                 </div>
@@ -2328,7 +2330,7 @@ function FinanceTab() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-gray-400 text-[10px]">No actuals yet</p>
+                  <p className="text-gray-500 text-[10px]">No actuals yet</p>
                 )}
               </div>
             )
@@ -2341,11 +2343,11 @@ function FinanceTab() {
                 <p className="text-gray-800 text-[10px] font-bold mb-2">PROJECT TOTAL</p>
                 <div className="flex justify-between">
                   <div>
-                    <p className="text-gray-400 text-[10px]">Total Planned</p>
+                    <p className="text-gray-500 text-[10px]">Total Planned</p>
                     <p className="text-gray-800 font-bold text-base">{fmtINR(tp)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-gray-400 text-[10px]">Total Actual</p>
+                    <p className="text-gray-500 text-[10px]">Total Actual</p>
                     <p className="text-green-600 font-bold text-base">{fmtINR(ta)}</p>
                   </div>
                 </div>
@@ -2418,7 +2420,7 @@ export default function TasksPage({ onLogout }) {
   function openFull(task)  { setQuickTask(null); setSelectedTask(task) }
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="min-h-screen bg-[#F2F5F2] flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin"/>
     </div>
   )
@@ -2433,7 +2435,7 @@ export default function TasksPage({ onLogout }) {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col max-w-2xl mx-auto relative">
+    <div className="min-h-screen bg-[#F2F5F2] flex flex-col max-w-2xl mx-auto relative">
       {confetti&&<Confetti onDone={()=>setConfetti(false)}/>}
 
       {/* Header */}
@@ -2519,5 +2521,7 @@ export default function TasksPage({ onLogout }) {
     </div>
   )
 }
+
+
 
 
