@@ -11,7 +11,7 @@ import {
   getFinanceAllocations, upsertFinanceAllocation, deleteFinanceAllocation, unlinkFinanceAllocation,
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
   getCategoryAccounts, getAccountBreakdown,
-  getBudgetItems, updateBudgetItem,
+  getBudgetItems, createBudgetItem, updateBudgetItem, deleteBudgetItem,
 } from './api/client'
 
 
@@ -636,7 +636,7 @@ function SetBudgetForm({ task, allTasks, onSave, onClose }) {
 
 // ── Quick Action Sheet ─────────────────────────────────────────────────────────
 
-function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) {
+function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail, onEdit }) {
   const [action, setAction] = useState(null) // 'status'|'expense'|'deps'|'subtasks'
   const [selDeps, setSelDeps] = useState(task.dependency_ids||[])
   const overdue = isOverdue(task)
@@ -759,11 +759,16 @@ function QuickActionSheet({ task, allTasks, onClose, onRefresh, onFullDetail }) 
         ))}
       </div>
 
-      <button onClick={onFullDetail}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-gray-400 hover:text-gray-800 transition-colors">
-        <span className="text-sm">View full details</span>
-        <span>→</span>
-      </button>
+      <div className="flex gap-2">
+        <button onClick={onEdit}
+          className="flex-1 flex items-center justify-center gap-2 border border-gray-200 rounded-2xl py-3 text-gray-800 font-semibold text-sm bg-gray-50 active:scale-95 transition-all">
+          ✏️ Edit Task
+        </button>
+        <button onClick={onFullDetail}
+          className="flex-1 flex items-center justify-center gap-2 border border-gray-200 rounded-2xl py-3 text-gray-400 font-semibold text-sm bg-white active:scale-95 transition-all">
+          Details →
+        </button>
+      </div>
     </div>
   )
 }
@@ -1148,6 +1153,105 @@ function TaskDetail({ task, allTasks, onEdit, onRefresh, onClose }) {
 
 // ── Overview Tab ───────────────────────────────────────────────────────────────
 
+// ── Budget Item Form ───────────────────────────────────────────────────────────
+
+function BudgetItemForm({ item, accounts, onSave, onClose }) {
+  const isEdit = !!item?.id
+  const inp = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-400"
+  const lbl = "block text-xs text-gray-400 font-semibold mb-1.5"
+  const [form, setForm] = useState({
+    name:           item?.name           || '',
+    component:      item?.component      || '',
+    category:       item?.category       || '',
+    sub_category:   item?.sub_category   || '',
+    planned_amount: item?.planned_amount != null ? String(item.planned_amount) : '',
+    actual_amount:  item?.actual_amount  != null ? String(item.actual_amount)  : '',
+    account_id:     item?.account_id     != null ? String(item.account_id)     : '',
+    planned_date:   item?.planned_date   || '',
+    notes:          item?.notes          || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState('')
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  async function handleSave() {
+    if (!form.name.trim()) return setError('Name is required')
+    setSaving(true); setError('')
+    const payload = {
+      name:           form.name.trim(),
+      component:      form.component.trim()    || null,
+      category:       form.category.trim()     || null,
+      sub_category:   form.sub_category.trim() || null,
+      planned_amount: form.planned_amount !== '' ? (parseFloat(form.planned_amount) || 0) : null,
+      actual_amount:  form.actual_amount  !== '' ? (parseFloat(form.actual_amount)  || 0) : null,
+      account_id:     form.account_id ? parseInt(form.account_id) : null,
+      planned_date:   form.planned_date || null,
+      notes:          form.notes.trim() || null,
+    }
+    try {
+      if (isEdit) await updateBudgetItem(item.id, payload)
+      else        await createBudgetItem(payload)
+      await onSave(); onClose()
+    } catch(e) { setError(e.response?.data?.detail || 'Save failed') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="p-5 space-y-4">
+      <div>
+        <label className={lbl}>Name *</label>
+        <input value={form.name} onChange={e=>set('name',e.target.value)} className={inp} placeholder="Budget item name" autoFocus/>
+      </div>
+      <div>
+        <label className={lbl}>Component / Group</label>
+        <input value={form.component} onChange={e=>set('component',e.target.value)} className={inp} placeholder="e.g. Civil Work, Equipment, NHB Subsidy"/>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={lbl}>Category</label>
+          <input value={form.category} onChange={e=>set('category',e.target.value)} className={inp} placeholder="Category"/>
+        </div>
+        <div>
+          <label className={lbl}>Sub Category</label>
+          <input value={form.sub_category} onChange={e=>set('sub_category',e.target.value)} className={inp} placeholder="Sub category"/>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={lbl}>Planned Amount (₹)</label>
+          <input type="number" value={form.planned_amount} onChange={e=>set('planned_amount',e.target.value)} className={inp} placeholder="0" min="0"/>
+        </div>
+        <div>
+          <label className={lbl}>Actual Amount (₹)</label>
+          <input type="number" value={form.actual_amount} onChange={e=>set('actual_amount',e.target.value)} className={inp} placeholder="0" min="0"/>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={lbl}>Planned Date</label>
+          <input type="date" value={form.planned_date} onChange={e=>set('planned_date',e.target.value)} className={inp}/>
+        </div>
+        <div>
+          <label className={lbl}>Account</label>
+          <select value={form.account_id} onChange={e=>set('account_id',e.target.value)} className={inp}>
+            <option value="">— None —</option>
+            {accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className={lbl}>Notes</label>
+        <textarea value={form.notes} onChange={e=>set('notes',e.target.value)} className={`${inp} resize-none`} rows={2} placeholder="Optional notes"/>
+      </div>
+      {error && <p className="text-red-600 text-xs bg-red-50 rounded-xl p-3">{error}</p>}
+      <button onClick={handleSave} disabled={saving}
+        className="w-full bg-green-600 text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 active:scale-[0.98] transition-all">
+        {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Budget Item'}
+      </button>
+    </div>
+  )
+}
+
 // ── Budget Tab ─────────────────────────────────────────────────────────────────
 
 function BudgetTab() {
@@ -1158,6 +1262,8 @@ function BudgetTab() {
   const [editVal, setEditVal]   = useState('')
   const [saving, setSaving]     = useState(false)
   const [filterComp, setFilterComp] = useState('all')
+  const [showForm, setShowForm] = useState(false)
+  const [formItem, setFormItem] = useState(null) // null = add, object = edit
 
   const load = useCallback(async () => {
     const [b, a] = await Promise.all([getBudgetItems(), getFinanceAccounts()])
@@ -1187,6 +1293,15 @@ function BudgetTab() {
     finally { setSaving(false); setEditId(null) }
   }
 
+  async function handleDelete(item) {
+    if (!confirm(`Delete "${item.name}"?`)) return
+    try { await deleteBudgetItem(item.id); await load() }
+    catch(e) { alert(e.response?.data?.detail || 'Delete failed') }
+  }
+
+  function openEdit(item) { setFormItem(item); setEditId(null); setShowForm(true) }
+  function openAdd()      { setFormItem(null); setShowForm(true) }
+
   const accountMap = Object.fromEntries(accounts.map(a => [a.id, a.name]))
 
   if (loading) return (
@@ -1196,102 +1311,136 @@ function BudgetTab() {
   )
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      {/* Totals */}
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          ['Planned', fmtINR(totalPlanned), 'text-gray-800'],
-          ['Actual',  fmtINR(totalActual),  'text-green-600'],
-          ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)), totalPlanned - totalActual < 0 ? 'text-red-600' : 'text-blue-600'],
-        ].map(([l, v, c]) => (
-          <div key={l} className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
-            <p className="text-gray-400 text-[10px] font-semibold">{l}</p>
-            <p className={`font-bold text-sm mt-0.5 ${c}`}>{v}</p>
+    <>
+      <div className="p-4 pb-28 space-y-4">
+        {/* Totals + Add button */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 grid grid-cols-3 gap-2">
+            {[
+              ['Planned', fmtINR(totalPlanned), 'text-gray-800'],
+              ['Actual',  fmtINR(totalActual),  'text-green-600'],
+              ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)), totalPlanned - totalActual < 0 ? 'text-red-600' : 'text-blue-600'],
+            ].map(([l, v, c]) => (
+              <div key={l} className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
+                <p className="text-gray-400 text-[10px] font-semibold">{l}</p>
+                <p className={`font-bold text-sm mt-0.5 ${c}`}>{v}</p>
+              </div>
+            ))}
           </div>
-        ))}
+          <button onClick={openAdd}
+            className="bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex-shrink-0 h-fit">
+            + Add
+          </button>
+        </div>
+
+        {/* Filter */}
+        {components.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            {['all', ...components].map(c => (
+              <button key={c} onClick={() => setFilterComp(c)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 ${
+                  filterComp === c ? 'bg-blue-100 text-blue-600' : 'bg-white border border-gray-200 text-gray-400'
+                }`}>
+                {c === 'all' ? 'All' : c}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {items.length === 0 && (
+          <div className="text-center py-16">
+            <p className="text-4xl mb-3">📒</p>
+            <p className="text-gray-400 text-sm mb-4">No budget items yet</p>
+            <button onClick={openAdd} className="bg-green-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl">
+              + Add First Item
+            </button>
+          </div>
+        )}
+
+        {/* Per-component groups */}
+        {Object.entries(grouped).map(([comp, compItems]) => {
+          const cp = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
+          const ca = compItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+          return (
+            <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-green-600">
+                <span className="text-white font-bold text-xs">{comp}</span>
+                <span className="text-green-100 text-xs">
+                  {fmtINR(cp)} planned · <span className="text-white font-semibold">{fmtINR(ca)}</span> actual
+                </span>
+              </div>
+              <div className="divide-y divide-gray-200/40">
+                {compItems.map(item => {
+                  const variance = (item.planned_amount || 0) - (item.actual_amount || 0)
+                  const editing = editId === item.id
+                  return (
+                    <div key={item.id} className="px-4 py-3 space-y-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
+                          <p className="text-gray-400 text-[10px] mt-0.5">
+                            {[item.category, item.sub_category].filter(Boolean).join(' › ')}
+                            {item.planned_date && ` · ${fmtDate(item.planned_date)}`}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0 space-y-0.5">
+                          <p className="text-gray-800 text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
+                          {editing ? (
+                            <input
+                              autoFocus
+                              type="number"
+                              value={editVal}
+                              onChange={e => setEditVal(e.target.value)}
+                              onBlur={() => saveActual(item.id)}
+                              onKeyDown={e => { if (e.key === 'Enter') saveActual(item.id); if (e.key === 'Escape') setEditId(null) }}
+                              className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
+                              disabled={saving}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => { setEditId(item.id); setEditVal(item.actual_amount != null ? String(item.actual_amount) : '') }}
+                              className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-green-600 bg-green-50' : 'text-gray-400 bg-gray-100'}`}>
+                              {item.actual_amount != null ? fmtINR(item.actual_amount) : '+ actual'}
+                            </button>
+                          )}
+                          {item.actual_amount != null && (
+                            <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                              {variance < 0 ? '▲' : '▼'} {fmtINR(Math.abs(variance))}
+                            </p>
+                          )}
+                        </div>
+                        {/* Edit / Delete icons */}
+                        <div className="flex flex-col gap-1 flex-shrink-0 ml-1">
+                          <button onClick={() => openEdit(item)}
+                            className="text-gray-300 hover:text-blue-600 text-xs leading-none px-1">✏️</button>
+                          <button onClick={() => handleDelete(item)}
+                            className="text-gray-300 hover:text-red-500 text-base leading-none px-1">×</button>
+                        </div>
+                      </div>
+                      {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
+                        <p className="text-gray-400 text-[10px]">
+                          🏦 {item.account_name || accountMap[item.account_id]}
+                        </p>
+                      )}
+                      {item.notes && <p className="text-gray-400 text-[10px] italic">{item.notes}</p>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Filter */}
-      {components.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-          {['all', ...components].map(c => (
-            <button key={c} onClick={() => setFilterComp(c)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 ${
-                filterComp === c ? 'bg-blue-100 text-blue-600' : 'bg-white border border-gray-200 text-gray-400'
-              }`}>
-              {c === 'all' ? 'All' : c}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Per-component groups */}
-      {Object.entries(grouped).map(([comp, compItems]) => {
-        const cp = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-        const ca = compItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
-        return (
-          <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 bg-green-600">
-              <span className="text-gray-800 font-bold text-xs">{comp}</span>
-              <span className="text-gray-400 text-xs">
-                {fmtINR(cp)} planned · <span className="text-green-600">{fmtINR(ca)}</span> actual
-              </span>
-            </div>
-            <div className="divide-y divide-gray-200/40">
-              {compItems.map(item => {
-                const variance = (item.planned_amount || 0) - (item.actual_amount || 0)
-                const editing = editId === item.id
-                return (
-                  <div key={item.id} className="px-4 py-3 space-y-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
-                        <p className="text-gray-400 text-[10px] mt-0.5">
-                          {[item.category, item.sub_category].filter(Boolean).join(' › ')}
-                          {item.planned_date && ` · ${fmtDate(item.planned_date)}`}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0 space-y-0.5">
-                        <p className="text-gray-800 text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
-                        {editing ? (
-                          <input
-                            autoFocus
-                            type="number"
-                            value={editVal}
-                            onChange={e => setEditVal(e.target.value)}
-                            onBlur={() => saveActual(item.id)}
-                            onKeyDown={e => { if (e.key === 'Enter') saveActual(item.id); if (e.key === 'Escape') setEditId(null) }}
-                            className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
-                            disabled={saving}
-                          />
-                        ) : (
-                          <button
-                            onClick={() => { setEditId(item.id); setEditVal(item.actual_amount != null ? String(item.actual_amount) : '') }}
-                            className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-green-600 bg-green-50' : 'text-[#2D2B5A] bg-gray-100'}`}>
-                            {item.actual_amount != null ? fmtINR(item.actual_amount) : '+ actual'}
-                          </button>
-                        )}
-                        {item.actual_amount != null && (
-                          <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                            {variance < 0 ? '▲' : '▼'} {fmtINR(Math.abs(variance))}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
-                      <p className="text-gray-400 text-[10px]">
-                        🏦 {item.account_name || accountMap[item.account_id]}
-                      </p>
-                    )}
-                    {item.notes && <p className="text-gray-400 text-[10px] italic">{item.notes}</p>}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
-    </div>
+      <BottomSheet show={showForm} onClose={()=>setShowForm(false)} title={formItem ? 'Edit Budget Item' : 'Add Budget Item'}>
+        <BudgetItemForm
+          item={formItem}
+          accounts={accounts}
+          onSave={load}
+          onClose={()=>setShowForm(false)}
+        />
+      </BottomSheet>
+    </>
   )
 }
 
@@ -2149,7 +2298,7 @@ export default function TasksPage({ onLogout }) {
         <div className="flex items-center gap-1.5">
           {(tab==='tasks'||tab==='home') && (
             <button onClick={()=>setShowCreate(true)} className="bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-xl">
-              + New
+              + New Task
             </button>
           )}
           <button onClick={requestNotifications} title={notifGranted?'Notifications on':'Enable notifications'}
@@ -2200,7 +2349,8 @@ export default function TasksPage({ onLogout }) {
           task={quickTask} allTasks={tasks}
           onClose={()=>setQuickTask(null)}
           onRefresh={refresh}
-          onFullDetail={()=>openFull(quickTask)}/>}
+          onFullDetail={()=>openFull(quickTask)}
+          onEdit={()=>{setEditTask(quickTask);setQuickTask(null)}}/>}
       </BottomSheet>
 
       {/* Task Detail */}
