@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
@@ -1858,1133 +1858,199 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
   )
 }
 
-// ── Finance Tab ────────────────────────────────────────────────────────────────
+// ── Finance Tab (Project Financials) ──────────────────────────────────────────
 
-const ACCOUNT_ICONS = { bank: '🏦', cash: '💵', credit: '💳' }
-const SOURCE_ICONS  = { salary: '💼', rent: '🏠', freelance: '🖥️', other: '💰' }
-
-function AccountForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState({
-    name: initial?.name||'',
-    type: initial?.type||'bank',
-    opening_balance: initial?.opening_balance ?? initial?.current_balance ?? 0,
-  })
-  const [reconcileVal, setReconcileVal] = useState('')
-  const [useReconcile, setUseReconcile] = useState(false)
-  const [breakdown, setBreakdown] = useState(null)
-  const [saving, setSaving] = useState(false)
-
-  useEffect(()=>{
-    if (initial?.id) {
-      getAccountBreakdown(initial.id).then(r=>setBreakdown(r.data)).catch(()=>{})
-    }
-  }, [initial?.id])
-
-  async function submit(e) {
-    e.preventDefault(); setSaving(true)
-    try {
-      const payload = { name: f.name, type: f.type, opening_balance: parseFloat(f.opening_balance)||0 }
-      if (useReconcile && reconcileVal !== '') payload.reconcile_to = parseFloat(reconcileVal)
-      await onSave(payload)
-    } finally { setSaving(false) }
-  }
-
-  const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
-  return (
-    <form onSubmit={submit} className="space-y-3 p-1">
-      <input required className={inp} placeholder="Account name" value={f.name} onChange={e=>setF(x=>({...x,name:e.target.value}))}/>
-      <select className={inp} value={f.type} onChange={e=>setF(x=>({...x,type:e.target.value}))}>
-        <option value="bank">Bank</option>
-        <option value="cash">Cash</option>
-        <option value="credit">Credit</option>
-      </select>
-
-      {/* Balance breakdown (edit mode only) */}
-      {breakdown&&(
-        <div className="bg-[#0F0F23] rounded-xl p-3 space-y-1 text-xs">
-          <p className="text-[#8892B0] font-semibold mb-1.5">How balance is calculated:</p>
-          {[
-            ['Opening balance', breakdown.opening_balance, 'text-white'],
-            ['+ Receipts in',   breakdown.receipts_in,    'text-[#00CC88]'],
-            ['+ Transfers in',  breakdown.transfers_in,   'text-[#00A2FF]'],
-            ['− Transfers out', breakdown.transfers_out,  'text-[#FFB347]'],
-            ['− Paid expenses', breakdown.paid_expenses,  'text-[#FF3333]'],
-          ].map(([label, val, color])=>(
-            <div key={label} className="flex justify-between">
-              <span className="text-[#8892B0]">{label}</span>
-              <span className={color}>{fmtINR(val)}</span>
-            </div>
-          ))}
-          <div className="flex justify-between border-t border-[#2D2B5A] pt-1 mt-1">
-            <span className="text-white font-semibold">= Live balance</span>
-            <span className="text-[#00A2FF] font-bold">{fmtINR(breakdown.live_balance)}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Reconcile toggle */}
-      {initial?.id&&(
-        <div className="space-y-2">
-          <button type="button" onClick={()=>setUseReconcile(v=>!v)}
-            className={`w-full py-2 rounded-xl text-xs font-semibold border transition-all ${
-              useReconcile?'bg-[#FFB347]/10 border-[#FFB347] text-[#FFB347]':'border-[#2D2B5A] text-[#8892B0]'}`}>
-            {useReconcile ? '✓ Set current real balance (reconcile)' : 'My balance is wrong — set actual balance'}
-          </button>
-          {useReconcile&&(
-            <div>
-              <label className="text-[#8892B0] text-xs mb-1 block">
-                Enter actual balance right now — opening balance will be back-calculated automatically
-              </label>
-              <input type="number" step="0.001" className={inp} placeholder="e.g. 74000"
-                value={reconcileVal} onChange={e=>setReconcileVal(e.target.value)} autoFocus/>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!initial?.id&&(
-        <div>
-          <label className="text-[#8892B0] text-xs mb-1 block">Opening Balance (balance when you start tracking this account)</label>
-          <input required type="number" step="0.001" className={inp} placeholder="Opening balance"
-            value={f.opening_balance} onChange={e=>setF(x=>({...x,opening_balance:e.target.value}))}/>
-        </div>
-      )}
-
-      <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
-        <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00A2FF] text-white text-sm font-semibold">
-          {saving?'Saving…':'Save'}
-        </button>
-      </div>
-    </form>
-  )
-}
-
-function TransferForm({ accounts, onSave, onClose }) {
-  const today = new Date().toISOString().split('T')[0]
-  const [f, setF] = useState({ from_account_id: '', to_account_id: '', amount: '', description: '', transfer_date: today })
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState(null)
-  async function submit(e) {
-    e.preventDefault()
-    if (f.from_account_id === f.to_account_id) { setErr('Cannot transfer to the same account'); return }
-    setSaving(true); setErr(null)
-    try { await onSave({ ...f, from_account_id: parseInt(f.from_account_id), to_account_id: parseInt(f.to_account_id), amount: parseFloat(f.amount) }) }
-    catch(e) { setErr(e?.response?.data?.detail || 'Transfer failed') }
-    finally { setSaving(false) }
-  }
-  const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
-  return (
-    <form onSubmit={submit} className="space-y-3 p-1">
-      {err && <p className="text-[#FF3333] text-xs">{err}</p>}
-      <select required className={inp} value={f.from_account_id} onChange={e=>setF(x=>({...x,from_account_id:e.target.value}))}>
-        <option value="">From account</option>
-        {accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({fmtINR(a.current_balance)})</option>)}
-      </select>
-      <select required className={inp} value={f.to_account_id} onChange={e=>setF(x=>({...x,to_account_id:e.target.value}))}>
-        <option value="">To account</option>
-        {accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({fmtINR(a.current_balance)})</option>)}
-      </select>
-      <input required type="number" step="0.01" min="0.01" className={inp} placeholder="Amount"
-        value={f.amount} onChange={e=>setF(x=>({...x,amount:e.target.value}))}/>
-      <input className={inp} placeholder="Note (optional)" value={f.description}
-        onChange={e=>setF(x=>({...x,description:e.target.value}))}/>
-      <input required type="date" className={inp} value={f.transfer_date}
-        onChange={e=>setF(x=>({...x,transfer_date:e.target.value}))}/>
-      <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
-        <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00A2FF] text-white text-sm font-semibold">
-          {saving ? 'Transferring…' : 'Transfer'}
-        </button>
-      </div>
-    </form>
-  )
-}
-
-function ReceiptForm({ sources, accounts, period, onSave, onClose }) {
-  const today = new Date().toISOString().split('T')[0]
-  const [f, setF] = useState({ source_id: '', account_id: '', amount: '', description: '', received_date: today })
-  const [saving, setSaving] = useState(false)
-  async function submit(e) {
-    e.preventDefault(); setSaving(true)
-    try { await onSave({ ...f, source_id: f.source_id||null, account_id: f.account_id||null, amount: parseFloat(f.amount) }) }
-    finally { setSaving(false) }
-  }
-  const inp = 'w-full bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-3 py-2 text-white text-sm'
-  return (
-    <form onSubmit={submit} className="space-y-3 p-1">
-      <select className={inp} value={f.source_id} onChange={e=>setF(x=>({...x,source_id:e.target.value}))}>
-        <option value="">-- Source (optional) --</option>
-        {sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-      </select>
-      <select className={inp} value={f.account_id} onChange={e=>setF(x=>({...x,account_id:e.target.value}))}>
-        <option value="">-- Account (optional) --</option>
-        {accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
-      </select>
-      <input required type="number" step="0.01" className={inp} placeholder="Amount" value={f.amount}
-        onChange={e=>setF(x=>({...x,amount:e.target.value}))}/>
-      <input className={inp} placeholder="Description (optional)" value={f.description}
-        onChange={e=>setF(x=>({...x,description:e.target.value}))}/>
-      <input required type="date" className={inp} value={f.received_date}
-        onChange={e=>setF(x=>({...x,received_date:e.target.value}))}/>
-      <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-sm">Cancel</button>
-        <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-[#00CC88] text-white text-sm font-semibold">
-          {saving?'Saving…':'Add'}
-        </button>
-      </div>
-    </form>
-  )
-}
 
 function FinanceTab() {
-  const now = new Date()
-  const curPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
-  const [period, setPeriod] = useState(curPeriod)
-  const [summary, setSummary] = useState(null)
-  const [sources, setSources] = useState([])
-  const [receipts, setReceipts] = useState([])
-  const [transfers, setTransfers] = useState([])
-  const [taskCats, setTaskCats] = useState([])   // all task categories for assignment
+  const [accounts, setAccounts] = useState([])
+  const [budgetItems, setBudgetItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [section, setSection] = useState('overview')  // overview | accounts | income | breakdown
-  const [showAccountForm, setShowAccountForm] = useState(false)
-  const [editAccount, setEditAccount] = useState(null)
-  const [showReceiptForm, setShowReceiptForm] = useState(false)
-  const [showTransferForm, setShowTransferForm] = useState(false)
-  const [expandedAccount, setExpandedAccount] = useState(null)  // account id being managed
-  const [expandedBalanceAcc, setExpandedBalanceAcc] = useState(null) // overview left drill-down
-  const [expandedPeriodCat, setExpandedPeriodCat] = useState(null)   // overview right drill-down
-  const [expandedByCat, setExpandedByCat] = useState(null)           // by-category drill-down
-  const [editAllocAmount, setEditAllocAmount] = useState({})   // `${acctId}_${cat}` -> draft amount
-  const [assignDraft, setAssignDraft] = useState({})  // {accountId_category: amount}
+  const [subtab, setSubtab] = useState('accounts')
 
-  async function load() {
-    setLoading(true); setError(null)
-    try {
-      const [s, sr, rc, tr, tc] = await Promise.all([
-        getFinanceSummary(period),
-        getFinanceSources(),
-        getFinanceReceipts(period),
-        getFinanceTransfers(),
-        getAdminTaskCategories(),
-      ])
-      setSummary(s.data); setSources(sr.data); setReceipts(rc.data)
-      setTransfers(tr.data); setTaskCats(tc.data || [])
-    } catch(e) {
-      setError(e?.response?.data?.detail || e?.message || 'Failed to load finance data')
-    } finally { setLoading(false) }
-  }
-
-  useEffect(()=>{ load() }, [period])
-
-  async function saveAccount(data) {
-    if (editAccount) { await updateFinanceAccount(editAccount.id, data) }
-    else { await createFinanceAccount(data) }
-    setShowAccountForm(false); setEditAccount(null); await load()
-  }
-
-  async function removeAccount(id) {
-    if (!window.confirm('Delete this account?')) return
-    await deleteFinanceAccount(id); await load()
-  }
-
-  async function addReceipt(data) {
-    await createFinanceReceipt(data); setShowReceiptForm(false); await load()
-  }
-
-  async function removeReceipt(id) {
-    await deleteFinanceReceipt(id); await load()
-  }
+  const load = useCallback(async () => {
+    const [a, b] = await Promise.all([getFinanceAccounts(), getBudgetItems()])
+    setAccounts(a.data); setBudgetItems(b.data); setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
 
   if (loading) return (
-    <div className="flex items-center justify-center py-20">
+    <div className="flex items-center justify-center h-40">
       <div className="w-6 h-6 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin"/>
     </div>
   )
-  if (error) return (
-    <div className="p-6 text-center space-y-3">
-      <p className="text-[#FF3333] text-sm">{error}</p>
-      <button onClick={load} className="text-[#00A2FF] text-sm underline">Retry</button>
-    </div>
-  )
 
-  const { total_balance, total_bank, total_cash, total_income, total_expenses, net, accounts, category_breakdown } = summary
-
-  // Period nav
-  function shiftPeriod(delta) {
-    const [y,m] = period.split('-').map(Number)
-    const d = new Date(y, m-1+delta, 1)
-    setPeriod(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`)
-  }
-  const periodLabel = new Date(period+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'})
-
-  function exportPDF() {
-    // ₹ is not supported by jsPDF built-in fonts — use Rs. instead
-    const r = v => fmtINR(v).replace('₹','Rs.')
-
-    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' })
-    const pw   = doc.internal.pageSize.getWidth()
-    const ml = 12, mr = 12          // left / right margin
-    const cw = pw - ml - mr         // usable content width
-
-    // Palette matching the UI
-    const BG_CARD  = [22, 33, 62]   // #16213E
-    const BG_DARK  = [15, 15, 35]   // #0F0F23
-    const BLUE     = [0, 162, 255]  // #00A2FF
-    const GREEN    = [0, 204, 136]  // #00CC88
-    const RED      = [255, 51, 51]  // #FF3333
-    const PURPLE   = [167,139,250]  // #A78BFA
-    const GREY     = [136,146,176]  // #8892B0
-    const WHITE    = [255,255,255]
-    const TEXT     = [220,225,240]  // light body text
-
-    const HEAD_STYLE = { fillColor:BG_DARK, textColor:BLUE, fontStyle:'bold', fontSize:7.5, cellPadding:3 }
-    const FOOT_STYLE = { fillColor:BG_DARK, textColor:WHITE, fontStyle:'bold', fontSize:7.5, cellPadding:3 }
-    const BODY_STYLE = { fillColor:BG_CARD, textColor:TEXT, fontSize:8, cellPadding:3 }
-
-    let y = 0
-
-    // ── Header banner ──────────────────────────────────────────────
-    doc.setFillColor(...BG_DARK)
-    doc.rect(0, 0, pw, 26, 'F')
-    // accent line
-    doc.setFillColor(...BLUE)
-    doc.rect(0, 26, pw, 1, 'F')
-    doc.setTextColor(...WHITE)
-    doc.setFontSize(15); doc.setFont('helvetica','bold')
-    doc.text('Finance Report', ml, 12)
-    doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(...GREY)
-    doc.text(periodLabel, ml, 20)
-    doc.text(`Generated ${new Date().toLocaleDateString('en-IN')}`, pw-mr, 20, {align:'right'})
-    y = 32
-
-    // ══════════════════════════════════════════════════════════════
-    // SECTION 1 — OVERVIEW
-    // ══════════════════════════════════════════════════════════════
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...BLUE)
-    doc.text('1. Overview', ml, y); y += 6
-
-    // ── 1a. Account Balances ──────────────────────────────────────
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREY)
-    doc.text('Account Balances', ml, y); y += 3
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Account', 'Balance', 'Allocated', 'Free / Over']],
-      body: accounts.map(a=>([
-        a.name,
-        r(a.current_balance),
-        r(a.total_allocated||0),
-        a.overallocated ? `Over ${r(Math.abs(a.free_balance||0))}` : r(a.free_balance||0),
-      ])),
-      foot: [['Total', r(total_balance), '', '']],
-      theme: 'grid',
-      headStyles: { ...HEAD_STYLE },
-      footStyles: { ...FOOT_STYLE },
-      bodyStyles: { ...BODY_STYLE },
-      alternateRowStyles: { fillColor:[18,27,52] },
-      columnStyles: {
-        0: { cellWidth: 60 },
-        1: { halign:'right', cellWidth: 38 },
-        2: { halign:'right', cellWidth: 38 },
-        3: { halign:'right', cellWidth: 50 },
-      },
-      didParseCell(d) {
-        // force right-align on numeric columns for ALL sections (head/foot override fix)
-        if ([1,2,3].includes(d.column.index)) d.cell.styles.halign = 'right'
-        if (d.section==='body' && d.column.index===1) d.cell.styles.textColor = BLUE
-        if (d.section==='body' && d.column.index===3)
-          d.cell.styles.textColor = d.cell.raw.startsWith('Over') ? RED : GREEN
-        if (d.section==='foot' && d.column.index===1) d.cell.styles.textColor = BLUE
-      },
-      margin: { left:ml, right:mr },
+  const cashFlowMonths = (() => {
+    const map = {}
+    budgetItems.forEach(item => {
+      if (!item.planned_date) return
+      const m = item.planned_date.slice(0, 7)
+      if (!map[m]) map[m] = { planned: 0, actual: 0 }
+      map[m].planned += item.planned_amount || 0
+      map[m].actual  += item.actual_amount  || 0
     })
-    y = doc.lastAutoTable.finalY + 7
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).map(([month, v]) => ({
+      month,
+      label: new Date(month + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
+      planned: v.planned,
+      actual:  v.actual,
+    }))
+  })()
 
-    // ── 1b. Period Breakdown ──────────────────────────────────────
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREY)
-    doc.text(`Period Breakdown  -  ${periodLabel}`, ml, y); y += 3
+  const maxFlow = Math.max(...cashFlowMonths.map(m => m.planned), 1)
 
-    const periodCats = summary.period_categories || []
-    const paidTotal  = summary.total_expenses || 0
-    const pendTotal  = summary.total_planned_period || 0
-    const periodDef  = summary.total_period_deficit || 0
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Category', 'Paid', 'Pending', 'Deficit']],
-      body: periodCats.map(c=>([
-        c.category,
-        c.paid    > 0 ? r(c.paid)    : '-',
-        c.planned > 0 ? r(c.planned) : '-',
-        c.deficit > 0 ? r(c.deficit) : '-',
-      ])),
-      foot: [['Total', r(paidTotal), r(pendTotal), periodDef>0 ? r(periodDef) : '-']],
-      theme: 'grid',
-      headStyles: { ...HEAD_STYLE },
-      footStyles: { ...FOOT_STYLE },
-      bodyStyles: { ...BODY_STYLE },
-      alternateRowStyles: { fillColor:[18,27,52] },
-      columnStyles: {
-        0: { cellWidth: 60 },
-        1: { halign:'right', cellWidth: 38 },
-        2: { halign:'right', cellWidth: 38 },
-        3: { halign:'right', cellWidth: 50 },
-      },
-      didParseCell(d) {
-        if ([1,2,3].includes(d.column.index)) d.cell.styles.halign = 'right'
-        if (d.column.index===1 && !['Paid','-'].includes(d.cell.raw))
-          d.cell.styles.textColor = GREEN
-        if (d.column.index===2 && !['Pending','-'].includes(d.cell.raw))
-          d.cell.styles.textColor = PURPLE
-        if (d.column.index===3 && !['Deficit','-'].includes(d.cell.raw))
-          d.cell.styles.textColor = RED
-      },
-      margin: { left:ml, right:mr },
-    })
-    y = doc.lastAutoTable.finalY + 7
-
-    // ── 1c. Total Commitments ─────────────────────────────────────
-    const totalBudget  = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
-    const totalPaid    = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
-    const totalPending = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
-    const shortfall    = summary.overall_shortfall || 0
-
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREY)
-    doc.text('Total Commitments', ml, y); y += 3
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Total Budget', 'Paid', 'Pending', 'Shortfall']],
-      body: [[
-        r(totalBudget),
-        r(totalPaid),
-        r(totalPending),
-        shortfall > 0 ? `${r(shortfall)} short` : 'Funded',
-      ]],
-      theme: 'grid',
-      headStyles: { ...HEAD_STYLE },
-      bodyStyles: { ...BODY_STYLE, fontSize:9, fontStyle:'bold' },
-      columnStyles: {
-        0: { halign:'right', cellWidth: 50 },
-        1: { halign:'right', cellWidth: 38 },
-        2: { halign:'right', cellWidth: 38 },
-        3: { halign:'right', cellWidth: 60 },
-      },
-      didParseCell(d) {
-        if ([0,1,2,3].includes(d.column.index)) d.cell.styles.halign = 'right'
-        if (d.section!=='body') return
-        if (d.column.index===1) d.cell.styles.textColor = GREEN
-        if (d.column.index===2) d.cell.styles.textColor = PURPLE
-        if (d.column.index===3) d.cell.styles.textColor = shortfall>0 ? RED : GREEN
-      },
-      margin: { left:ml, right:mr },
-    })
-    y = doc.lastAutoTable.finalY + 12
-
-    // ══════════════════════════════════════════════════════════════
-    // SECTION 2 — BY CATEGORY
-    // ══════════════════════════════════════════════════════════════
-    if (y > 210) { doc.addPage(); y = 16 }
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...BLUE)
-    doc.text('2. By Category', ml, y); y += 6
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Category', 'Available', 'Budget', 'Paid', 'Pending', 'Deficit', 'Funded by']],
-      body: category_breakdown.map(c=>{
-        const deficit = Math.max(0,(c.pending||0)-(c.amount_available||0))
-        const funded  = deficit===0 && (c.pending||0)>0
-        return [
-          c.category,
-          r(c.amount_available||0),
-          r(c.budget_required||0),
-          r(c.spent||0),
-          (c.pending||0)>0 ? r(c.pending) : '-',
-          deficit>0 ? r(deficit) : (funded ? 'Funded' : '-'),
-          (c.account_links||[]).map(l=>l.account_name).join(', ') || '-',
-        ]
-      }),
-      theme: 'grid',
-      headStyles: { ...HEAD_STYLE, fontSize:7 },
-      bodyStyles: { ...BODY_STYLE, fontSize:7.5 },
-      alternateRowStyles: { fillColor:[18,27,52] },
-      columnStyles: {
-        0: { cellWidth: 28 },
-        1: { halign:'right', cellWidth: 24 },
-        2: { halign:'right', cellWidth: 24 },
-        3: { halign:'right', cellWidth: 22 },
-        4: { halign:'right', cellWidth: 22 },
-        5: { halign:'right', cellWidth: 22 },
-        6: { cellWidth: 44 },
-      },
-      didParseCell(d) {
-        if ([1,2,3,4,5].includes(d.column.index)) d.cell.styles.halign = 'right'
-        if (d.section!=='body') return
-        if (d.column.index===1) d.cell.styles.textColor = BLUE
-        if (d.column.index===3) d.cell.styles.textColor = GREEN
-        if (d.column.index===4 && d.cell.raw!=='-') d.cell.styles.textColor = PURPLE
-        if (d.column.index===5 && d.cell.raw!=='-' && d.cell.raw!=='Funded')
-          d.cell.styles.textColor = RED
-        if (d.column.index===5 && d.cell.raw==='Funded')
-          d.cell.styles.textColor = GREEN
-        if (d.column.index===6) d.cell.styles.textColor = GREY
-      },
-      margin: { left:ml, right:mr },
-    })
-
-    // ── Page footer ────────────────────────────────────────────────
-    const pages = doc.internal.getNumberOfPages()
-    for (let i=1; i<=pages; i++) {
-      doc.setPage(i)
-      doc.setFillColor(...BG_DARK)
-      doc.rect(0, doc.internal.pageSize.getHeight()-10, pw, 10, 'F')
-      doc.setFontSize(7); doc.setTextColor(...GREY)
-      doc.text(
-        `TutorSnap Finance  |  ${periodLabel}  |  Page ${i} of ${pages}`,
-        pw/2, doc.internal.pageSize.getHeight()-4, {align:'center'}
-      )
-    }
-
-    doc.save(`finance-${period}.pdf`)
-  }
-
-  const SECTIONS = [
-    { key:'overview', label:'Overview' },
-    { key:'accounts', label:'Accounts' },
-    { key:'income',   label:'Income' },
-    { key:'breakdown',label:'By Category' },
+  const SUBTABS = [
+    { key: 'accounts', label: 'Accounts' },
+    { key: 'cashflow', label: 'Cash Flow' },
   ]
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      {/* Period picker + export */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center justify-between flex-1 bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3">
-          <button onClick={()=>shiftPeriod(-1)} className="text-[#8892B0] text-lg px-1">‹</button>
-          <p className="text-white font-semibold text-sm">{periodLabel}</p>
-          <button onClick={()=>shiftPeriod(1)} className={`text-lg px-1 ${period>=curPeriod?'text-[#2D2B5A]':'text-[#8892B0]'}`}
-            disabled={period>=curPeriod}>›</button>
-        </div>
-        <button onClick={exportPDF}
-          className="flex-shrink-0 flex items-center gap-1.5 bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-3 py-3 text-[#00A2FF] text-xs font-semibold hover:border-[#00A2FF]/40 transition-all">
-          <span>📄</span> PDF
-        </button>
-      </div>
-
-      {/* Section tabs */}
-      <div className="flex gap-1 bg-[#16213E] border border-[#2D2B5A] rounded-2xl p-1">
-        {SECTIONS.map(s=>(
-          <button key={s.key} onClick={()=>setSection(s.key)}
-            className={`flex-1 text-xs py-1.5 rounded-xl font-semibold transition-all ${section===s.key?'bg-[#00A2FF] text-white':'text-[#8892B0]'}`}>
+    <div className="pb-28">
+      <div className="px-4 pt-4 pb-3 flex gap-2">
+        {SUBTABS.map(s => (
+          <button key={s.key} onClick={() => setSubtab(s.key)}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
+              subtab === s.key ? 'bg-[#00A2FF]/15 text-[#00A2FF]' : 'bg-[#16213E] border border-[#2D2B5A] text-[#8892B0]'
+            }`}>
             {s.label}
           </button>
         ))}
       </div>
 
-      {/* OVERVIEW */}
-      {section==='overview'&&(()=>{
-        const totalBudget   = category_breakdown.reduce((s,c)=>s+(c.budget_required||0),0)
-        const totalPaid     = category_breakdown.reduce((s,c)=>s+(c.spent||0),0)
-        const totalPending  = category_breakdown.reduce((s,c)=>s+(c.pending||0),0)
-        const overallShortfall = summary.overall_shortfall || 0
-        const hasShortfall     = overallShortfall > 0
-        const paidThisPeriod    = summary.total_expenses || 0
-        const plannedThisPeriod = summary.total_planned_period || 0
-        const budgetThisPeriod  = paidThisPeriod + plannedThisPeriod
-        const periodCats        = summary.period_categories || []
-        const totalPeriodDeficit = summary.total_period_deficit || 0
-
-        return (
-          <div className="space-y-3">
-
-            {/* ── Split card: Account Balances (left) | Period (right) ── */}
-            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-              <div className="grid grid-cols-2 divide-x divide-[#2D2B5A]">
-
-                {/* LEFT — Account Balances (fully collapsed; tap total to reveal list) */}
-                <div className="p-3">
-                  {/* Always-visible header — tap to expand/collapse entire list */}
-                  <button className="w-full text-left" onClick={()=>setExpandedBalanceAcc(expandedBalanceAcc==='all'?null:'all')}>
-                    <div className="flex items-center justify-between">
-                      <p className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">Balances</p>
-                      <span className="text-[#8892B0] text-[10px]">{expandedBalanceAcc==='all'?'▲':'▼'}</span>
-                    </div>
-                    <p className="text-white font-fredoka font-bold text-lg leading-tight mt-0.5">{fmtINR(total_balance)}</p>
-                  </button>
-
-                  {/* Expandable account list */}
-                  {expandedBalanceAcc==='all'&&(
-                    <div className="mt-2.5 space-y-1">
-                      {accounts.map(a=>{
-                        const over = a.overallocated
-                        const isOpen = expandedBalanceAcc === a.id  // individual row expand (future use)
-                        return (
-                          <div key={a.id} className="rounded-lg bg-[#0F0F23] px-2 py-1.5">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-sm flex-shrink-0">{ACCOUNT_ICONS[a.type]||'💳'}</span>
-                                <p className="text-white text-xs font-semibold truncate">{a.name}</p>
-                              </div>
-                              <p className="text-[#00A2FF] text-xs font-bold ml-1 flex-shrink-0">{fmtINR(a.current_balance)}</p>
-                            </div>
-                            {(a.total_allocated||0)>0&&(
-                              <div className="flex justify-between text-[10px] mt-0.5 pl-6">
-                                <span className={over?'text-[#FF3333]':'text-[#8892B0]'}>{over?'⚠ Over':'Free'}</span>
-                                <span className={over?'text-[#FF3333] font-bold':'text-[#00CC88]'}>{fmtINR(Math.abs(a.free_balance||0))}</span>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* RIGHT — Period breakdown */}
-                <div className="p-3 space-y-2.5">
-                  <div>
-                    <p className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">{periodLabel}</p>
-                    {budgetThisPeriod===0
-                      ? <p className="text-[#8892B0] text-xs mt-1">No activity</p>
-                      : <p className="text-white font-fredoka font-bold text-lg leading-tight">{fmtINR(budgetThisPeriod)}</p>
-                    }
-                  </div>
-
-                  {budgetThisPeriod>0&&(
-                    <>
-                      {/* Totals summary */}
-                      <div className={`rounded-xl p-2 space-y-1 ${totalPeriodDeficit>0?'bg-[#FF3333]/8 border border-[#FF3333]/20':'bg-[#0F0F23]'}`}>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-[#8892B0]">Budget</span>
-                          <span className="text-white font-semibold">{fmtINR(budgetThisPeriod)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-[#8892B0]">✅ Paid</span>
-                          <span className="text-[#00CC88] font-semibold">{paidThisPeriod>0?fmtINR(paidThisPeriod):'—'}</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-[#8892B0]">🕐 Pending</span>
-                          <span className="text-[#A78BFA] font-semibold">{plannedThisPeriod>0?fmtINR(plannedThisPeriod):'—'}</span>
-                        </div>
-                        {totalPeriodDeficit>0&&(
-                          <div className="flex justify-between text-xs border-t border-[#FF3333]/30 pt-1 mt-1">
-                            <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
-                            <span className="text-[#FF3333] font-bold">{fmtINR(totalPeriodDeficit)}</span>
-                          </div>
-                        )}
-                        {budgetThisPeriod>0&&(
-                          <div className="h-1.5 bg-[#2D2B5A] rounded-full overflow-hidden flex mt-1">
-                            <div className="h-full bg-[#00CC88]" style={{width:`${paidThisPeriod/budgetThisPeriod*100}%`}}/>
-                            <div className="h-full bg-[#A78BFA]" style={{width:`${plannedThisPeriod/budgetThisPeriod*100}%`}}/>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Per-category drill-down */}
-                      <div className="space-y-1">
-                        {periodCats.map(c=>{
-                          const budget = c.paid + c.planned
-                          const isOpen = expandedPeriodCat === c.category
-                          return (
-                            <div key={c.category} className={`rounded-lg overflow-hidden ${c.deficit>0?'bg-[#FF3333]/5':isOpen?'bg-[#0F0F23]':''}`}>
-                              <button className="w-full flex items-center justify-between py-1 px-1.5 text-left"
-                                onClick={()=>setExpandedPeriodCat(isOpen?null:c.category)}>
-                                <p className="text-white text-xs font-semibold truncate flex-1">{c.category}</p>
-                                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                                  {c.deficit>0&&<span className="text-[#FF3333] text-[10px] font-bold">⚠</span>}
-                                  <span className="text-white text-xs font-semibold">{fmtINR(budget)}</span>
-                                  <span className="text-[#8892B0] text-[10px]">{isOpen?'▲':'▼'}</span>
-                                </div>
-                              </button>
-                              {isOpen&&(
-                                <div className="px-1.5 pb-1.5 space-y-0.5">
-                                  {c.paid>0&&<div className="flex justify-between text-xs">
-                                    <span className="text-[#8892B0]">✅ Paid</span>
-                                    <span className="text-[#00CC88]">{fmtINR(c.paid)}</span>
-                                  </div>}
-                                  {c.planned>0&&<div className="flex justify-between text-xs">
-                                    <span className="text-[#8892B0]">🕐 Pending</span>
-                                    <span className="text-[#A78BFA]">{fmtINR(c.planned)}</span>
-                                  </div>}
-                                  {c.deficit>0&&<div className="flex justify-between text-xs border-t border-[#FF3333]/30 pt-0.5 mt-0.5">
-                                    <span className="text-[#FF3333] font-semibold">⚠ Deficit</span>
-                                    <span className="text-[#FF3333] font-bold">{fmtINR(c.deficit)}</span>
-                                  </div>}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-              </div>
-            </div>
-
-            {/* ── Commitments ─────────────────────────────────── */}
-            {totalBudget>0&&(
-              <div className={`bg-[#16213E] rounded-2xl p-4 space-y-3 border ${hasShortfall?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
-                <p className="text-[#8892B0] text-xs font-semibold uppercase tracking-wider">Total Commitments</p>
-
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-[#8892B0] text-xs">Total Budget Required</p>
-                    <p className="text-white font-fredoka font-bold text-2xl mt-0.5">{fmtINR(totalBudget)}</p>
-                  </div>
-                  {hasShortfall ? (
-                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-[#FF3333]/15 text-[#FF3333]">
-                      ⚠ {fmtINR(overallShortfall)} short
-                    </span>
-                  ) : totalPending>0 ? (
-                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-[#00CC88]/10 text-[#00CC88]">
-                      ✓ Funded
-                    </span>
-                  ) : null}
-                </div>
-
-                {/* Progress bar: paid vs pending */}
-                <div className="space-y-1.5">
-                  <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden flex">
-                    <div className="h-full bg-[#00CC88] rounded-l-full transition-all"
-                      style={{width:`${totalBudget>0?Math.min(totalPaid/totalBudget*100,100):0}%`}}/>
-                    <div className="h-full bg-[#A78BFA] transition-all"
-                      style={{width:`${totalBudget>0?Math.min(totalPending/totalBudget*100,100):0}%`}}/>
-                  </div>
-                  <div className="flex gap-3 text-xs">
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#00CC88] inline-block"/>Paid {fmtINR(totalPaid)}</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#A78BFA] inline-block"/>Pending {fmtINR(totalPending)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {category_breakdown.length===0&&totalBudget===0&&(
-              <div className="text-center py-10 space-y-2">
-                <p className="text-3xl">📊</p>
-                <p className="text-[#8892B0] text-sm">No data yet</p>
-                <p className="text-[#8892B0] text-xs">Add accounts, assign categories, and log expenses to see your overview</p>
-              </div>
-            )}
-
-          </div>
-        )
-      })()}
-
-      {/* ACCOUNTS */}
-      {section==='accounts'&&(
-        <div className="space-y-3">
-          {accounts.map(a=>{
-            // categories that have THIS account in their account_links
-            const linked = category_breakdown.filter(c=>
-              (c.account_links||[]).some(l=>l.account_id===a.id)
-            )
-            const totalAllocated = a.total_allocated || linked.reduce((s,c)=>{
-              const link = (c.account_links||[]).find(l=>l.account_id===a.id)
-              return s + (link?.allocated || 0)
-            }, 0)
-            const totalSpent     = linked.reduce((s,c)=>s+(c.spent||0),0)
-            const free = a.free_balance ?? (a.current_balance - totalAllocated)
-            const overAllocated  = a.overallocated || free < 0
-            const isExpanded = expandedAccount===a.id
-            // categories NOT yet linked to THIS account (can still be linked to others)
-            const unlinked = taskCats.filter(cat=>
-              !linked.some(c=>c.category===cat)
-            )
-
+      {subtab === 'accounts' && (
+        <div className="px-4 space-y-4">
+          {accounts.length === 0 && (
+            <p className="text-[#8892B0] text-sm text-center py-12">No accounts found.</p>
+          )}
+          {accounts.map(a => {
+            const live      = a.live_balance != null ? a.live_balance : (a.current_balance || 0)
+            const proposed  = a.allocated_amount || 0
+            const spent     = a.paid_expenses || 0
+            const remaining = live - spent
+            const sufficient = remaining >= 0
+            const spentPct  = proposed > 0 ? Math.min((spent / proposed) * 100, 100) : 0
             return (
-              <div key={a.id} className={`bg-[#16213E] rounded-2xl overflow-hidden border ${overAllocated?'border-[#FF3333]/50':'border-[#2D2B5A]'}`}>
-                {/* Account header row */}
-                <button className="w-full px-4 py-3 flex items-center justify-between"
-                  onClick={()=>setExpandedAccount(isExpanded?null:a.id)}>
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{ACCOUNT_ICONS[a.type]||'💳'}</span>
-                    <div className="text-left">
-                      <p className="text-white font-semibold text-sm">{a.name}</p>
-                      <p className="text-[#8892B0] text-xs capitalize">{a.type}
-                        {linked.length>0&&<span className="ml-1 text-[#00A2FF]">· {linked.length} categor{linked.length===1?'y':'ies'}</span>}
-                      </p>
+              <div key={a.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-[#1B3A2D]">
+                  <div>
+                    <p className="text-[#74C69D] text-[10px] font-bold uppercase">Account</p>
+                    <p className="text-white font-bold text-base">{a.name}</p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${sufficient ? 'bg-[#00CC88]/15 text-[#00CC88]' : 'bg-[#FF3333]/15 text-[#FF3333]'}`}>
+                    {sufficient ? 'Sufficient' : 'Shortfall'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 divide-x divide-y divide-[#2D2B5A]">
+                  {[
+                    ['Funds Available', fmtINR(live),               'text-white'],
+                    ['Proposed Expense',fmtINR(proposed),           'text-[#8892B0]'],
+                    ['Spent',           fmtINR(spent),               'text-[#00CC88]'],
+                    ['Remaining',       fmtINR(Math.abs(remaining)), remaining < 0 ? 'text-[#FF3333]' : 'text-[#00A2FF]'],
+                  ].map(([lbl, val, cls]) => (
+                    <div key={lbl} className="p-3 text-center">
+                      <p className="text-[#8892B0] text-[10px] font-semibold">{lbl}</p>
+                      <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
+                    </div>
+                  ))}
+                </div>
+                {proposed > 0 && (
+                  <div className="px-4 pb-3">
+                    <div className="flex justify-between text-[10px] text-[#8892B0] mb-1">
+                      <span>Spent {spentPct.toFixed(0)}% of proposed</span>
+                      <span>{fmtINR(proposed - spent)} left</span>
+                    </div>
+                    <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${spentPct >= 100 ? 'bg-[#FF3333]' : spentPct > 80 ? 'bg-[#FFB347]' : 'bg-[#00CC88]'}`}
+                        style={{ width: `${spentPct}%` }} />
                     </div>
                   </div>
+                )}
+              </div>
+            )
+          })}
+          {accounts.length > 1 && (() => {
+            const totLive  = accounts.reduce((s, a) => s + (a.live_balance != null ? a.live_balance : (a.current_balance || 0)), 0)
+            const totAlloc = accounts.reduce((s, a) => s + (a.allocated_amount || 0), 0)
+            const totPaid  = accounts.reduce((s, a) => s + (a.paid_expenses || 0), 0)
+            return (
+              <div className="bg-[#16213E] border border-[#1B3A2D] rounded-2xl overflow-hidden">
+                <div className="px-4 py-2 bg-[#1B3A2D]">
+                  <p className="text-[#74C69D] text-[10px] font-bold">TOTAL — ALL ACCOUNTS</p>
+                </div>
+                <div className="grid grid-cols-3 divide-x divide-[#2D2B5A]">
+                  {[
+                    ['Available', fmtINR(totLive),  'text-white'],
+                    ['Proposed',  fmtINR(totAlloc), 'text-[#8892B0]'],
+                    ['Spent',     fmtINR(totPaid),  'text-[#00CC88]'],
+                  ].map(([lbl, val, cls]) => (
+                    <div key={lbl} className="p-3 text-center">
+                      <p className="text-[#8892B0] text-[10px] font-semibold">{lbl}</p>
+                      <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {subtab === 'cashflow' && (
+        <div className="px-4 space-y-3">
+          <p className="text-[#8892B0] text-xs">Monthly outflow from budget line items</p>
+          {cashFlowMonths.length === 0 && (
+            <p className="text-[#8892B0] text-sm text-center py-12">No budget items with dates.</p>
+          )}
+          {cashFlowMonths.map(({ month, label, planned, actual }) => {
+            const barPct = maxFlow > 0 ? (planned / maxFlow) * 100 : 0
+            const actPct = planned > 0 ? Math.min((actual / planned) * 100, 100) : 0
+            const isCurrent = month === new Date().toISOString().slice(0, 7)
+            return (
+              <div key={month} className={`bg-[#16213E] border rounded-2xl p-4 space-y-2 ${isCurrent ? 'border-[#00A2FF]/40' : 'border-[#2D2B5A]'}`}>
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <p className="text-[#00A2FF] font-bold text-sm">{fmtINR(a.current_balance)}</p>
-                      {totalAllocated>0&&(
-                        <p className={`text-xs ${overAllocated?'text-[#FF3333] font-semibold':'text-[#8892B0]'}`}>
-                          {overAllocated?`⚠ over by ${fmtINR(Math.abs(free))}` : `${fmtINR(free)} free`}
-                        </p>
-                      )}
-                    </div>
-                    <span className="text-[#8892B0] text-xs ml-1">{isExpanded?'▲':'▼'}</span>
+                    <span className="text-white text-sm font-bold">{label}</span>
+                    {isCurrent && <span className="text-[10px] bg-[#00A2FF]/15 text-[#00A2FF] px-2 py-0.5 rounded-full font-bold">NOW</span>}
                   </div>
-                </button>
-
-                {/* Expanded panel */}
-                {isExpanded&&(
-                  <div className="border-t border-[#2D2B5A]">
-                    {/* Allocation bar */}
-                    {totalAllocated>0&&(
-                      <div className="px-4 pt-3 pb-2 space-y-1">
-                        {/* Bar: how much of account capacity is allocated */}
-                        {(() => {
-                          const capacity = a.current_balance + (a.paid_out||0)  // inflows total
-                          const pct = capacity>0 ? Math.min(totalAllocated/capacity*100,100) : 0
-                          const spentPct = capacity>0 ? Math.min((a.paid_out||0)/capacity*100,100) : 0
-                          return (
-                            <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden relative">
-                              {/* Allocated band */}
-                              <div className={`absolute inset-y-0 left-0 rounded-full ${overAllocated?'bg-[#FF3333]':'bg-[#00A2FF]'}`}
-                                style={{width:`${pct}%`}}/>
-                              {/* Spent band (darker) */}
-                              <div className="absolute inset-y-0 left-0 rounded-full bg-[#00CC88]/60"
-                                style={{width:`${spentPct}%`}}/>
-                            </div>
-                          )
-                        })()}
-                        <div className="flex justify-between text-xs text-[#8892B0]">
-                          <span>{fmtINR(totalAllocated)} allocated</span>
-                          <span>{fmtINR(a.paid_out||0)} spent · {fmtINR(a.free_balance??free)} free</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Linked categories */}
-                    {linked.map(c=>{
-                      const link = (c.account_links||[]).find(l=>l.account_id===a.id)
-                      const allocKey = `${a.id}_${c.category}`
-                      const editingAmt = editAllocAmount[allocKey] !== undefined
-                      // max you can set = free_balance + this category's current allocation
-                      const maxForThis = (a.free_balance||0) + (link?.allocated||0)
-                      const draftAmt   = parseFloat(editAllocAmount[allocKey])||0
-                      const overLimit  = editingAmt && draftAmt > maxForThis
-                      return (
-                        <div key={c.category} className="px-4 py-2.5 border-t border-[#2D2B5A]/40">
-                          {editingAmt ? (
-                            <div className="space-y-1.5">
-                              <div className="flex items-center gap-2">
-                                <span className="text-white text-xs font-semibold flex-1">{c.category}</span>
-                                <input type="number" min="0" step="0.001" autoFocus
-                                  value={editAllocAmount[allocKey]}
-                                  onChange={e=>setEditAllocAmount(x=>({...x,[allocKey]:e.target.value}))}
-                                  className={`w-28 bg-[#0F0F23] border rounded-xl px-2 py-1 text-white text-xs ${overLimit?'border-[#FF3333]':'border-[#2D2B5A]'}`}/>
-                                <button disabled={overLimit} onClick={async()=>{
-                                  try {
-                                    await upsertFinanceAllocation({category:c.category, allocated_amount:draftAmt, account_id:a.id})
-                                    setEditAllocAmount(x=>({...x,[allocKey]:undefined})); await load()
-                                  } catch(e) { alert(e.response?.data?.detail||'Failed') }
-                                }} className={`px-2 py-1 rounded-xl text-white text-xs font-semibold ${overLimit?'bg-[#2D2B5A] opacity-50 cursor-not-allowed':'bg-[#00A2FF]'}`}>Save</button>
-                                <button onClick={()=>setEditAllocAmount(x=>({...x,[allocKey]:undefined}))}
-                                  className="text-[#8892B0] text-xs px-1">✕</button>
-                              </div>
-                              <p className={`text-xs ml-0 ${overLimit?'text-[#FF3333]':'text-[#8892B0]'}`}>
-                                {overLimit
-                                  ? `⚠ Exceeds limit. Max: ${fmtINR(maxForThis)}`
-                                  : `Available to allocate: ${fmtINR(maxForThis)}`
-                                }
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-white text-xs font-semibold">{c.category}</p>
-                                {(link?.allocated||0)>0 && <p className="text-[#00A2FF] text-xs">{fmtINR(link.allocated)} allocated</p>}
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <button onClick={()=>setEditAllocAmount(x=>({...x,[allocKey]:link?.allocated||''}))}
-                                  className="text-[#8892B0] text-xs px-2 py-0.5 rounded border border-[#2D2B5A]">Edit ₹</button>
-                                <button onClick={async()=>{ await unlinkFinanceAllocation(c.category, a.id); await load() }}
-                                  className="text-[#FF3333] text-xs px-1.5 py-0.5 rounded border border-[#FF3333]/20">✕</button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-
-                    {/* Assign a category with amount */}
-                    {unlinked.length>0&&(
-                      <div className="px-4 py-3 border-t border-[#2D2B5A]/40 space-y-2">
-                        <p className="text-[#8892B0] text-xs">Assign category + allocate amount:</p>
-                        {unlinked.map(cat=>{
-                          const draftKey = `${a.id}_${cat}`
-                          const draft = assignDraft[draftKey]
-                          const isEditing = draft !== undefined
-                          return (
-                            <div key={cat}>
-                              {isEditing ? (
-                                <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-white text-xs font-semibold flex-1">{cat}</span>
-                                  <input
-                                    type="number" min="0" step="0.001"
-                                    placeholder="Amount (₹)"
-                                    value={draft}
-                                    onChange={e=>setAssignDraft(x=>({...x,[draftKey]:e.target.value}))}
-                                    className="w-32 bg-[#0F0F23] border border-[#2D2B5A] rounded-xl px-2 py-1 text-white text-xs"
-                                    autoFocus
-                                  />
-                                  <button onClick={async()=>{
-                                    const amt = parseFloat(draft)||0
-                                    try {
-                                      await upsertFinanceAllocation({category:cat, allocated_amount:amt, account_id:a.id})
-                                      setAssignDraft(x=>({...x,[draftKey]:undefined}))
-                                      await load()
-                                    } catch(e) { alert(e.response?.data?.detail||'Failed') }
-                                  }} className="px-2 py-1 rounded-xl bg-[#00A2FF] text-white text-xs font-semibold">Save</button>
-                                  <button onClick={()=>setAssignDraft(x=>({...x,[draftKey]:undefined}))}
-                                    className="text-[#8892B0] text-xs">✕</button>
-                                </div>
-                                <p className="text-[#8892B0] text-xs">Available: {fmtINR(a.free_balance||0)}</p>
-                                </div>
-                              ) : (
-                                <button onClick={()=>setAssignDraft(x=>({...x,[draftKey]:''}))}
-                                  className="text-xs px-3 py-1.5 rounded-xl bg-[#0F0F23] border border-[#2D2B5A] text-[#8892B0] hover:border-[#00A2FF] hover:text-[#00A2FF] transition-colors">
-                                  + {cat}
-                                </button>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {/* Edit / Delete account */}
-                    <div className="px-4 py-3 border-t border-[#2D2B5A]/40 flex gap-2">
-                      <button onClick={()=>{ setEditAccount(a); setShowAccountForm(true) }}
-                        className="flex-1 py-1.5 rounded-xl border border-[#2D2B5A] text-[#8892B0] text-xs">Edit account</button>
-                      <button onClick={()=>removeAccount(a.id)}
-                        className="px-4 py-1.5 rounded-xl border border-[#FF3333]/30 text-[#FF3333] text-xs">Delete</button>
+                  <span className="text-white text-sm font-bold">{fmtINR(planned)}</span>
+                </div>
+                <div className="h-2 bg-[#0F0F23] rounded-full overflow-hidden">
+                  <div className="h-full bg-[#00A2FF]/40 rounded-full" style={{ width: `${barPct}%` }} />
+                </div>
+                {actual > 0 ? (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-[#8892B0]">
+                      <span>Actual: <span className="text-[#00CC88] font-semibold">{fmtINR(actual)}</span></span>
+                      <span>{actPct.toFixed(0)}% of planned</span>
+                    </div>
+                    <div className="h-1.5 bg-[#0F0F23] rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${actPct >= 100 ? 'bg-[#FF3333]' : 'bg-[#00CC88]'}`} style={{ width: `${actPct}%` }} />
                     </div>
                   </div>
+                ) : (
+                  <p className="text-[#8892B0] text-[10px]">No actuals yet</p>
                 )}
               </div>
             )
           })}
-          <div className="flex gap-2">
-            <button onClick={()=>{ setEditAccount(null); setShowAccountForm(true) }}
-              className="flex-1 py-3 rounded-2xl border border-dashed border-[#2D2B5A] text-[#8892B0] text-sm">
-              + Add Account
-            </button>
-            {accounts.length >= 2 && (
-              <button onClick={()=>setShowTransferForm(true)}
-                className="flex-1 py-3 rounded-2xl border border-dashed border-[#00A2FF]/40 text-[#00A2FF] text-sm font-semibold">
-                ⇄ Transfer
-              </button>
-            )}
-          </div>
-
-          {/* Recent transfers */}
-          {transfers.length > 0 && (
-            <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-              <p className="text-[#8892B0] text-xs font-semibold px-4 pt-3 pb-2">Recent transfers</p>
-              {transfers.slice(0, 10).map(t=>(
-                <div key={t.id} className="px-4 py-2.5 border-t border-[#2D2B5A]/50 flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-xs font-semibold">
-                      {t.from_account_name} → {t.to_account_name}
-                    </p>
-                    <p className="text-[#8892B0] text-xs">{fmtDate(t.transfer_date)}{t.description && ` · ${t.description}`}</p>
+          {cashFlowMonths.length > 0 && (() => {
+            const tp = cashFlowMonths.reduce((s, m) => s + m.planned, 0)
+            const ta = cashFlowMonths.reduce((s, m) => s + m.actual, 0)
+            return (
+              <div className="bg-[#1B3A2D] border border-[#2D6A4F]/40 rounded-2xl p-4">
+                <p className="text-[#74C69D] text-[10px] font-bold mb-2">PROJECT TOTAL</p>
+                <div className="flex justify-between">
+                  <div>
+                    <p className="text-[#8892B0] text-[10px]">Total Planned</p>
+                    <p className="text-white font-bold text-base">{fmtINR(tp)}</p>
                   </div>
-                  <div className="flex items-center gap-2 ml-2">
-                    <p className="text-[#00A2FF] font-bold text-sm">{fmtINR(t.amount)}</p>
-                    <button onClick={async()=>{ await deleteFinanceTransfer(t.id); await load() }}
-                      className="text-[#FF3333] text-xs px-2 py-1 rounded-lg border border-[#FF3333]/20">Del</button>
+                  <div className="text-right">
+                    <p className="text-[#8892B0] text-[10px]">Total Actual</p>
+                    <p className="text-[#00CC88] font-bold text-base">{fmtINR(ta)}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {showAccountForm&&(
-            <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}}
-                onClick={()=>{ setShowAccountForm(false); setEditAccount(null) }}/>
-              <div style={{position:'relative',width:'100%',maxWidth:672,background:'#16213E',border:'1px solid #2D2B5A',
-                borderRadius:'20px 20px 0 0',padding:20,zIndex:1}}>
-                <p className="text-white font-bold text-sm mb-4">{editAccount?'Edit Account':'New Account'}</p>
-                <AccountForm initial={editAccount} onSave={saveAccount}
-                  onClose={()=>{ setShowAccountForm(false); setEditAccount(null) }}/>
-              </div>
-            </div>
-          )}
-
-          {showTransferForm&&(
-            <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}}
-                onClick={()=>setShowTransferForm(false)}/>
-              <div style={{position:'relative',width:'100%',maxWidth:672,background:'#16213E',border:'1px solid #2D2B5A',
-                borderRadius:'20px 20px 0 0',padding:20,zIndex:1}}>
-                <p className="text-white font-bold text-sm mb-4">Transfer Between Accounts</p>
-                <TransferForm accounts={accounts}
-                  onSave={async(data)=>{ await createFinanceTransfer(data); setShowTransferForm(false); await load() }}
-                  onClose={()=>setShowTransferForm(false)}/>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* INCOME */}
-      {section==='income'&&(
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[#8892B0] text-xs font-semibold">Income receipts — {periodLabel}</p>
-              <p className="text-[#8892B0] text-xs mt-0.5 opacity-60">Period applies to income only. Category budgets use all-time expenses.</p>
-            </div>
-            <button onClick={()=>setShowReceiptForm(true)}
-              className="text-xs bg-[#00CC88] text-white px-3 py-1.5 rounded-xl font-semibold">+ Add</button>
-          </div>
-
-          {receipts.length===0&&(
-            <div className="text-center py-8 text-[#8892B0] text-sm">No income recorded for this period</div>
-          )}
-
-          {receipts.map(r=>(
-            <div key={r.id} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3 flex items-center justify-between">
-              <div>
-                <p className="text-white text-sm font-semibold">{r.description||r.source_name||'Receipt'}</p>
-                <p className="text-[#8892B0] text-xs">
-                  {fmtDate(r.received_date)}{r.account_name&&<span> · {r.account_name}</span>}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <p className="text-[#00CC88] font-bold">{fmtINR(r.amount)}</p>
-                <button onClick={()=>removeReceipt(r.id)}
-                  className="text-[#FF3333] text-xs px-2 py-1 rounded-lg border border-[#FF3333]/20">Del</button>
-              </div>
-            </div>
-          ))}
-
-          <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl px-4 py-3 flex justify-between">
-            <p className="text-[#8892B0] text-sm">Total income</p>
-            <p className="text-[#00CC88] font-bold">{fmtINR(total_income)}</p>
-          </div>
-
-          {showReceiptForm&&(
-            <div style={{position:'fixed',inset:0,zIndex:60,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'}}
-                onClick={()=>setShowReceiptForm(false)}/>
-              <div style={{position:'relative',width:'100%',maxWidth:672,background:'#16213E',border:'1px solid #2D2B5A',
-                borderRadius:'20px 20px 0 0',padding:20,zIndex:1}}>
-                <p className="text-white font-bold text-sm mb-4">Add Income Receipt</p>
-                <ReceiptForm sources={sources} accounts={accounts} period={period}
-                  onSave={addReceipt} onClose={()=>setShowReceiptForm(false)}/>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* BY CATEGORY */}
-      {section==='breakdown'&&(
-        <div className="space-y-2">
-          {category_breakdown.length===0&&(
-            <div className="text-center py-8 text-[#8892B0] text-sm">No categories found</div>
-          )}
-          {category_breakdown.map(c=>{
-            const links      = c.account_links||[]
-            const available  = c.amount_available||0
-            const budgetReq  = c.budget_required||0
-            const spent      = c.spent||0
-            const pending    = c.pending||0
-            const spentPct   = budgetReq>0 ? Math.min(spent/budgetReq*100,100) : 0
-            const availPct   = budgetReq>0 ? Math.min(available/budgetReq*100,100) : 0
-            const catDeficit = Math.max(0, pending - available)
-            const isFunded   = pending>0 && catDeficit===0
-            const isOpen     = expandedByCat === c.category
-            return (
-              <div key={c.category} className={`bg-[#16213E] rounded-2xl overflow-hidden border ${catDeficit>0?'border-[#FF3333]/40':'border-[#2D2B5A]'}`}>
-
-                {/* Collapsed header — always visible */}
-                <button className="w-full px-4 py-3 flex items-center justify-between"
-                  onClick={()=>setExpandedByCat(isOpen?null:c.category)}>
-                  <div className="text-left min-w-0">
-                    <p className="text-white font-semibold text-sm truncate">{c.category}</p>
-                    {budgetReq>0&&(
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="w-20 h-1.5 bg-[#0F0F23] rounded-full overflow-hidden relative">
-                          <div className="absolute inset-y-0 left-0 bg-[#00A2FF]/20 rounded-full" style={{width:`${availPct}%`}}/>
-                          <div className={`absolute inset-y-0 left-0 rounded-full ${spentPct>=100?'bg-[#FF3333]':spentPct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`} style={{width:`${spentPct}%`}}/>
-                        </div>
-                        <span className="text-[#8892B0] text-[10px]">{spentPct.toFixed(0)}% paid</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                    {catDeficit>0 ? (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#FF3333]/10 text-[#FF3333]">⚠ {fmtINR(catDeficit)} short</span>
-                    ) : isFunded ? (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#00CC88]/10 text-[#00CC88]">✓ Funded</span>
-                    ) : null}
-                    <span className="text-[#8892B0] text-xs">{isOpen?'▲':'▼'}</span>
-                  </div>
-                </button>
-
-                {/* Expanded detail */}
-                {isOpen&&(
-                  <div className="px-4 pb-4 space-y-3 border-t border-[#2D2B5A]/50">
-
-                    {/* 2×2 number grid */}
-                    <div className="grid grid-cols-2 gap-2 text-center mt-3">
-                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                        <p className="text-[#8892B0] text-[10px]">Available (allocated)</p>
-                        <p className={`font-bold text-xs mt-0.5 ${catDeficit>0?'text-[#FF3333]':'text-[#00A2FF]'}`}>{fmtINR(available)}</p>
-                      </div>
-                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                        <p className="text-[#8892B0] text-[10px]">Total Budget</p>
-                        <p className="text-white font-bold text-xs mt-0.5">{fmtINR(budgetReq)}</p>
-                      </div>
-                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                        <p className="text-[#8892B0] text-[10px]">✅ Paid</p>
-                        <p className="text-[#00CC88] font-bold text-xs mt-0.5">{spent>0?fmtINR(spent):'—'}</p>
-                      </div>
-                      <div className="bg-[#0F0F23] rounded-xl px-2 py-2">
-                        <p className="text-[#8892B0] text-[10px]">🕐 Pending</p>
-                        <p className="text-[#A78BFA] font-bold text-xs mt-0.5">{pending>0?fmtINR(pending):'—'}</p>
-                      </div>
-                    </div>
-
-                    {/* Full progress bar */}
-                    {budgetReq>0&&(
-                      <div className="space-y-1">
-                        <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden relative">
-                          <div className="absolute inset-y-0 left-0 bg-[#00A2FF]/20 rounded-full" style={{width:`${availPct}%`}}/>
-                          <div className={`absolute inset-y-0 left-0 rounded-full ${spentPct>=100?'bg-[#FF3333]':spentPct>80?'bg-[#FFB347]':'bg-[#00CC88]'}`} style={{width:`${spentPct}%`}}/>
-                        </div>
-                        <div className="flex justify-between text-xs text-[#8892B0]">
-                          <span>{spentPct.toFixed(0)}% of budget spent</span>
-                          <span>{fmtINR(budgetReq - spent)} remaining</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Funding account chips */}
-                    {links.length>0?(
-                      <div className="flex flex-wrap gap-1.5">
-                        {links.map(l=>{
-                          const acct = accounts.find(a=>a.id===l.account_id)
-                          return (
-                            <span key={l.account_id}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#00A2FF]/10 border border-[#00A2FF]/20 text-[#00A2FF] text-xs">
-                              {ACCOUNT_ICONS[acct?.type]||'🏦'} {l.account_name}
-                              {l.allocated>0&&<span className="text-white font-semibold">· {fmtINR(l.allocated)}</span>}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    ):(
-                      <p className="text-[#8892B0] text-xs italic">No account linked — assign from Accounts tab</p>
-                    )}
-                  </div>
-                )}
               </div>
             )
-          })}
+          })()}
         </div>
       )}
     </div>
