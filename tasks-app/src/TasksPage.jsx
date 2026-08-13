@@ -1923,8 +1923,9 @@ function FinanceTab() {
           )}
           {accounts.map(a => {
             const live      = a.live_balance != null ? a.live_balance : (a.current_balance || 0)
-            const proposed  = a.allocated_amount || 0
-            const spent     = a.paid_expenses || 0
+            const acctItems = budgetItems.filter(i => i.account_id === a.id)
+            const proposed  = acctItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
+            const spent     = acctItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
             const remaining = live - spent
             const sufficient = remaining >= 0
             const spentPct  = proposed > 0 ? Math.min((spent / proposed) * 100, 100) : 0
@@ -1969,8 +1970,8 @@ function FinanceTab() {
           })}
           {accounts.length > 1 && (() => {
             const totLive  = accounts.reduce((s, a) => s + (a.live_balance != null ? a.live_balance : (a.current_balance || 0)), 0)
-            const totAlloc = accounts.reduce((s, a) => s + (a.allocated_amount || 0), 0)
-            const totPaid  = accounts.reduce((s, a) => s + (a.paid_expenses || 0), 0)
+            const totAlloc = accounts.reduce((s, a) => s + budgetItems.filter(i => i.account_id === a.id).reduce((t, i) => t + (i.planned_amount || 0), 0), 0)
+            const totPaid  = accounts.reduce((s, a) => s + budgetItems.filter(i => i.account_id === a.id).reduce((t, i) => t + (i.actual_amount  || 0), 0), 0)
             return (
               <div className="bg-[#16213E] border border-[#1B3A2D] rounded-2xl overflow-hidden">
                 <div className="px-4 py-2 bg-[#1B3A2D]">
