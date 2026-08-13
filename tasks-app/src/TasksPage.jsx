@@ -1339,64 +1339,23 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   return (
     <div className="p-4 pb-28 space-y-4">
 
-      {/* ── Project header card ── */}
-      <div className="bg-gradient-to-r from-[#1B3A2D] to-[#16213E] border border-[#2D6A4F]/40 rounded-2xl p-4">
-        <p className="text-[#74C69D] text-[10px] font-bold">NVPH POLYHOUSE · KURCHAPALLY</p>
-        <div className="flex items-center justify-between mt-1 mb-3">
-          <h2 className="text-white font-bold text-sm">Overall Progress</h2>
-          <span className="text-[#00CC88] font-bold text-lg">{pct}%</span>
+      {/* ── Key Dates (TOP) ── */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="px-4 py-2.5 bg-green-600 flex items-center gap-2">
+          <span className="text-white text-sm">📅</span>
+          <p className="text-white text-xs font-bold tracking-wide">KEY DATES</p>
         </div>
-        <div className="h-2.5 bg-[#0F0F23] rounded-full overflow-hidden mb-1">
-          <div className="h-full bg-gradient-to-r from-[#2D6A4F] to-[#00CC88] rounded-full transition-all" style={{ width: `${pct}%` }} />
-        </div>
-        <p className="text-[#8892B0] text-[10px]">{completed} of {total} tasks completed</p>
-      </div>
-
-      {/* ── KPI chips ── */}
-      <div className="grid grid-cols-4 gap-2">
-        {[
-          ['✅', 'Done',    completed,                   'text-[#00CC88]'],
-          ['🔄', 'Active',  byStatus.in_progress || 0,   'text-[#00A2FF]'],
-          ['⚠️', 'Delayed', byStatus.on_hold || 0,       'text-[#FFB347]'],
-          ['⏳', 'Pending', byStatus.not_started || 0,   'text-[#8892B0]'],
-        ].map(([icon, label, val, cls]) => (
-          <div key={label} className="bg-[#16213E] border border-[#2D2B5A] rounded-xl p-2 text-center">
-            <span className="text-base">{icon}</span>
-            <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
-            <p className="text-[#8892B0] text-[9px] font-semibold">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Budget snapshot ── */}
-      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-        <div className="px-4 py-2 bg-[#1B3A2D]">
-          <p className="text-[#74C69D] text-[10px] font-bold">💰 BUDGET SNAPSHOT</p>
-        </div>
-        <div className="grid grid-cols-2 divide-x divide-[#2D2B5A]">
-          <div className="p-3 text-center">
-            <p className="text-[#8892B0] text-[10px]">Funds Available</p>
-            <p className="text-white font-bold text-sm mt-0.5">{fmtINR(totalAvail)}</p>
-          </div>
-          <div className="p-3 text-center">
-            <p className="text-[#8892B0] text-[10px]">Spent</p>
-            <p className="text-[#00CC88] font-bold text-sm mt-0.5">{fmtINR(totalSpent)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Key Dates ── */}
-      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-        <div className="px-4 py-2 bg-[#1B3A2D]">
-          <p className="text-[#74C69D] text-[10px] font-bold">📅 KEY DATES</p>
-        </div>
-        <div className="divide-y divide-[#2D2B5A]/50">
+        <div className="divide-y divide-gray-100">
           {KEY_DATES.map(({ label, date }) => {
             const isPast = new Date(date) < new Date()
+            const isNext = !isPast && KEY_DATES.find(d => new Date(d.date) >= new Date())?.date === date
             return (
-              <div key={label} className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-white text-xs">{label}</span>
-                <span className={`text-xs font-semibold ${isPast ? 'text-[#8892B0]' : 'text-[#00A2FF]'}`}>
+              <div key={label} className={`flex items-center justify-between px-4 py-2.5 ${isNext ? 'bg-blue-50' : ''}`}>
+                <div className="flex items-center gap-2">
+                  {isNext && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"/>}
+                  <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
+                </div>
+                <span className={`text-xs font-bold ${isPast ? 'text-gray-400' : isNext ? 'text-blue-600' : 'text-gray-600'}`}>
                   {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                 </span>
               </div>
@@ -1405,17 +1364,66 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
         </div>
       </div>
 
+      {/* ── Project progress ── */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-1">
+          <div>
+            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">NVPH Polyhouse · Kurchapally</p>
+            <p className="text-gray-800 font-bold text-sm mt-0.5">Overall Progress</p>
+          </div>
+          <span className="text-green-600 font-bold text-2xl">{pct}%</span>
+        </div>
+        <div className="h-3 bg-gray-100 rounded-full overflow-hidden mt-2 mb-1">
+          <div className="h-full bg-gradient-to-r from-green-500 to-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-gray-400 text-[10px]">{completed} of {total} tasks completed</p>
+      </div>
+
+      {/* ── KPI chips ── */}
+      <div className="grid grid-cols-4 gap-2">
+        {[
+          ['✅', 'Done',    completed,                 'text-green-600',  'bg-green-50  border-green-200'],
+          ['🔄', 'Active',  byStatus.in_progress || 0, 'text-blue-600',   'bg-blue-50   border-blue-200'],
+          ['⚠️', 'Delayed', byStatus.on_hold || 0,     'text-amber-600',  'bg-amber-50  border-amber-200'],
+          ['⏳', 'Pending', byStatus.not_started || 0, 'text-gray-500',   'bg-gray-50   border-gray-200'],
+        ].map(([icon, label, val, cls, bg]) => (
+          <div key={label} className={`${bg} border rounded-xl p-2 text-center shadow-sm`}>
+            <span className="text-base">{icon}</span>
+            <p className={`font-bold text-sm mt-0.5 ${cls}`}>{val}</p>
+            <p className="text-gray-400 text-[9px] font-semibold">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Budget snapshot ── */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="px-4 py-2.5 bg-green-600 flex items-center gap-2">
+          <span className="text-white text-sm">💰</span>
+          <p className="text-white text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
+        </div>
+        <div className="grid grid-cols-2 divide-x divide-gray-100">
+          <div className="p-3 text-center">
+            <p className="text-gray-400 text-[10px] font-semibold">Funds Available</p>
+            <p className="text-gray-800 font-bold text-sm mt-0.5">{fmtINR(totalAvail)}</p>
+          </div>
+          <div className="p-3 text-center">
+            <p className="text-gray-400 text-[10px] font-semibold">Spent</p>
+            <p className="text-green-600 font-bold text-sm mt-0.5">{fmtINR(totalSpent)}</p>
+          </div>
+        </div>
+      </div>
+
       {/* ── Summary strip ── */}
       <div className="flex items-center justify-between">
-        <p className="text-[#8892B0] text-xs font-semibold">{today_str}</p>
+        <p className="text-gray-400 text-xs font-semibold">{today_str}</p>
         <div className="flex items-center gap-2">
           {totalOngoing>0&&(
-            <span className="bg-[#00A2FF]/15 text-[#00A2FF] text-xs font-bold px-2 py-0.5 rounded-full">
+            <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">
               {totalOngoing} in progress
             </span>
           )}
           {overdueTasks.length>0&&(
-            <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full">
+            <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">
               ⚠ {overdueTasks.length} overdue
             </span>
           )}
@@ -1423,48 +1431,46 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
       </div>
 
       {/* ── Today's Focus ── */}
-      <div className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
-        {/* Collapsible header */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
         <button className="w-full flex items-center justify-between px-4 py-3"
           onClick={()=>setFocusOpen(o=>!o)}>
           <div className="flex items-center gap-2">
-            <h2 className="text-white font-bold text-sm">Today's Focus</h2>
+            <h2 className="text-gray-800 font-bold text-sm">Today's Focus</h2>
             {totalOngoing>0&&(
-              <span className="bg-[#00A2FF]/15 text-[#00A2FF] text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing}</span>
+              <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing}</span>
             )}
             {overdueTasks.length>0&&(
-              <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full">⚠ {overdueTasks.length}</span>
+              <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">⚠ {overdueTasks.length}</span>
             )}
           </div>
-          <span className="text-[#8892B0] text-xs">{focusOpen?'▲':'▼'}</span>
+          <span className="text-gray-400 text-xs">{focusOpen?'▲':'▼'}</span>
         </button>
 
         {focusOpen&&(
-          <div className="px-3 pb-3 space-y-2">
+          <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
             {totalOngoing===0 ? (
               <div className="text-center py-4">
                 <p className="text-2xl mb-1">✅</p>
-                <p className="text-[#8892B0] text-sm">All clear — nothing in progress</p>
+                <p className="text-gray-400 text-sm">All clear — nothing in progress</p>
               </div>
             ) : (
               <>
-                {/* Overdue first */}
                 {overdueTasks.map(t=>{
                   const days = daysLeft(t.end_date)
                   const spent = t.total_expense||0
                   return (
                     <div key={t.id} onClick={()=>onTaskClick(t)}
-                      className="border-l-4 border-l-[#FF3333] border border-[#FF3333]/20 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2">
+                      className="border-l-4 border-l-red-500 bg-red-50 border border-red-100 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2 mt-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
-                          {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
+                          <p className="text-gray-800 font-semibold text-sm leading-snug">{t.title}</p>
+                          {t.notes&&<p className="text-gray-400 text-xs mt-0.5 truncate">{t.notes}</p>}
                         </div>
-                        <span className="bg-[#FF3333]/15 text-[#FF3333] text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
+                        <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[#8892B0] text-[10px] bg-[#0F0F23] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
-                        {t.end_date&&<span className="text-[#FF3333] text-xs">📅 {fmtShort(t.end_date)}</span>}
+                        <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full">{t.category}</span>
+                        {t.end_date&&<span className="text-red-500 text-xs">📅 {fmtShort(t.end_date)}</span>}
                       </div>
                       {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
                       <SubtaskPill subtasks={t.subtasks}/>
@@ -1474,27 +1480,26 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
 
                 {overdueTasks.length>0&&activeTasks.length>0&&(
                   <div className="flex items-center gap-2 py-1">
-                    <div className="flex-1 h-px bg-[#2D2B5A]"/>
-                    <span className="text-[#8892B0] text-[10px] font-semibold uppercase tracking-wider">In Progress</span>
-                    <div className="flex-1 h-px bg-[#2D2B5A]"/>
+                    <div className="flex-1 h-px bg-gray-100"/>
+                    <span className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">In Progress</span>
+                    <div className="flex-1 h-px bg-gray-100"/>
                   </div>
                 )}
 
-                {/* Active tasks */}
                 {activeTasks.map(t=>{
                   const days = daysLeft(t.end_date)
                   const spent = t.total_expense||0
                   return (
                     <div key={t.id} onClick={()=>onTaskClick(t)}
-                      className={`border-l-4 bg-[#0F0F23] border border-[#2D2B5A] ${PRI_BORDER[t.priority]||'border-l-[#8892B0]'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2`}>
+                      className="border-l-4 border-l-blue-500 bg-white border border-gray-100 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
-                        {t.notes&&<p className="text-[#8892B0] text-xs mt-0.5 truncate">{t.notes}</p>}
+                        <p className="text-gray-800 font-semibold text-sm leading-snug">{t.title}</p>
+                        {t.notes&&<p className="text-gray-400 text-xs mt-0.5 truncate">{t.notes}</p>}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A]">{t.category}</span>
+                        <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full">{t.category}</span>
                         {t.end_date&&(
-                          <span className={`text-xs ${days!=null&&days<=2?'text-[#FFB347]':'text-[#8892B0]'}`}>
+                          <span className={`text-xs ${days!=null&&days<=2?'text-amber-500':'text-gray-400'}`}>
                             📅 {fmtShort(t.end_date)}{days!=null&&days<=3?` · ${days}d left`:''}
                           </span>
                         )}
@@ -1512,33 +1517,32 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
 
       {/* ── Coming Up (7 days) ── */}
       {upcoming.length>0&&(
-        <div className="bg-[#16213E] border border-[#FFB347]/20 rounded-2xl overflow-hidden">
-          {/* Collapsible header */}
+        <div className="bg-white border border-amber-200 rounded-2xl overflow-hidden shadow-sm">
           <button className="w-full flex items-center justify-between px-4 py-3"
             onClick={()=>setComingOpen(o=>!o)}>
             <div className="flex items-center gap-2">
-              <h2 className="text-white font-bold text-sm">Coming Up</h2>
-              <span className="text-[#8892B0] text-xs">next 7 days</span>
-              <span className="bg-[#FFB347]/15 text-[#FFB347] text-xs font-bold px-2 py-0.5 rounded-full">{upcoming.length}</span>
+              <h2 className="text-gray-800 font-bold text-sm">Coming Up</h2>
+              <span className="text-gray-400 text-xs">next 7 days</span>
+              <span className="bg-amber-100 text-amber-600 text-xs font-bold px-2 py-0.5 rounded-full">{upcoming.length}</span>
             </div>
-            <span className="text-[#8892B0] text-xs">{comingOpen?'▲':'▼'}</span>
+            <span className="text-gray-400 text-xs">{comingOpen?'▲':'▼'}</span>
           </button>
 
           {comingOpen&&(
-            <div className="px-3 pb-3 space-y-2">
+            <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
               {upcoming.map(t=>{
                 const days = daysLeft(t.start_date)
                 return (
                   <div key={t.id} onClick={()=>onTaskClick(t)}
-                    className="bg-[#0F0F23] border border-[#FFB347]/20 border-l-4 border-l-[#FFB347] rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all">
+                    className="bg-amber-50 border border-amber-100 border-l-4 border-l-amber-500 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all mt-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-semibold text-sm truncate">{t.title}</p>
-                        <span className="text-[#8892B0] text-[10px] bg-[#16213E] px-2 py-0.5 rounded-full border border-[#2D2B5A] mt-1 inline-block">{t.category}</span>
+                        <p className="text-gray-800 font-semibold text-sm truncate">{t.title}</p>
+                        <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">{t.category}</span>
                       </div>
-                      <span className="text-[#FFB347] text-xs font-semibold flex-shrink-0 text-right">
+                      <span className="text-amber-600 text-xs font-semibold flex-shrink-0 text-right">
                         {days===0?'Starts today':days===1?'Tomorrow':`In ${days}d`}<br/>
-                        <span className="text-[#8892B0] font-normal">{fmtShort(t.start_date)}</span>
+                        <span className="text-gray-400 font-normal">{fmtShort(t.start_date)}</span>
                       </span>
                     </div>
                   </div>
@@ -2118,8 +2122,8 @@ export default function TasksPage({ onLogout }) {
   function openFull(task)  { setQuickTask(null); setSelectedTask(task) }
 
   if (loading) return (
-    <div className="min-h-screen bg-[#0F0F23] flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-[#00A2FF] border-t-transparent rounded-full animate-spin"/>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin"/>
     </div>
   )
 
@@ -2133,28 +2137,26 @@ export default function TasksPage({ onLogout }) {
   ]
 
   return (
-    <div className="min-h-screen bg-[#0F0F23] flex flex-col max-w-2xl mx-auto relative">
+    <div className="min-h-screen bg-gray-50 flex flex-col max-w-2xl mx-auto relative">
       {confetti&&<Confetti onDone={()=>setConfetti(false)}/>}
 
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-[#0F0F23]/95 backdrop-blur-md border-b border-[#2D2B5A] px-4 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
         <div>
-          <h1 className="text-white font-fredoka font-bold text-xl leading-none">My Tasks</h1>
-          <p className="text-[#8892B0] text-xs mt-0.5">Personal task tracker</p>
+          <h1 className="text-gray-900 font-fredoka font-bold text-xl leading-none">🌿 Polyhouse</h1>
+          <p className="text-gray-400 text-xs mt-0.5">Project Tracker</p>
         </div>
         <div className="flex items-center gap-1.5">
           {(tab==='tasks'||tab==='home') && (
-            <button onClick={()=>setShowCreate(true)} className="bg-[#00A2FF] text-white text-xs font-bold px-3 py-2 rounded-xl">
+            <button onClick={()=>setShowCreate(true)} className="bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-xl">
               + New
             </button>
           )}
-          {/* Notification bell */}
           <button onClick={requestNotifications} title={notifGranted?'Notifications on':'Enable notifications'}
-            className={`w-8 h-8 flex items-center justify-center rounded-xl border border-[#2D2B5A] text-sm ${notifGranted?'text-[#00CC88]':'text-[#8892B0]'}`}>
+            className={`w-8 h-8 flex items-center justify-center rounded-xl border text-sm ${notifGranted?'text-green-600 border-green-200 bg-green-50':'text-gray-400 border-gray-200'}`}>
             {notifGranted?'🔔':'🔕'}
           </button>
-
-          <button onClick={onLogout} className="text-[#8892B0] text-xs px-2 py-2 rounded-xl border border-[#2D2B5A]">
+          <button onClick={onLogout} className="text-gray-400 text-xs px-2 py-2 rounded-xl border border-gray-200">
             ↩
           </button>
         </div>
@@ -2172,12 +2174,12 @@ export default function TasksPage({ onLogout }) {
       </div>
 
       {/* Bottom nav */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto z-30 bg-[#16213E]/95 backdrop-blur-md border-t border-[#2D2B5A]">
+      <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto z-30 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg">
         <div className="flex">
           {NAV.map(n=>(
             <button key={n.key} onClick={()=>setTab(n.key)}
-              className={`flex-1 flex flex-col items-center gap-1 py-3 transition-all relative ${tab===n.key?'text-[#00A2FF]':'text-[#8892B0]'}`}>
-              {tab===n.key&&<div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[#00A2FF] rounded-full"/>}
+              className={`flex-1 flex flex-col items-center gap-1 py-3 transition-all relative ${tab===n.key?'text-green-600':'text-gray-400'}`}>
+              {tab===n.key&&<div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-green-600 rounded-full"/>}
               <div className="relative">
                 <span className="text-xl leading-none">{n.icon}</span>
                 {n.badge>0&&(
