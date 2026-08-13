@@ -345,8 +345,10 @@ class AdminTask(Base):
     status = Column(String(20), nullable=False, default="not_started")  # not_started | in_progress | completed | on_hold
     priority = Column(String(10), nullable=False, default="medium")     # low | medium | high
     category = Column(String(100), nullable=False)
+    owner = Column(String(100), nullable=True)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
+    actual_start_date = Column(Date, nullable=True)
     budget = Column(Float, nullable=True)
     parent_id = Column(Integer, ForeignKey("admin_tasks.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -447,6 +449,26 @@ class CategoryAllocation(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("category", "account_id"),)
+
+    account = relationship("PaymentAccount", foreign_keys=[account_id])
+
+
+class BudgetLineItem(Base):
+    """Granular budget line items for the Polyhouse project tracker."""
+    __tablename__ = "budget_line_items"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    name           = Column(String(300), nullable=False)
+    component      = Column(String(100), nullable=True)   # e.g. "Poly House" | "Operations"
+    category       = Column(String(100), nullable=True)   # e.g. "Vendor Payments"
+    sub_category   = Column(String(100), nullable=True)   # e.g. "Token Payment"
+    planned_date   = Column(Date, nullable=True)
+    planned_amount = Column(Float, nullable=False, default=0.0)
+    actual_amount  = Column(Float, nullable=True)
+    account_id     = Column(Integer, ForeignKey("payment_accounts.id", ondelete="SET NULL"), nullable=True)
+    notes          = Column(Text, nullable=True)
+    created_at     = Column(DateTime, default=datetime.utcnow)
+    updated_at     = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     account = relationship("PaymentAccount", foreign_keys=[account_id])
 

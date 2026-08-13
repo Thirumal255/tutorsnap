@@ -27,7 +27,7 @@ from models import (
     WeeklyChallenge, WeeklyChallengeCompletion, ExamSession, QuestionBank,
     AIUsageLog, AdminAuditLog, StudentGoal,
     AdminTask, AdminTaskExpense, AdminTaskDependency,
-    PaymentAccount, FundSource, FundReceipt, CategoryAllocation, FundTransfer,
+    PaymentAccount, FundSource, FundReceipt, CategoryAllocation, FundTransfer, BudgetLineItem,
     AssignmentPaper,
 )
 from ingestion import run_ingestion
@@ -5466,8 +5466,10 @@ class TaskCreate(BaseModel):
     status: str = "not_started"
     priority: str = "medium"
     category: str
+    owner: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    actual_start_date: Optional[str] = None
     budget: Optional[float] = None
     parent_id: Optional[int] = None
     dependency_ids: Optional[list[int]] = []
@@ -5481,11 +5483,24 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
     priority: Optional[str] = None
     category: Optional[str] = None
+    owner: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    actual_start_date: Optional[str] = None
     budget: Optional[float] = None
     parent_id: Optional[int] = None
     dependency_ids: Optional[list[int]] = None
+
+class BudgetLineItemIn(BaseModel):
+    name: str
+    component: Optional[str] = None
+    category: Optional[str] = None
+    sub_category: Optional[str] = None
+    planned_date: Optional[str] = None
+    planned_amount: float = 0.0
+    actual_amount: Optional[float] = None
+    account_id: Optional[int] = None
+    notes: Optional[str] = None
 
 class ExpenseCreate(BaseModel):
     amount: float
@@ -5529,8 +5544,10 @@ def _task_dict(t: AdminTask, include_subtasks: bool = False) -> dict:
         "status": t.status,
         "priority": t.priority,
         "category": t.category,
+        "owner": t.owner,
         "start_date": t.start_date.isoformat() if t.start_date else None,
         "end_date": t.end_date.isoformat() if t.end_date else None,
+        "actual_start_date": t.actual_start_date.isoformat() if t.actual_start_date else None,
         "budget": budget,
         "manual_budget": t.budget,
         "parent_id": t.parent_id,
@@ -5703,8 +5720,10 @@ def create_task(
             status=data.status,
             priority=data.priority,
             category=data.category,
+            owner=data.owner,
             start_date=_parse_date(data.start_date),
             end_date=_parse_date(data.end_date),
+            actual_start_date=_parse_date(data.actual_start_date),
             budget=data.budget,
             parent_id=data.parent_id,
         )
@@ -5756,6 +5775,10 @@ def update_task(
         task.priority = data.priority
     if data.category is not None:
         task.category = data.category
+    if data.owner is not None:
+        task.owner = data.owner
+    if data.actual_start_date is not None:
+        task.actual_start_date = _parse_date(data.actual_start_date)
     if data.start_date is not None:
         task.start_date = _parse_date(data.start_date)
     if data.budget is not None:
@@ -6009,6 +6032,63 @@ def send_task_digest(
     return {"sent": True, "message_length": len(message)}
 
 
+# ── Budget Line Items CRUD ────────────────────────────────────────────────────
+
+def _bli_dict(b: BudgetLineItem) -> dict:
+    return {
+        "id": b.id,
+        "name": b.name,
+        "component": b.component,
+        "category": b.category,
+        "sub_category": b.sub_category,
+        "planned_date": b.planned_date.isoformat() if b.planned_date else None,
+        "planned_amount": b.planned_amount,
+        "actual_amount": b.actual_amount,
+        "account_id": b.account_id,
+        "account_name": b.account.name if b.account else None,
+        "notes": b.notes,
+    }
+
+@app.get("/api/finance/budget-items")
+def list_budget_items(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    rows = db.query(BudgetLineItem).order_by(BudgetLineItem.id).all()
+    return [_bli_dict(r) for r in rows]
+
+@app.post("/api/finance/budget-items", status_code=201)
+def create_budget_item(body: BudgetLineItemIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    item = BudgetLineItem(
+        name=body.name, component=body.component, category=body.category,
+        sub_category=body.sub_category,
+        planned_date=_parse_date(body.planned_date),
+        planned_amount=body.planned_amount, actual_amount=body.actual_amount,
+        account_id=body.account_id, notes=body.notes,
+    )
+    db.add(item); db.commit(); db.refresh(item)
+    return _bli_dict(item)
+
+@app.put("/api/finance/budget-items/{item_id}")
+def update_budget_item(item_id: int, body: BudgetLineItemIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    item = db.query(BudgetLineItem).filter(BudgetLineItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Budget item not found")
+    for field in ["name", "component", "category", "sub_category", "planned_amount", "actual_amount", "account_id", "notes"]:
+        val = getattr(body, field, None)
+        if val is not None:
+            setattr(item, field, val)
+    if body.planned_date is not None:
+        item.planned_date = _parse_date(body.planned_date)
+    item.updated_at = datetime.utcnow()
+    db.commit(); db.refresh(item)
+    return _bli_dict(item)
+
+@app.delete("/api/finance/budget-items/{item_id}", status_code=204)
+def delete_budget_item(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    item = db.query(BudgetLineItem).filter(BudgetLineItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Budget item not found")
+    db.delete(item); db.commit()
+
+
 @app.post("/api/admin/tasks/reset-and-seed-polyhouse")
 def reset_and_seed_polyhouse(
     force: bool = False,
@@ -6017,271 +6097,179 @@ def reset_and_seed_polyhouse(
     x_seed_secret: Optional[str] = Header(None),
 ):
     """
-    One-time endpoint: wipe all admin_tasks / related rows then seed the full
-    2.5-acre polyhouse project plan (50 tasks, 5 payment milestones, 16 QA items).
+    Wipe ALL task + finance data and reload the full Polyhouse project plan from the
+    Excel tracker (46 flat tasks across 6 phases, 42 budget line items, 2 accounts).
 
     Protected by require_admin AND x-seed-secret header matching SEED_SECRET env var.
-    Guarded against accidental double-run: refuses if Polyhouse tasks already exist
-    unless force=true query param is passed.
+    Refuses re-run unless ?force=true is passed.
     """
     seed_secret = os.getenv("SEED_SECRET", "")
     if seed_secret and x_seed_secret != seed_secret:
         raise HTTPException(status_code=403, detail="Invalid seed secret")
 
-    # Guard: refuse if Polyhouse data already exists unless forced
-    existing = db.query(AdminTask).filter(AdminTask.category == "Polyhouse").first()
+    existing = db.query(AdminTask).first()
     if existing and not force:
         raise HTTPException(
             status_code=409,
-            detail="Polyhouse tasks already exist. Pass ?force=true to overwrite."
+            detail="Task data already exists. Pass ?force=true to wipe and reload."
         )
 
     from datetime import date as _date
 
-    # ── 1. Wipe existing task data ────────────────────────────────────────────
+    # ── 1. Wipe everything ────────────────────────────────────────────────────
     db.query(AdminTaskDependency).delete(synchronize_session=False)
     db.query(AdminTaskExpense).delete(synchronize_session=False)
-    # Delete children before parents (self-referential FK)
     db.query(AdminTask).filter(AdminTask.parent_id.isnot(None)).delete(synchronize_session=False)
     db.query(AdminTask).delete(synchronize_session=False)
-    # Delete only Polyhouse-prefixed allocations
-    db.query(CategoryAllocation).filter(
-        CategoryAllocation.category.like("Polyhouse%")
-    ).delete(synchronize_session=False)
+    db.query(BudgetLineItem).delete(synchronize_session=False)
+    db.query(CategoryAllocation).delete(synchronize_session=False)
+    db.query(FundReceipt).delete(synchronize_session=False)
+    db.query(FundSource).delete(synchronize_session=False)
+    db.query(PaymentAccount).delete(synchronize_session=False)
     db.flush()
 
-    # ── 2. Payment account ────────────────────────────────────────────────────
-    account = db.query(PaymentAccount).filter(PaymentAccount.name == "Polyhouse - HDFC").first()
-    if not account:
-        account = PaymentAccount(name="Polyhouse - HDFC", type="bank", opening_balance=0.0, current_balance=0.0)
-        db.add(account)
-        db.flush()
+    # ── 2. Accounts ───────────────────────────────────────────────────────────
+    hdfc = PaymentAccount(name="HDFC Account", type="bank", opening_balance=0.0, current_balance=0.0)
+    loan = PaymentAccount(name="Loan Account", type="bank", opening_balance=0.0, current_balance=0.0)
+    db.add_all([hdfc, loan])
+    db.flush()
 
-    # Fund source for own-funds receipts
-    fund_source = db.query(FundSource).filter(FundSource.name == "Polyhouse - Own Funds").first()
-    if not fund_source:
-        fund_source = FundSource(name="Polyhouse - Own Funds", type="other", frequency="one-time", is_active=True)
-        db.add(fund_source)
-        db.flush()
-
-    # ── 3. Helper ─────────────────────────────────────────────────────────────
-    def mk(title, category="Polyhouse", status="not_started", priority="medium",
-           start=None, end=None, budget=None, notes=None, parent_id=None):
+    # ── 3. Task helper ────────────────────────────────────────────────────────
+    def mk_task(num, title, phase, owner, start, end, status="not_started", priority="medium", notes=None):
         t = AdminTask(
-            title=title, category=category, status=status, priority=priority,
+            title=title, category=phase, owner=owner, status=status, priority=priority,
             start_date=_date.fromisoformat(start) if start else None,
             end_date=_date.fromisoformat(end) if end else None,
-            budget=budget, notes=notes, parent_id=parent_id,
+            notes=notes,
         )
-        db.add(t)
-        db.flush()
+        db.add(t); db.flush()
         return t
 
-    created_tasks = []
-    phase_ids = {}
-
-    # ── 4a. Phase parents + leaf tasks ────────────────────────────────────────
-    phases = {
-        "Pre-Construction": [
-            ("Collect bank sanction letter & documents", "Thirumal", "2026-08-10", "2026-08-17", "high"),
-            ("Share bank documents with Agri Blooms for NHB submission", "Thirumal", "2026-08-18", "2026-08-20", "high"),
-            ("Follow up on NHB JIT clearance (weekly)", "Thirumal", "2026-08-20", "2026-10-15", "high"),
-            ("Confirm crop choice: cucumber (per DPR) vs bell pepper", "Thirumal / Agronomist", "2026-08-15", "2026-09-01", "high"),
-            ("Site prep: levelling", "Vendor / Site team", "2026-09-01", "2026-10-25", "high"),
-            ("Site prep: 3-phase power connection", "Thirumal", "2026-09-01", "2026-10-25", "high"),
-            ("Site prep: water connection", "Thirumal", "2026-09-01", "2026-10-25", "high"),
-            ("Worker accommodation arrangement", "Thirumal", "2026-10-01", "2026-10-25", "medium"),
-            ("GST registration active", "Thirumal", "2026-08-15", "2026-09-15", "high"),
-            ("Decide farm brand name", "Thirumal", "2026-08-10", "2026-08-31", "medium"),
-            ("Create Instagram/Facebook/Google Business pages", "Thirumal", "2026-08-15", "2026-09-15", "low"),
-            ("Register on AgriBazaar / DeHaat as producer", "Thirumal", "2026-09-01", "2026-09-30", "low"),
-            ("Initiate India GAP certification process", "Thirumal", "2026-09-01", "2026-10-31", "medium"),
-        ],
-        "Construction": [
-            ("Construction kickoff / mobilization", "Vendor", "2026-11-01", "2026-11-05", "high"),
-            ("Foundation & civil work", "Vendor", "2026-11-05", "2026-12-05", "high"),
-            ("Structural erection (columns, trusses, purlins)", "Vendor", "2026-12-01", "2027-01-15", "high"),
-            ("QA check: structural specs vs Annexure III", "Thirumal", "2027-01-10", "2027-01-20", "high"),
-            ("Milestone payment: 50% structural erection", "Thirumal", "2027-01-15", "2027-01-20", "high"),
-            ("Poly-film & cladding installation", "Vendor", "2027-01-15", "2027-02-10", "high"),
-            ("Netafim drip irrigation installation (3 zones)", "Vendor", "2027-01-20", "2027-02-20", "high"),
-            ("IoT climate control panels (4) installation", "Vendor", "2027-02-01", "2027-02-25", "medium"),
-            ("Water storage tank (25,000L) + fertigation tank (2,000L)", "Vendor", "2027-02-01", "2027-02-20", "high"),
-            ("Plumbing & electrical work", "Vendor", "2027-02-15", "2027-03-10", "high"),
-            ("Milestone payment: plumbing/electrical completion", "Thirumal", "2027-03-05", "2027-03-10", "high"),
-            ("Final construction QA walkthrough", "Thirumal", "2027-03-15", "2027-03-25", "high"),
-            ("NHB JIT physical verification", "NHB / Vendor", "2027-03-20", "2027-03-31", "high"),
-            ("Construction documentation (photos/videos) archived", "Thirumal", "2026-11-01", "2027-03-31", "medium"),
-        ],
-        "Pre-Plantation": [
-            ("Agronomist consultation: seed variety finalization", "Agronomist", "2027-03-01", "2027-03-15", "high"),
-            ("Fertigation schedule finalized", "Agronomist", "2027-03-10", "2027-03-25", "high"),
-            ("Pest/disease IPM calendar prepared", "Agronomist", "2027-03-10", "2027-03-25", "medium"),
-            ("Hire & train field supervisor + labour", "Thirumal", "2027-03-01", "2027-03-31", "high"),
-            ("Grading area / packing shed setup", "Thirumal", "2027-03-01", "2027-03-31", "medium"),
-            ("Crop insurance evaluation (PMFBY/private)", "Thirumal", "2027-02-01", "2027-03-15", "medium"),
-        ],
-        "Plantation & Crop Cycle 1": [
-            ("Seed sowing / plantation (30,000 plants)", "Field team", "2027-04-01", "2027-04-10", "high"),
-            ("Daily fertigation & pest log begins", "Supervisor", "2027-04-01", "2027-06-30", "high"),
-            ("Trellising & training", "Field team", "2027-04-10", "2027-05-10", "medium"),
-            ("Mid-cycle growth review with agronomist", "Agronomist", "2027-05-01", "2027-05-10", "medium"),
-        ],
-        "B2B & Market Setup": [
-            ("Register on Hyperpure supplier portal", "Thirumal", "2027-01-01", "2027-01-31", "high"),
-            ("Register on Ninjacart supplier portal", "Thirumal", "2027-01-01", "2027-01-31", "high"),
-            ("Contact Metro Cash & Carry vendor team", "Thirumal", "2027-01-15", "2027-02-15", "medium"),
-            ("Contact local HORECA distributors", "Thirumal", "2027-01-15", "2027-02-28", "medium"),
-            ("Send Farm Profile PDF to shortlisted buyers", "Thirumal", "2027-03-01", "2027-03-15", "high"),
-            ("Order branded packaging (QR code)", "Thirumal", "2027-02-15", "2027-03-15", "medium"),
-            ("Register on ONDC network", "Thirumal", "2027-02-01", "2027-03-31", "low"),
-        ],
-        "Harvest & Sales": [
-            ("First harvest begins", "Field team", "2027-06-01", "2027-06-10", "high"),
-            ("Grading (A/B/C) & packing operational", "Field team", "2027-06-01", "2027-06-10", "high"),
-            ("Dispatch to Grade-A buyers (Hyperpure/hotels)", "Thirumal", "2027-06-05", "2027-08-31", "high"),
-            ("Daily mandi price tracking begins", "Thirumal", "2027-06-01", "2027-08-31", "medium"),
-            ("Post-harvest yield review vs target", "Thirumal", "2027-08-01", "2027-08-15", "medium"),
-            ("Plan Cycle 2 crop & buyer allocation", "Thirumal", "2027-08-01", "2027-08-31", "medium"),
-        ],
-    }
-
-    for phase_name, tasks in phases.items():
-        parent = mk(phase_name)
-        phase_ids[phase_name] = parent.id
-        created_tasks.append(parent.id)
-        for (title, owner, start, end, priority) in tasks:
-            child = mk(title, status="not_started", priority=priority,
-                       start=start, end=end, notes=f"Owner: {owner}", parent_id=parent.id)
-            created_tasks.append(child.id)
-
-    # ── 4b. Vendor payment milestones ─────────────────────────────────────────
-    vendor_parent = mk(
-        "Vendor Payments - Agri Blooms",
-        notes="Rs 3,00,000 retained by vendor until NHB JIT clearance is received -- not a separate payment, informational only."
-    )
-    created_tasks.append(vendor_parent.id)
-    phase_ids["Vendor Payments - Agri Blooms"] = vendor_parent.id
-
-    milestones = [
-        ("Token amount paid", "On agreement", 150000, "completed"),
-        ("40% post-token", "On purchase order", 6000000, "not_started"),
-        ("20% at dispatch", "Materials dispatched", 3000000, "not_started"),
-        ("30% at 50% erection", "50% structural erection complete", 4500000, "not_started"),
-        ("10% at plumbing/electrical", "Plumbing & electrical work complete", 1500000, "not_started"),
+    # ── 4. 46 flat tasks (Phase = category) ───────────────────────────────────
+    TASKS = [
+        # (phase, title, owner, planned_start, planned_end, priority)
+        # Pre-Construction
+        ("Pre-Construction", "Complete Bank Document Formalities",                         "Thirumal",           "2026-08-10", "2026-08-17", "high"),
+        ("Pre-Construction", "Collect bank sanction letter & documents",                   "Thirumal",           "2026-08-18", "2026-08-20", "high"),
+        ("Pre-Construction", "Share bank documents with Agri Blooms for NHB submission",   "Thirumal",           "2026-08-20", "2026-08-22", "high"),
+        ("Pre-Construction", "Follow up on NHB JIT clearance (weekly)",                    "Thirumal",           "2026-08-22", "2026-10-15", "high"),
+        ("Pre-Construction", "Site prep: levelling",                                        "Vendor / Site team", "2026-10-01", "2026-10-25", "high"),
+        ("Pre-Construction", "Site prep: 3-phase power connection",                        "Thirumal",           "2026-09-01", "2026-10-25", "high"),
+        ("Pre-Construction", "Site prep: water connection",                                "Thirumal",           "2026-09-01", "2026-10-25", "high"),
+        ("Pre-Construction", "Worker accommodation arrangement",                           "Thirumal",           "2026-10-01", "2026-10-25", "medium"),
+        ("Pre-Construction", "Decide farm brand name",                                     "Thirumal",           "2026-08-18", "2026-08-31", "medium"),
+        ("Pre-Construction", "GST registration active",                                    "Thirumal",           "2026-08-18", "2026-09-15", "high"),
+        ("Pre-Construction", "Create Instagram/Facebook/Google Business pages",            "Thirumal",           "2026-08-18", "2026-09-15", "low"),
+        # Construction
+        ("Construction", "Construction kickoff / mobilization",                            "Vendor",             "2026-10-21", "2026-11-05", "high"),
+        ("Construction", "Foundation & civil work",                                        "Vendor",             "2026-11-05", "2026-12-05", "high"),
+        ("Construction", "Structural erection (columns, trusses, purlins)",                "Vendor",             "2026-12-01", "2027-01-15", "high"),
+        ("Construction", "QA check: structural specs vs Annexure III",                     "Thirumal",           "2027-01-10", "2027-02-28", "high"),
+        ("Construction", "Poly-film & cladding installation",                              "Vendor",             "2027-01-15", "2027-02-10", "high"),
+        ("Construction", "Netafim drip irrigation installation (4 zones)",                 "Vendor",             "2027-01-20", "2027-02-28", "high"),
+        ("Construction", "IoT climate control panels (4) installation",                    "Vendor",             "2027-02-01", "2027-02-28", "medium"),
+        ("Construction", "Water storage tank (25,000L) + fertigation tank (2,000L)",       "Vendor",             "2027-02-01", "2027-02-28", "high"),
+        ("Construction", "Plumbing & electrical work",                                     "Vendor",             "2027-02-01", "2027-02-28", "high"),
+        ("Construction", "Final construction QA walkthrough",                              "Thirumal",           "2027-02-20", "2027-02-28", "high"),
+        ("Construction", "NHB JIT physical verification",                                  "NHB / Vendor",       "2027-04-15", "2027-06-30", "high"),
+        ("Construction", "Construction documentation (photos/videos) archived",            "Thirumal",           "2026-11-01", "2027-02-28", "medium"),
+        ("Construction", "Fencing",                                                        "Thirumal",           "2027-02-15", "2027-02-28", "medium"),
+        # Pre-Plantation
+        ("Pre-Plantation", "Agronomist consultation: seed variety finalization",           "Agronomist",         "2027-01-01", "2027-01-31", "high"),
+        ("Pre-Plantation", "Seedling preparation and growing",                             "Agronomist",         "2027-02-01", "2027-02-28", "high"),
+        ("Pre-Plantation", "Fertigation schedule finalized",                               "Agronomist",         "2027-02-01", "2027-02-28", "high"),
+        ("Pre-Plantation", "Pest/disease IPM calendar prepared",                           "Agronomist",         "2027-02-01", "2027-02-28", "medium"),
+        ("Pre-Plantation", "Hire & train field supervisor + labour",                       "Thirumal",           "2027-02-01", "2027-03-31", "high"),
+        ("Pre-Plantation", "Grading area / packing shed setup",                            "Thirumal",           "2027-03-01", "2027-03-31", "medium"),
+        ("Pre-Plantation", "Crop insurance evaluation (PMFBY/private)",                    "Thirumal",           "2027-02-01", "2027-02-28", "medium"),
+        # Plantation & Crop Cycle 1
+        ("Plantation & Crop Cycle 1", "Seed sowing / plantation (30,000 plants)",         "Field team",         "2027-03-01", "2027-03-10", "high"),
+        ("Plantation & Crop Cycle 1", "Daily fertigation & pest log begins",               "Supervisor",         "2027-03-01", "2027-06-30", "high"),
+        ("Plantation & Crop Cycle 1", "Trellising & training",                             "Field team",         "2027-03-01", "2027-05-10", "medium"),
+        ("Plantation & Crop Cycle 1", "Mid-cycle growth review with agronomist",           "Agronomist",         "2027-04-01", "2027-04-15", "medium"),
+        # B2B & Market Setup
+        ("B2B & Market Setup", "Register on Online Marketplaces (Hyperpure, Ninjacart, BB) as producer", "Thirumal", "2027-01-01", "2027-03-31", "high"),
+        ("B2B & Market Setup", "Initiate India GAP certification process",                 "Thirumal",           "2027-01-01", "2027-03-31", "high"),
+        ("B2B & Market Setup", "Send Farm Profile PDF to shortlisted buyers",              "Thirumal",           "2027-01-01", "2027-03-31", "medium"),
+        ("B2B & Market Setup", "Order branded packaging (QR code)",                        "Thirumal",           "2027-03-01", "2027-05-10", "medium"),
+        ("B2B & Market Setup", "Register on ONDC network",                                "Thirumal",           "2027-02-01", "2027-03-31", "low"),
+        # Harvest & Sales
+        ("Harvest & Sales", "First harvest begins",                                        "Field team",         "2027-04-20", "2027-06-30", "high"),
+        ("Harvest & Sales", "Grading (A/B/C) & packing operational",                       "Field team",         "2027-04-20", "2027-06-30", "high"),
+        ("Harvest & Sales", "Dispatch to Grade-A buyers (Hyperpure/hotels)",               "Thirumal",           "2027-04-20", "2027-06-30", "high"),
+        ("Harvest & Sales", "Daily mandi price tracking begins",                           "Thirumal",           "2027-04-01", "2027-06-30", "medium"),
+        ("Harvest & Sales", "Post-harvest yield review vs target",                         "Thirumal",           "2027-06-30", "2027-07-10", "medium"),
+        ("Harvest & Sales", "Plan Cycle 2 crop & buyer allocation",                        "Thirumal",           "2027-07-01", "2027-07-31", "medium"),
     ]
 
-    for (title, trigger, amount, status) in milestones:
-        child = mk(title, status=status, priority="high",
-                   notes=f"Trigger: {trigger}", budget=float(amount),
-                   parent_id=vendor_parent.id)
-        created_tasks.append(child.id)
+    for i, (phase, title, owner, ps, pe, priority) in enumerate(TASKS, 1):
+        mk_task(i, title, phase, owner, ps, pe, priority=priority)
 
-        if status == "completed":
-            # Two expense rows for the token payment
-            exp1 = AdminTaskExpense(
-                task_id=child.id, amount=50000.0,
-                description="HDFC transfer 1/2", expense_date=_date(2026, 5, 6),
-                status="paid", account_id=account.id,
-            )
-            exp2 = AdminTaskExpense(
-                task_id=child.id, amount=100000.0,
-                description="HDFC transfer 2/2", expense_date=_date(2026, 5, 7),
-                status="paid", account_id=account.id,
-            )
-            db.add_all([exp1, exp2])
-            # Matching FundReceipt rows so account balance nets to 0
-            rec1 = FundReceipt(
-                source_id=fund_source.id, account_id=account.id,
-                amount=50000.0,
-                description="Own funds transferred in for token payment",
-                received_date=_date(2026, 5, 6),
-            )
-            rec2 = FundReceipt(
-                source_id=fund_source.id, account_id=account.id,
-                amount=100000.0,
-                description="Own funds transferred in for token payment",
-                received_date=_date(2026, 5, 7),
-            )
-            db.add_all([rec1, rec2])
+    # ── 5. 42 budget line items ───────────────────────────────────────────────
+    def bli(name, comp, cat, sub, date, planned, account, actual=None, notes=None):
+        acct_obj = hdfc if account == "HDFC Account" else loan
+        db.add(BudgetLineItem(
+            name=name, component=comp, category=cat, sub_category=sub,
+            planned_date=_date.fromisoformat(date) if date else None,
+            planned_amount=planned, actual_amount=actual,
+            account_id=acct_obj.id, notes=notes,
+        ))
 
-    # ── 4c. Budget allocations (sub-categories) ───────────────────────────────
-    allocations = [
-        ("Polyhouse - Land & Fencing",    405000.0),
-        ("Polyhouse - Cultivation",       1497600.0),
-        ("Polyhouse - Drip Irrigation",   1201400.0),
-        ("Polyhouse - Water Tank",         250000.0),
-        ("Polyhouse - Bore Well",          200000.0),
-        ("Polyhouse - Civil (Shed/Quarters)", 486000.0),
-        ("Polyhouse - Farm Machinery",     560000.0),
-        ("Polyhouse - NVPH Structure",   10400000.0),
-        ("Polyhouse - Working Capital",    500000.0),
-        ("Polyhouse - Compliance/GAP",     100000.0),
-        ("Polyhouse - Marketing",          150000.0),
-    ]
-
-    for cat, amount in allocations:
-        existing_alloc = db.query(CategoryAllocation).filter(
-            CategoryAllocation.category == cat,
-            CategoryAllocation.account_id == account.id,
-        ).first()
-        if existing_alloc:
-            existing_alloc.allocated_amount = amount
-        else:
-            db.add(CategoryAllocation(category=cat, allocated_amount=amount, account_id=account.id))
-
-    # ── 4d. Construction QA checklist ─────────────────────────────────────────
-    qa_parent = mk("Construction QA Checklist")
-    created_tasks.append(qa_parent.id)
-    phase_ids["Construction QA Checklist"] = qa_parent.id
-
-    qa_items = [
-        ("Centre height confirmed at 6.0m",                          "Annexure III"),
-        ("Grid size 4m x 4m",                                        "Annexure III"),
-        ("Foundation depth min. 75cm, GI pipes 48OD/60OD",          "Annexure III"),
-        ("Wind load rating min. 120 km/hr",                          "Materials Details"),
-        ("Nuts/bolts pre-galvanized, high tensile (spot check)",     "Materials Details"),
-        ("Poly-film 200 micron UV stabilized, Ginegar/GreenPro certified", "Materials Details"),
-        ("Insect nets 40 mesh, properly fixed with GI profiles",     "Materials Details"),
-        ("Side ventilation curtains operate smoothly",               "Materials Details"),
-        ("Ridge vents 80-90cm opening functional",                   "Materials Details"),
-        ("Netafim drip system installed as confirmed",               "Vendor email"),
-        ("3 irrigation zones functioning independently",             "Vendor email"),
-        ("4 IoT climate control panels installed & calibrated",      "Vendor email"),
-        ("Water tank 25,000L + fertigation tank 2,000L installed",   "Vendor email"),
-        ("7.5 HP fertigation motor + 5 HP fogger pump tested",       "Vendor email"),
-        ("Structure specs match NHB DPR declaration",                "NHB DPR"),
-        ("Photo/video documentation archived per stage",             "Internal"),
-    ]
-
-    for (title, ref) in qa_items:
-        child = mk(title, end="2027-03-31", notes=f"Spec reference: {ref}", parent_id=qa_parent.id)
-        created_tasks.append(child.id)
+    # Poly House — Vendor Payments
+    bli("Token Amount Payment for Vendor",          "Poly House","Vendor Payments","Token",         "2026-06-15", 150000, "HDFC Account", 150000, None)
+    bli("Advance Amount Payment to Vendor",          "Poly House","Vendor Payments","Advance",        "2026-08-20", 250000, "Loan Account")
+    bli("40% Payment to Vendor — Material Purchase", "Poly House","Vendor Payments","40% Milestone",  "2026-10-20",4780000, "Loan Account")
+    bli("20% Payment to Vendor — Material Received", "Poly House","Vendor Payments","20% Milestone",  "2026-11-05",2740000, "Loan Account")
+    bli("30% — 50% Structural Erection Completed",   "Poly House","Vendor Payments","30% Milestone",  "2027-01-05",4110000, "Loan Account")
+    bli("10% — Plumbing & Electrical Work Complete",  "Poly House","Vendor Payments","10% Milestone",  "2027-02-20",1370000, "HDFC Account")
+    bli("Vendor Payment after NHB JIT Clearance",    "Poly House","Vendor Payments","NHB Retention",  "2027-07-15",  300000, "Loan Account", notes="Retained until NHB JIT physical verification")
+    # Poly House — Bank Loan
+    bli("Bank Loan Pre-Processing Expenses",         "Poly House","Bank Loan","Processing",           "2026-07-15",  50000, "HDFC Account", 50000, "Valuation, legal and other charges")
+    bli("Bank Processing Charges",                   "Poly House","Bank Loan","Processing",           "2026-08-18", 100000, "HDFC Account", notes="Mortgage and other expenses")
+    # Poly House — Infrastructure
+    bli("Electricity Connection Charges",            "Poly House","Electricity","Connection",         "2026-10-01",  25000, "HDFC Account")
+    bli("Land Levelling",                            "Poly House","Land","Levelling",                 "2026-10-25",  10000, "HDFC Account")
+    bli("Fencing",                                   "Poly House","Land","Fencing",                   "2027-02-28", 100000, "HDFC Account")
+    bli("Labour Quarter & Packaging Room",           "Poly House","Accommodation","Civil",             "2026-11-15", 200000, "HDFC Account")
+    # Operations — Electricity (monthly)
+    for mo, dt in [("Jan 27","2027-01-05"),("Feb 27","2027-02-05"),("Mar 27","2027-03-05"),
+                   ("Apr 27","2027-04-05"),("May 27","2027-05-05"),("Jun 27","2027-06-05"),
+                   ("Jul 27","2027-07-05"),("Aug 27","2027-08-05")]:
+        bli(f"{mo} — Monthly Electricity Bill", "Operations","Electricity","Monthly Bill", dt, 10000, "HDFC Account")
+    # Operations — Salary
+    bli("Yearly Salary — 3 Labourers",               "Operations","Salary","Labour",                  "2027-03-05", 400000, "HDFC Account")
+    for mo, dt in [("Jan 27","2027-01-05"),("Feb 27","2027-02-05"),("Mar 27","2027-03-05"),
+                   ("Apr 27","2027-04-05"),("May 27","2027-05-05"),("Jun 27","2027-06-05"),
+                   ("Jul 27","2027-07-05"),("Aug 27","2027-08-05")]:
+        bli(f"{mo} — Agronomist Salary",             "Operations","Salary","Agronomist",              dt, 20000, "HDFC Account")
+    # Operations — Loan Repayment
+    for mo, dt, amt in [
+        ("Nov 26","2026-11-05",57328),  ("Dec 26","2026-12-05",57328),
+        ("Jan 27","2027-01-05",88668),  ("Feb 27","2027-02-05",91726),
+        ("Mar 27","2027-03-05",91726),  ("Apr 27","2027-04-05",91726),
+        ("May 27","2027-05-05",91726),
+        ("Jun 27","2027-06-05",1014802),
+        ("Jul 27","2027-07-05",84670),  ("Aug 27","2027-08-05",84670),
+    ]:
+        notes = "Includes NHB JIT clearance lump-sum repayment" if mo == "Jun 27" else None
+        bli(f"{mo} — Bank Loan Repayment", "Operations","Loan Repayment","EMI", dt, amt, "HDFC Account", notes=notes)
+    # Operations — General
+    bli("Miscellaneous",                             "Operations","Miscellaneous","General",           "2027-05-05", 200000, "HDFC Account")
+    bli("Marketing / Branding / Packaging",          "Operations","General","Marketing",               "2027-05-05", 150000, "HDFC Account")
 
     db.commit()
 
-    # ── 5. Summary ────────────────────────────────────────────────────────────
     total_tasks = db.query(AdminTask).count()
-    total_expenses = db.query(AdminTaskExpense).count()
-    total_allocs = db.query(CategoryAllocation).filter(
-        CategoryAllocation.category.like("Polyhouse%")
-    ).count()
-    alloc_sum = db.query(func.sum(CategoryAllocation.allocated_amount)).filter(
-        CategoryAllocation.category.like("Polyhouse%")
-    ).scalar() or 0.0
+    total_bli   = db.query(BudgetLineItem).count()
+    total_planned = db.query(func.sum(BudgetLineItem.planned_amount)).scalar() or 0.0
 
     return {
         "ok": True,
         "total_admin_tasks": total_tasks,
-        "total_expenses": total_expenses,
-        "polyhouse_allocations": total_allocs,
-        "allocation_total_inr": alloc_sum,
-        "phase_parent_ids": phase_ids,
-        "note": (
-            "Budget sub-categories use 'Polyhouse - <Component>' strings. "
-            "Telegram digest is category-agnostic and will pick up Polyhouse tasks automatically. "
-            "This endpoint refuses re-runs unless ?force=true is passed."
-        ),
+        "total_budget_line_items": total_bli,
+        "total_planned_inr": total_planned,
+        "accounts": ["HDFC Account", "Loan Account"],
+        "note": "Data wiped and reloaded from Excel tracker. Pass ?force=true to re-run.",
     }
 
 

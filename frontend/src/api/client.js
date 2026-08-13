@@ -189,3 +189,10 @@ export const updateAdminTask       = (id, data)     => api.put(`/admin/tasks/${i
 export const deleteAdminTask       = (id)           => api.delete(`/admin/tasks/${id}`)
 export const addTaskExpense        = (id, data)     => api.post(`/admin/tasks/${id}/expenses`, data)
 export const deleteTaskExpense     = (taskId, expId) => api.delete(`/admin/tasks/${taskId}/expenses/${expId}`)
+
+// Finance — accounts, budget line items
+export const getFinanceAccounts    = ()             => api.get('/finance/accounts')
+export const getBudgetItems        = ()             => api.get('/finance/budget-items')
+export const createBudgetItem      = (data)         => api.post('/finance/budget-items', data)
+export const updateBudgetItem      = (id, data)     => api.put(`/finance/budget-items/${id}`, data)
+export const deleteBudgetItem      = (id)           => api.delete(`/finance/budget-items/${id}`)
