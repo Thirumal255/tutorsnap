@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { Capacitor } from '@capacitor/core'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api` : '/api',
@@ -6,13 +7,12 @@ const api = axios.create({
 })
 
 const MOBILE_API_KEY = import.meta.env.VITE_MOBILE_API_KEY || ''
-const isNative = () => typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()
 
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('tutorsnap_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
-  } else if (isNative() && MOBILE_API_KEY) {
+  } else if (Capacitor.isNativePlatform() && MOBILE_API_KEY) {
     config.headers.Authorization = `Bearer ${MOBILE_API_KEY}`
   }
   return config
@@ -21,7 +21,8 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   res => res,
   err => {
-    if (err.response?.status === 401) {
+    // On native, don't redirect to '/' on 401 — just reject
+    if (err.response?.status === 401 && !Capacitor.isNativePlatform()) {
       localStorage.removeItem('tutorsnap_token')
       window.location.href = '/'
     }
