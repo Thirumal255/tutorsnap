@@ -1512,8 +1512,8 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const today = new Date(new Date().toDateString())
   const in7days = new Date(today); in7days.setDate(today.getDate()+7)
   const root = tasks.filter(t=>!t.parent_id)
-  const [focusOpen, setFocusOpen]     = useState(false)
-  const [comingOpen, setComingOpen]   = useState(false)
+  const [focusOpen, setFocusOpen]     = useState(true)
+  const [comingOpen, setComingOpen]   = useState(true)
   const [budgetItems, setBudgetItems] = useState([])
   useEffect(() => { getBudgetItems().then(r => setBudgetItems(r.data)).catch(()=>{}) }, [])
 
@@ -2638,35 +2638,35 @@ export default function TasksPage({ onLogout }) {
       {confetti&&<Confetti onDone={()=>setConfetti(false)}/>}
 
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-green-700 shadow-md">
-        <div className="flex items-center justify-between px-4 py-3">
-          {/* Left — spacer to balance */}
-          <div className="min-w-[48px]">
+      <div className="sticky top-0 z-30 shadow-lg" style={{background:'linear-gradient(135deg,#166534 0%,#15803d 100%)'}}>
+        <div className="flex items-center justify-between px-5 py-4">
+          {/* Left — new task or spacer */}
+          <div className="min-w-[72px]">
             {tab==='tasks' && (
-              <button onClick={()=>setShowCreate(true)} className="bg-white text-green-700 text-xs font-bold px-3 py-2 rounded-xl shadow-sm">
+              <button onClick={()=>setShowCreate(true)} className="bg-white text-green-700 text-sm font-bold px-4 py-2 rounded-xl shadow-sm">
                 + New
               </button>
             )}
           </div>
 
           {/* Center — logo */}
-          <div className="flex flex-col items-center">
-            <div className="flex items-center gap-2">
-              <span className="text-3xl leading-none">🌿</span>
-              <h1 className="text-white font-bold text-2xl leading-none tracking-tight">Polyhouse</h1>
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex items-center gap-2.5">
+              <span className="text-4xl leading-none">🌿</span>
+              <h1 className="text-white font-extrabold text-4xl leading-none tracking-tight drop-shadow">Polyhouse</h1>
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-green-200 text-xs">NVPH Project Tracker</p>
+            <div className="flex items-center gap-2">
+              <p className="text-green-200 text-sm font-medium tracking-wide">NVPH Project Tracker</p>
               {currentPhase && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white leading-none">{currentPhase}</span>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/25 text-white border border-white/30">{currentPhase}</span>
               )}
             </div>
           </div>
 
           {/* Right — sign out */}
-          <button onClick={onLogout} className="flex flex-col items-center text-white/70 hover:text-white px-2 py-1 rounded-xl min-w-[48px]">
-            <span className="text-base leading-none">↩</span>
-            <span className="text-[9px] mt-0.5 font-medium">Sign out</span>
+          <button onClick={onLogout} className="flex flex-col items-center text-white/80 hover:text-white min-w-[72px]">
+            <span className="text-xl leading-none">↩</span>
+            <span className="text-xs mt-1 font-semibold">Sign out</span>
           </button>
         </div>
       </div>
