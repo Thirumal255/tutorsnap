@@ -1263,9 +1263,11 @@ function BudgetTab() {
   const [editId, setEditId]     = useState(null)
   const [editVal, setEditVal]   = useState('')
   const [saving, setSaving]     = useState(false)
-  const [filterComp, setFilterComp] = useState('all')
   const [showForm, setShowForm] = useState(false)
-  const [formItem, setFormItem] = useState(null) // null = add, object = edit
+  const [formItem, setFormItem] = useState(null)
+  // collapsed by default: undefined → collapsed; false → open
+  const [collapsedCats, setCollapsedCats]    = useState({})
+  const [collapsedSubs, setCollapsedSubs]    = useState({})
 
   const load = useCallback(async () => {
     const [b, a] = await Promise.all([getBudgetItems(), getFinanceAccounts()])
@@ -1273,18 +1275,17 @@ function BudgetTab() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  const components = [...new Set(items.map(i => i.component).filter(Boolean))]
-  const visible = filterComp === 'all' ? items : items.filter(i => i.component === filterComp)
+  const totalPlanned = items.reduce((s, i) => s + (i.planned_amount || 0), 0)
+  const totalActual  = items.reduce((s, i) => s + (i.actual_amount  || 0), 0)
 
-  const totalPlanned = visible.reduce((s, i) => s + (i.planned_amount || 0), 0)
-  const totalActual  = visible.reduce((s, i) => s + (i.actual_amount  || 0), 0)
-
-  // group by component
-  const grouped = {}
-  visible.forEach(item => {
-    const comp = item.component || 'Other'
-    if (!grouped[comp]) grouped[comp] = []
-    grouped[comp].push(item)
+  // Build category → sub_category → items tree
+  const tree = {}
+  items.forEach(item => {
+    const cat = item.category || 'Uncategorized'
+    const sub = item.sub_category || '—'
+    if (!tree[cat]) tree[cat] = {}
+    if (!tree[cat][sub]) tree[cat][sub] = []
+    tree[cat][sub].push(item)
   })
 
   async function saveActual(id) {
@@ -1314,7 +1315,7 @@ function BudgetTab() {
 
   return (
     <>
-      <div className="p-4 pb-28 space-y-4">
+      <div className="p-4 pb-28 space-y-3">
         {/* Totals + Add button */}
         <div className="flex items-center gap-2">
           <div className="flex-1 grid grid-cols-3 gap-2">
@@ -1335,20 +1336,6 @@ function BudgetTab() {
           </button>
         </div>
 
-        {/* Filter */}
-        {components.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-            {['all', ...components].map(c => (
-              <button key={c} onClick={() => setFilterComp(c)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 ${
-                  filterComp === c ? 'bg-blue-100 text-blue-600' : 'bg-white border border-gray-200 text-gray-400'
-                }`}>
-                {c === 'all' ? 'All' : c}
-              </button>
-            ))}
-          </div>
-        )}
-
         {items.length === 0 && (
           <div className="text-center py-16">
             <p className="text-4xl mb-3">📒</p>
@@ -1359,76 +1346,104 @@ function BudgetTab() {
           </div>
         )}
 
-        {/* Per-component groups */}
-        {Object.entries(grouped).map(([comp, compItems]) => {
-          const cp = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-          const ca = compItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+        {/* Category → Sub-category → Items (two-level collapsible, collapsed by default) */}
+        {Object.entries(tree).map(([cat, subs]) => {
+          const catItems = Object.values(subs).flat()
+          const catPlanned = catItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
+          const catActual  = catItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+          const catOpen = collapsedCats[cat] === false
+
           return (
-            <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 bg-green-700">
-                <span className="text-white font-bold text-xs">{comp}</span>
-                <span className="text-green-100 text-xs">
-                  {fmtINR(cp)} planned · <span className="text-white font-semibold">{fmtINR(ca)}</span> actual
-                </span>
-              </div>
-              <div className="divide-y divide-gray-200/40">
-                {compItems.map(item => {
-                  const variance = (item.planned_amount || 0) - (item.actual_amount || 0)
-                  const editing = editId === item.id
-                  return (
-                    <div key={item.id} className="px-4 py-3 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
-                          <p className="text-gray-500 text-[10px] mt-0.5">
-                            {[item.category, item.sub_category].filter(Boolean).join(' › ')}
-                            {item.planned_date && ` · ${fmtDate(item.planned_date)}`}
-                          </p>
-                        </div>
-                        <div className="text-right flex-shrink-0 space-y-0.5">
-                          <p className="text-gray-800 text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
-                          {editing ? (
-                            <input
-                              autoFocus
-                              type="number"
-                              value={editVal}
-                              onChange={e => setEditVal(e.target.value)}
-                              onBlur={() => saveActual(item.id)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveActual(item.id); if (e.key === 'Escape') setEditId(null) }}
-                              className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
-                              disabled={saving}
-                            />
-                          ) : (
-                            <button
-                              onClick={() => { setEditId(item.id); setEditVal(item.actual_amount != null ? String(item.actual_amount) : '') }}
-                              className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-green-600 bg-green-50' : 'text-gray-400 bg-gray-100'}`}>
-                              {item.actual_amount != null ? fmtINR(item.actual_amount) : '+ actual'}
-                            </button>
-                          )}
-                          {item.actual_amount != null && (
-                            <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                              {variance < 0 ? '▲' : '▼'} {fmtINR(Math.abs(variance))}
-                            </p>
-                          )}
-                        </div>
-                        {/* Edit / Delete icons */}
-                        <div className="flex flex-col gap-1 flex-shrink-0 ml-1">
-                          <button onClick={() => openEdit(item)}
-                            className="text-gray-300 hover:text-blue-600 text-xs leading-none px-1">✏️</button>
-                          <button onClick={() => handleDelete(item)}
-                            className="text-gray-300 hover:text-red-500 text-base leading-none px-1">×</button>
-                        </div>
+            <div key={cat} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+              {/* Category header */}
+              <button
+                onClick={() => setCollapsedCats(p => ({ ...p, [cat]: catOpen ? undefined : false }))}
+                className="w-full flex items-center justify-between px-4 py-2.5 bg-green-700">
+                <span className="text-white font-bold text-xs">{cat}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-200 text-[10px]">{fmtINR(catPlanned)}{catActual > 0 ? ` · ${fmtINR(catActual)} actual` : ''}</span>
+                  <span className="text-white text-xs">{catOpen ? '▼' : '▶'}</span>
+                </div>
+              </button>
+
+              {catOpen && (
+                <div className="divide-y divide-gray-100">
+                  {Object.entries(subs).map(([sub, subItems]) => {
+                    const subKey = `${cat}||${sub}`
+                    const subPlanned = subItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
+                    const subActual  = subItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+                    const subOpen = collapsedSubs[subKey] === false
+
+                    return (
+                      <div key={sub}>
+                        {/* Sub-category header */}
+                        <button
+                          onClick={() => setCollapsedSubs(p => ({ ...p, [subKey]: subOpen ? undefined : false }))}
+                          className="w-full flex items-center justify-between px-4 py-2 bg-green-50 border-b border-green-100">
+                          <span className="text-green-800 font-semibold text-xs">{sub === '—' ? 'General' : sub}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-green-600 text-[10px]">{fmtINR(subPlanned)}{subActual > 0 ? ` · ${fmtINR(subActual)}` : ''}</span>
+                            <span className="text-green-700 text-xs">{subOpen ? '▼' : '▶'}</span>
+                          </div>
+                        </button>
+
+                        {subOpen && (
+                          <div className="divide-y divide-gray-100">
+                            {subItems.map(item => {
+                              const variance = (item.planned_amount || 0) - (item.actual_amount || 0)
+                              const editing = editId === item.id
+                              return (
+                                <div key={item.id} className="px-4 py-3 space-y-1">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
+                                      {item.planned_date && (
+                                        <p className="text-gray-400 text-[10px] mt-0.5">{fmtDate(item.planned_date)}</p>
+                                      )}
+                                    </div>
+                                    <div className="text-right flex-shrink-0 space-y-0.5">
+                                      <p className="text-gray-800 text-xs font-semibold tabular-nums">{fmtINR(item.planned_amount)}</p>
+                                      {editing ? (
+                                        <input
+                                          autoFocus type="number" value={editVal}
+                                          onChange={e => setEditVal(e.target.value)}
+                                          onBlur={() => saveActual(item.id)}
+                                          onKeyDown={e => { if (e.key==='Enter') saveActual(item.id); if (e.key==='Escape') setEditId(null) }}
+                                          className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
+                                          disabled={saving}
+                                        />
+                                      ) : (
+                                        <button
+                                          onClick={() => { setEditId(item.id); setEditVal(item.actual_amount != null ? String(item.actual_amount) : '') }}
+                                          className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-green-600 bg-green-50' : 'text-gray-400 bg-gray-100'}`}>
+                                          {item.actual_amount != null ? fmtINR(item.actual_amount) : '+ actual'}
+                                        </button>
+                                      )}
+                                      {item.actual_amount != null && (
+                                        <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                                          {variance < 0 ? '▲' : '▼'} {fmtINR(Math.abs(variance))}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-shrink-0 ml-1">
+                                      <button onClick={() => openEdit(item)} className="text-gray-300 hover:text-blue-600 text-xs leading-none px-1">✏️</button>
+                                      <button onClick={() => handleDelete(item)} className="text-gray-300 hover:text-red-500 text-base leading-none px-1">×</button>
+                                    </div>
+                                  </div>
+                                  {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
+                                    <p className="text-gray-400 text-[10px]">🏦 {item.account_name || accountMap[item.account_id]}</p>
+                                  )}
+                                  {item.notes && <p className="text-gray-400 text-[10px] italic">{item.notes}</p>}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
-                      {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
-                        <p className="text-gray-500 text-[10px]">
-                          🏦 {item.account_name || accountMap[item.account_id]}
-                        </p>
-                      )}
-                      {item.notes && <p className="text-gray-500 text-[10px] italic">{item.notes}</p>}
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}
@@ -2019,12 +2034,13 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
                   phaseMap[ph].push(t)
                 })
                 return Object.entries(phaseMap).map(([phase, pTasks]) => {
-                  const isCollapsed = !!collapsedPhases[phase]
+                  // collapsed by default (undefined → not explicitly opened)
+                  const isCollapsed = collapsedPhases[phase] !== false
                   const done = pTasks.filter(t=>t.status==='completed').length
                   return (
                     <div key={phase}>
                       <button
-                        onClick={() => setCollapsedPhases(p => ({ ...p, [phase]: !p[phase] }))}
+                        onClick={() => setCollapsedPhases(p => ({ ...p, [phase]: !isCollapsed }))}
                         className="w-full flex items-center justify-between px-3 py-2 bg-green-700 rounded-xl mb-2">
                         <span className="text-white text-xs font-bold">{phase}</span>
                         <div className="flex items-center gap-2">
