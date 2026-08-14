@@ -2570,7 +2570,7 @@ export default function TasksPage({ onLogout }) {
   const [editTask, setEditTask] = useState(null)
   const [confetti, setConfetti] = useState(false)
 
-  const [notifGranted, setNotifGranted] = useState(Notification?.permission==='granted')
+  const [notifGranted, setNotifGranted] = useState(typeof Notification !== 'undefined' && Notification?.permission==='granted')
 
 
   async function requestNotifications() {
@@ -2585,7 +2585,7 @@ export default function TasksPage({ onLogout }) {
       const [t,s,c,a] = await Promise.all([getAdminTasks(),getAdminTasksSummary(),getAdminTaskCategories(),getFinanceAccounts()])
       setTasks(t.data); setSummary(s.data); setCategories(c.data); setAccounts(a.data)
       // Setup notifications after load
-      if (Notification?.permission==='granted') setupNotifications(t.data)
+      if (typeof Notification !== 'undefined' && Notification?.permission==='granted') setupNotifications(t.data)
     } finally { setLoading(false) }
   }, [])
 
