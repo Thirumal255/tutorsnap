@@ -1542,21 +1542,21 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   // Reusable card components for the key date and budget sections
   const KeyDatesCard = (
     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm h-fit">
-      <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
-        <span className="text-white text-sm">📅</span>
-        <p className="text-white text-xs font-bold tracking-wide">KEY DATES</p>
+      <div className="px-4 py-3 bg-green-700 flex items-center gap-2">
+        <span className="text-white text-base">📅</span>
+        <p className="text-white text-sm font-bold tracking-wide">KEY DATES</p>
       </div>
       <div className="divide-y divide-gray-100">
         {KEY_DATES.map(({ label, date }) => {
           const isPast = new Date(date) < new Date()
           const isNext = !isPast && KEY_DATES.find(d => new Date(d.date) >= new Date())?.date === date
           return (
-            <div key={label} className={`flex items-center justify-between px-4 py-2.5 ${isNext ? 'bg-blue-50' : ''}`}>
+            <div key={label} className={`flex items-center justify-between px-4 py-3 ${isNext ? 'bg-blue-50' : ''}`}>
               <div className="flex items-center gap-2">
-                {isNext && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"/>}
-                <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
+                {isNext && <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>}
+                <span className={`text-sm font-medium ${isPast ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
               </div>
-              <span className={`text-xs font-bold ${isPast ? 'text-gray-400' : isNext ? 'text-blue-600' : 'text-gray-600'}`}>
+              <span className={`text-sm font-bold ${isPast ? 'text-gray-400' : isNext ? 'text-blue-600' : 'text-gray-600'}`}>
                 {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
               </span>
             </div>
@@ -1568,34 +1568,33 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
 
   const BudgetCard = (
     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm h-fit">
-      <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
-        <span className="text-white text-sm">💰</span>
-        <p className="text-white text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
+      <div className="px-4 py-3 bg-green-700 flex items-center gap-2">
+        <span className="text-white text-base">💰</span>
+        <p className="text-white text-sm font-bold tracking-wide">BUDGET SNAPSHOT</p>
       </div>
       <div className="grid grid-cols-3 divide-x divide-gray-100">
-        <div className="p-3 text-center">
-          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Planned</p>
-          <p className="text-gray-900 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalPlanned)}</p>
+        <div className="p-4 text-center">
+          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Planned</p>
+          <p className="text-gray-900 font-bold text-lg mt-1 tabular-nums">{fmtINR(totalPlanned)}</p>
         </div>
-        <div className="p-3 text-center">
-          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Spent</p>
-          <p className="text-green-700 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalSpent)}</p>
+        <div className="p-4 text-center">
+          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Spent</p>
+          <p className="text-green-700 font-bold text-lg mt-1 tabular-nums">{fmtINR(totalSpent)}</p>
         </div>
-        <div className="p-3 text-center">
-          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Funds Avail</p>
-          <p className={`font-bold text-base mt-0.5 tabular-nums ${totalAvail > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{fmtINR(totalAvail)}</p>
+        <div className="p-4 text-center">
+          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Funds Avail</p>
+          <p className={`font-bold text-lg mt-1 tabular-nums ${totalAvail > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{fmtINR(totalAvail)}</p>
         </div>
       </div>
-      {/* Progress bar inside budget card */}
       <div className="px-4 pb-4 pt-2">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Overall Progress</p>
-          <span className="text-green-700 font-extrabold text-lg tabular-nums">{pct}%</span>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Overall Progress</p>
+          <span className="text-green-700 font-extrabold text-xl tabular-nums">{pct}%</span>
         </div>
-        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-green-700 to-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
         </div>
-        <p className="text-gray-400 text-[10px] mt-1">{completed} of {total} tasks completed</p>
+        <p className="text-gray-400 text-xs mt-1.5">{completed} of {total} tasks completed</p>
       </div>
     </div>
   )
@@ -1605,18 +1604,18 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
 
       {/* ── Date strip ── */}
       <div className="flex items-center justify-between">
-        <p className="text-gray-500 text-xs font-semibold">{today_str}</p>
+        <p className="text-gray-600 text-sm font-semibold">{today_str}</p>
         <div className="flex items-center gap-2">
           {totalOngoing>0&&(
-            <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing} in progress</span>
+            <span className="bg-blue-100 text-blue-600 text-sm font-bold px-3 py-1 rounded-full">{totalOngoing} in progress</span>
           )}
           {overdueTasks.length>0&&(
-            <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">⚠ {overdueTasks.length} overdue</span>
+            <span className="bg-red-100 text-red-600 text-sm font-bold px-3 py-1 rounded-full">⚠ {overdueTasks.length} overdue</span>
           )}
         </div>
       </div>
 
-      {/* ── Row 1: KPI chips (always full width, 4 cols) ── */}
+      {/* ── KPI chips ── */}
       <div className="grid grid-cols-4 gap-2">
         {[
           ['✅', 'Done',    completed,                 'text-green-700',  'bg-green-50  border-green-200'],
@@ -1624,15 +1623,15 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
           ['⚠️', 'On Hold', byStatus.on_hold || 0,     'text-amber-700',  'bg-amber-50  border-amber-200'],
           ['⏳', 'Pending', byStatus.not_started || 0, 'text-gray-600',   'bg-gray-100  border-gray-200'],
         ].map(([icon, label, val, cls, bg]) => (
-          <div key={label} className={`${bg} border rounded-xl p-2 text-center shadow-sm`}>
-            <span className="text-base">{icon}</span>
-            <p className={`font-extrabold text-lg mt-0.5 tabular-nums ${cls}`}>{val}</p>
-            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">{label}</p>
+          <div key={label} className={`${bg} border rounded-xl p-3 text-center shadow-sm`}>
+            <span className="text-xl">{icon}</span>
+            <p className={`font-extrabold text-2xl mt-1 tabular-nums ${cls}`}>{val}</p>
+            <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mt-0.5">{label}</p>
           </div>
         ))}
       </div>
 
-      {/* ── Row 2: Key Dates | Budget — side by side on sm+ ── */}
+      {/* ── Key Dates | Budget — side by side on sm+ ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {KeyDatesCard}
         {BudgetCard}
@@ -1640,26 +1639,26 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
 
       {/* ── Today's Focus ── */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <button className="w-full flex items-center justify-between px-4 py-3"
+        <button className="w-full flex items-center justify-between px-4 py-3.5"
           onClick={()=>setFocusOpen(o=>!o)}>
           <div className="flex items-center gap-2">
-            <h2 className="text-gray-800 font-bold text-sm">Today's Focus</h2>
+            <h2 className="text-gray-800 font-bold text-base">Today's Focus</h2>
             {totalOngoing>0&&(
-              <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing}</span>
+              <span className="bg-blue-100 text-blue-600 text-sm font-bold px-2.5 py-0.5 rounded-full">{totalOngoing}</span>
             )}
             {overdueTasks.length>0&&(
-              <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">⚠ {overdueTasks.length}</span>
+              <span className="bg-red-100 text-red-600 text-sm font-bold px-2.5 py-0.5 rounded-full">⚠ {overdueTasks.length}</span>
             )}
           </div>
-          <span className="text-gray-400 text-xs">{focusOpen?'▲':'▼'}</span>
+          <span className="text-gray-400 text-sm">{focusOpen?'▲':'▼'}</span>
         </button>
 
         {focusOpen&&(
           <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
             {totalOngoing===0 ? (
-              <div className="text-center py-4">
-                <p className="text-2xl mb-1">✅</p>
-                <p className="text-gray-400 text-sm">All clear — nothing in progress</p>
+              <div className="text-center py-6">
+                <p className="text-3xl mb-2">✅</p>
+                <p className="text-gray-400 text-base">All clear — nothing in progress</p>
               </div>
             ) : (
               <>
@@ -1668,17 +1667,17 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                   const spent = t.total_expense||0
                   return (
                     <div key={t.id} onClick={()=>onTaskClick(t)}
-                      className="border-l-4 border-l-red-500 bg-red-50 border border-red-100 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2 mt-2">
+                      className="border-l-4 border-l-red-500 bg-red-50 border border-red-100 rounded-xl p-3.5 cursor-pointer active:scale-[0.99] transition-all space-y-2 mt-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 font-semibold text-sm leading-snug">{t.title}</p>
-                          {t.notes&&<p className="text-gray-400 text-xs mt-0.5 truncate">{t.notes}</p>}
+                          <p className="text-gray-800 font-semibold text-base leading-snug">{t.title}</p>
+                          {t.notes&&<p className="text-gray-400 text-sm mt-0.5 truncate">{t.notes}</p>}
                         </div>
-                        <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
+                        <span className="bg-red-100 text-red-600 text-sm font-bold px-2.5 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full">{t.category}</span>
-                        {t.end_date&&<span className="text-red-500 text-xs">📅 {fmtShort(t.end_date)}</span>}
+                        <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full">{t.category}</span>
+                        {t.end_date&&<span className="text-red-500 text-sm">📅 {fmtShort(t.end_date)}</span>}
                       </div>
                       {t.budget>0&&<BudgetBar budget={t.budget} spent={spent} compact/>}
                       <SubtaskPill subtasks={t.subtasks}/>
@@ -1689,7 +1688,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                 {overdueTasks.length>0&&activeTasks.length>0&&(
                   <div className="flex items-center gap-2 py-1">
                     <div className="flex-1 h-px bg-gray-100"/>
-                    <span className="text-gray-500 text-[10px] font-semibold uppercase tracking-wider">In Progress</span>
+                    <span className="text-gray-500 text-xs font-semibold uppercase tracking-wider">In Progress</span>
                     <div className="flex-1 h-px bg-gray-100"/>
                   </div>
                 )}
@@ -1699,15 +1698,15 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                   const spent = t.total_expense||0
                   return (
                     <div key={t.id} onClick={()=>onTaskClick(t)}
-                      className="border-l-4 border-l-blue-500 bg-white border border-gray-100 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2">
+                      className="border-l-4 border-l-blue-500 bg-white border border-gray-100 rounded-xl p-3.5 cursor-pointer active:scale-[0.99] transition-all space-y-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-gray-800 font-semibold text-sm leading-snug">{t.title}</p>
-                        {t.notes&&<p className="text-gray-400 text-xs mt-0.5 truncate">{t.notes}</p>}
+                        <p className="text-gray-800 font-semibold text-base leading-snug">{t.title}</p>
+                        {t.notes&&<p className="text-gray-400 text-sm mt-0.5 truncate">{t.notes}</p>}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full">{t.category}</span>
+                        <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full">{t.category}</span>
                         {t.end_date&&(
-                          <span className={`text-xs ${days!=null&&days<=2?'text-amber-500':'text-gray-400'}`}>
+                          <span className={`text-sm ${days!=null&&days<=2?'text-amber-500':'text-gray-400'}`}>
                             📅 {fmtShort(t.end_date)}{days!=null&&days<=3?` · ${days}d left`:''}
                           </span>
                         )}
@@ -1726,14 +1725,14 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
       {/* ── Coming Up (7 days) ── */}
       {upcoming.length>0&&(
         <div className="bg-white border border-amber-200 rounded-2xl overflow-hidden shadow-sm">
-          <button className="w-full flex items-center justify-between px-4 py-3"
+          <button className="w-full flex items-center justify-between px-4 py-3.5"
             onClick={()=>setComingOpen(o=>!o)}>
             <div className="flex items-center gap-2">
-              <h2 className="text-gray-800 font-bold text-sm">Coming Up</h2>
-              <span className="text-gray-400 text-xs">next 7 days</span>
-              <span className="bg-amber-100 text-amber-600 text-xs font-bold px-2 py-0.5 rounded-full">{upcoming.length}</span>
+              <h2 className="text-gray-800 font-bold text-base">Coming Up</h2>
+              <span className="text-gray-400 text-sm">next 7 days</span>
+              <span className="bg-amber-100 text-amber-600 text-sm font-bold px-2.5 py-0.5 rounded-full">{upcoming.length}</span>
             </div>
-            <span className="text-gray-400 text-xs">{comingOpen?'▲':'▼'}</span>
+            <span className="text-gray-400 text-sm">{comingOpen?'▲':'▼'}</span>
           </button>
 
           {comingOpen&&(
@@ -1742,15 +1741,15 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                 const days = daysLeft(t.start_date)
                 return (
                   <div key={t.id} onClick={()=>onTaskClick(t)}
-                    className="bg-amber-50 border border-amber-100 border-l-4 border-l-amber-500 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all mt-2">
+                    className="bg-amber-50 border border-amber-100 border-l-4 border-l-amber-500 rounded-xl p-3.5 cursor-pointer active:scale-[0.99] transition-all mt-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-gray-800 font-semibold text-sm truncate">{t.title}</p>
-                        <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">{t.category}</span>
+                        <p className="text-gray-800 font-semibold text-base truncate">{t.title}</p>
+                        <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">{t.category}</span>
                       </div>
-                      <span className="text-amber-600 text-xs font-semibold flex-shrink-0 text-right">
+                      <span className="text-amber-600 text-sm font-semibold flex-shrink-0 text-right">
                         {days===0?'Starts today':days===1?'Tomorrow':`In ${days}d`}<br/>
-                        <span className="text-gray-400 font-normal">{fmtShort(t.start_date)}</span>
+                        <span className="text-gray-400 font-normal text-xs">{fmtShort(t.start_date)}</span>
                       </span>
                     </div>
                   </div>
