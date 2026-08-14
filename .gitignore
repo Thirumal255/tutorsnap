@@ -19,8 +19,10 @@ backend/uploads/
 *.db
 node_modules/
 frontend/dist/
+tasks-app/dist/
 .DS_Store
 frontend/android/local.properties
+tasks-app/android/local.properties
 frontend/.env
 frontend/.env.local
 frontend/.env.production

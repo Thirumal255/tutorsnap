@@ -1,0 +1,15 @@
+{
+  "appId": "com.tutorsnap.tasks",
+  "appName": "Polyhouse Tracker",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "REPLACE_WITH_YOUR_GOOGLE_WEB_CLIENT_ID",
+      "forceCodeForRefreshToken": true
+    }
+  }
+}
