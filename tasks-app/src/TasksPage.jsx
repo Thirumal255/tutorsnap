@@ -1505,50 +1505,84 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const totalSpent = budgetItems.reduce((s, i) => s + (i.actual_amount || 0), 0)
   const totalPlanned = budgetItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
 
+  // Reusable card components for the key date and budget sections
+  const KeyDatesCard = (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+      <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
+        <span className="text-white text-sm">📅</span>
+        <p className="text-white text-xs font-bold tracking-wide">KEY DATES</p>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {KEY_DATES.map(({ label, date }) => {
+          const isPast = new Date(date) < new Date()
+          const isNext = !isPast && KEY_DATES.find(d => new Date(d.date) >= new Date())?.date === date
+          return (
+            <div key={label} className={`flex items-center justify-between px-4 py-2.5 ${isNext ? 'bg-blue-50' : ''}`}>
+              <div className="flex items-center gap-2">
+                {isNext && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"/>}
+                <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
+              </div>
+              <span className={`text-xs font-bold ${isPast ? 'text-gray-400' : isNext ? 'text-blue-600' : 'text-gray-600'}`}>
+                {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+
+  const BudgetCard = (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+      <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
+        <span className="text-white text-sm">💰</span>
+        <p className="text-white text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
+      </div>
+      <div className="grid grid-cols-3 divide-x divide-gray-100">
+        <div className="p-3 text-center">
+          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Planned</p>
+          <p className="text-gray-900 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalPlanned)}</p>
+        </div>
+        <div className="p-3 text-center">
+          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Spent</p>
+          <p className="text-green-700 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalSpent)}</p>
+        </div>
+        <div className="p-3 text-center">
+          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Funds Avail</p>
+          <p className={`font-bold text-base mt-0.5 tabular-nums ${totalAvail > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{fmtINR(totalAvail)}</p>
+        </div>
+      </div>
+      {/* Progress bar inside budget card */}
+      <div className="px-4 pb-4 pt-2">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Overall Progress</p>
+          <span className="text-green-700 font-extrabold text-lg tabular-nums">{pct}%</span>
+        </div>
+        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-green-700 to-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-gray-400 text-[10px] mt-1">{completed} of {total} tasks completed</p>
+      </div>
+    </div>
+  )
+
   return (
     <div className="p-4 pb-28 space-y-4">
 
-      {/* ── Key Dates (TOP) ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
-          <span className="text-white text-sm">📅</span>
-          <p className="text-white text-xs font-bold tracking-wide">KEY DATES</p>
-        </div>
-        <div className="divide-y divide-gray-100">
-          {KEY_DATES.map(({ label, date }) => {
-            const isPast = new Date(date) < new Date()
-            const isNext = !isPast && KEY_DATES.find(d => new Date(d.date) >= new Date())?.date === date
-            return (
-              <div key={label} className={`flex items-center justify-between px-4 py-2.5 ${isNext ? 'bg-blue-50' : ''}`}>
-                <div className="flex items-center gap-2">
-                  {isNext && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"/>}
-                  <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
-                </div>
-                <span className={`text-xs font-bold ${isPast ? 'text-gray-400' : isNext ? 'text-blue-600' : 'text-gray-600'}`}>
-                  {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                </span>
-              </div>
-            )
-          })}
+      {/* ── Date strip ── */}
+      <div className="flex items-center justify-between">
+        <p className="text-gray-500 text-xs font-semibold">{today_str}</p>
+        <div className="flex items-center gap-2">
+          {totalOngoing>0&&(
+            <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing} in progress</span>
+          )}
+          {overdueTasks.length>0&&(
+            <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">⚠ {overdueTasks.length} overdue</span>
+          )}
         </div>
       </div>
 
-      {/* ── Project progress ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-1">
-          <div>
-            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">NVPH Polyhouse · Kurchapally</p>
-            <p className="text-gray-900 font-bold text-base mt-0.5">Overall Progress</p>
-          </div>
-          <span className="text-green-700 font-extrabold text-3xl font-variant-numeric tabular-nums">{pct}%</span>
-        </div>
-        <div className="h-3 bg-gray-100 rounded-full overflow-hidden mt-2 mb-1">
-          <div className="h-full bg-gradient-to-r from-green-700 to-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
-        </div>
-        <p className="text-gray-500 text-xs">{completed} of {total} tasks completed</p>
-      </div>
-
-      {/* ── KPI chips ── */}
+      {/* ── Row 1: KPI chips (always full width, 4 cols) ── */}
       <div className="grid grid-cols-4 gap-2">
         {[
           ['✅', 'Done',    completed,                 'text-green-700',  'bg-green-50  border-green-200'],
@@ -1564,43 +1598,10 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
         ))}
       </div>
 
-      {/* ── Budget snapshot ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <div className="px-4 py-2.5 bg-green-700 flex items-center gap-2">
-          <span className="text-white text-sm">💰</span>
-          <p className="text-white text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
-        </div>
-        <div className="grid grid-cols-3 divide-x divide-gray-100">
-          <div className="p-3 text-center">
-            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Planned</p>
-            <p className="text-gray-900 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalPlanned)}</p>
-          </div>
-          <div className="p-3 text-center">
-            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Spent</p>
-            <p className="text-green-700 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalSpent)}</p>
-          </div>
-          <div className="p-3 text-center">
-            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Funds Avail</p>
-            <p className={`font-bold text-base mt-0.5 tabular-nums ${totalAvail > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{fmtINR(totalAvail)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Summary strip ── */}
-      <div className="flex items-center justify-between">
-        <p className="text-gray-500 text-xs font-semibold">{today_str}</p>
-        <div className="flex items-center gap-2">
-          {totalOngoing>0&&(
-            <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">
-              {totalOngoing} in progress
-            </span>
-          )}
-          {overdueTasks.length>0&&(
-            <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">
-              ⚠ {overdueTasks.length} overdue
-            </span>
-          )}
-        </div>
+      {/* ── Row 2: Key Dates | Budget — side by side on sm+ ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {KeyDatesCard}
+        {BudgetCard}
       </div>
 
       {/* ── Today's Focus ── */}
@@ -2599,7 +2600,7 @@ export default function TasksPage({ onLogout }) {
   ]
 
   return (
-    <div className="min-h-screen bg-[#F2F5F2] flex flex-col max-w-2xl mx-auto relative">
+    <div className="min-h-screen bg-[#F2F5F2] flex flex-col relative">
       {confetti&&<Confetti onDone={()=>setConfetti(false)}/>}
 
       {/* Header */}
@@ -2638,7 +2639,7 @@ export default function TasksPage({ onLogout }) {
       </div>
 
       {/* Bottom nav */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto z-30 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg">
         <div className="flex">
           {NAV.map(n=>(
             <button key={n.key} onClick={()=>setTab(n.key)}
