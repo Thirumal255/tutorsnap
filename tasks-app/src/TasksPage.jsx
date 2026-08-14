@@ -12,7 +12,6 @@ import {
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
   getCategoryAccounts, getAccountBreakdown,
   getBudgetItems, createBudgetItem, updateBudgetItem, deleteBudgetItem,
-  getFinanceReceipts, createFinanceReceipt, deleteFinanceReceipt,
 } from './api/client'
 
 
