@@ -2598,17 +2598,14 @@ export default function TasksPage({ onLogout }) {
           <p className="text-gray-400 text-xs mt-0.5">Project Tracker</p>
         </div>
         <div className="flex items-center gap-1.5">
-          {(tab==='tasks'||tab==='home') && (
+          {tab==='tasks' && (
             <button onClick={()=>setShowCreate(true)} className="bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-xl">
               + New Task
             </button>
           )}
-          <button onClick={requestNotifications} title={notifGranted?'Notifications on':'Enable notifications'}
-            className={`w-8 h-8 flex items-center justify-center rounded-xl border text-sm ${notifGranted?'text-green-600 border-green-200 bg-green-50':'text-gray-400 border-gray-200'}`}>
-            {notifGranted?'🔔':'🔕'}
-          </button>
-          <button onClick={onLogout} className="text-gray-400 text-xs px-2 py-2 rounded-xl border border-gray-200">
-            ↩
+          <button onClick={onLogout} className="flex flex-col items-center text-gray-400 px-2 py-1.5 rounded-xl border border-gray-200">
+            <span className="text-sm leading-none">↩</span>
+            <span className="text-[9px] mt-0.5 font-medium">Sign out</span>
           </button>
         </div>
       </div>
