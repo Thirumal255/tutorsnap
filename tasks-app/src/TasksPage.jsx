@@ -290,15 +290,15 @@ function TaskCard({ task, onClick, onStatusChange }) {
           </button>
 
           {/* Title */}
-          <h3 className={`flex-1 min-w-0 font-semibold text-sm leading-snug truncate ${isDone?'line-through text-gray-400':'text-gray-800'}`}>
+          <h3 className={`flex-1 min-w-0 font-semibold text-base leading-snug truncate ${isDone?'line-through text-gray-400':'text-gray-800'}`}>
             {task.title}
           </h3>
 
           {/* Right: urgent hint + chevron */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {overdue&&<span className="text-red-600 text-xs font-bold">{Math.abs(days)}d late</span>}
-            {!overdue&&days!=null&&days<=3&&<span className="text-amber-500 text-xs font-semibold">{days}d left</span>}
-            <span className="text-gray-500 text-[10px]">{isOpen?'▲':'▼'}</span>
+            {overdue&&<span className="text-red-600 text-sm font-bold">{Math.abs(days)}d late</span>}
+            {!overdue&&days!=null&&days<=3&&<span className="text-amber-500 text-sm font-semibold">{days}d left</span>}
+            <span className="text-gray-500 text-xs">{isOpen?'▲':'▼'}</span>
           </div>
         </div>
 
@@ -307,18 +307,18 @@ function TaskCard({ task, onClick, onStatusChange }) {
           <div className="px-3 pb-3 space-y-2 border-t border-gray-200/60">
             {/* Notes */}
             {task.notes&&!isDone&&(
-              <p className="text-gray-400 text-xs pt-2">{task.notes}</p>
+              <p className="text-gray-400 text-sm pt-2">{task.notes}</p>
             )}
 
             {/* Category + status */}
             <div className="flex items-center gap-2 flex-wrap pt-1">
-              <span className="text-gray-500 text-[10px] bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">{task.category}</span>
+              <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">{task.category}</span>
               <StatusBadge status={task.status}/>
             </div>
 
             {/* Date */}
             {(task.start_date||task.end_date)&&(
-              <div className="flex items-center gap-1 text-xs">
+              <div className="flex items-center gap-1 text-sm">
                 <span className={overdue?'text-red-600':days!=null&&days<=2?'text-amber-500':'text-gray-400'}>{overdue?'⚠️':'📅'}</span>
                 <span className={overdue?'text-red-600 font-semibold':days!=null&&days<=2?'text-amber-500':'text-gray-400'}>
                   {task.start_date&&fmtShort(task.start_date)}
@@ -335,7 +335,7 @@ function TaskCard({ task, onClick, onStatusChange }) {
 
             {/* Open full detail */}
             <button onClick={e=>{e.stopPropagation();onClick(task)}}
-              className="w-full py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold mt-1">
+              className="w-full py-2 rounded-lg bg-blue-50 text-blue-600 text-sm font-semibold mt-1">
               Open Task →
             </button>
           </div>
@@ -2076,11 +2076,11 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
                     <div key={phase}>
                       <button
                         onClick={() => setCollapsedPhases(p => ({ ...p, [phase]: !isCollapsed }))}
-                        className="w-full flex items-center justify-between px-3 py-2 bg-green-700 rounded-xl mb-2">
-                        <span className="text-white text-xs font-bold">{phase}</span>
+                        className="w-full flex items-center justify-between px-3 py-2.5 bg-green-700 rounded-xl mb-2">
+                        <span className="text-white text-sm font-bold">{phase}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-green-200 text-[10px]">{done}/{pTasks.length}</span>
-                          <span className="text-white text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                          <span className="text-green-200 text-xs">{done}/{pTasks.length}</span>
+                          <span className="text-white text-sm">{isCollapsed ? '▶' : '▼'}</span>
                         </div>
                       </button>
                       {!isCollapsed && pTasks.map(t =>
@@ -2640,11 +2640,14 @@ export default function TasksPage({ onLogout }) {
       {/* Header */}
       <div className="sticky top-0 z-30 bg-green-700 shadow-md">
         <div className="flex items-center justify-between px-4 py-3">
-          {/* Left — sign out */}
-          <button onClick={onLogout} className="flex flex-col items-center text-white/70 hover:text-white px-2 py-1 rounded-xl min-w-[48px]">
-            <span className="text-base leading-none">↩</span>
-            <span className="text-[9px] mt-0.5 font-medium">Sign out</span>
-          </button>
+          {/* Left — spacer to balance */}
+          <div className="min-w-[48px]">
+            {tab==='tasks' && (
+              <button onClick={()=>setShowCreate(true)} className="bg-white text-green-700 text-xs font-bold px-3 py-2 rounded-xl shadow-sm">
+                + New
+              </button>
+            )}
+          </div>
 
           {/* Center — logo */}
           <div className="flex flex-col items-center">
@@ -2660,14 +2663,11 @@ export default function TasksPage({ onLogout }) {
             </div>
           </div>
 
-          {/* Right — new task (tasks tab only), else spacer */}
-          <div className="min-w-[48px] flex justify-end">
-            {tab==='tasks' ? (
-              <button onClick={()=>setShowCreate(true)} className="bg-white text-green-700 text-xs font-bold px-3 py-2 rounded-xl shadow-sm">
-                + New
-              </button>
-            ) : <div className="w-12"/>}
-          </div>
+          {/* Right — sign out */}
+          <button onClick={onLogout} className="flex flex-col items-center text-white/70 hover:text-white px-2 py-1 rounded-xl min-w-[48px]">
+            <span className="text-base leading-none">↩</span>
+            <span className="text-[9px] mt-0.5 font-medium">Sign out</span>
+          </button>
         </div>
       </div>
 
