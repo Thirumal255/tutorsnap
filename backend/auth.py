@@ -79,6 +79,16 @@ def get_current_user(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.replace("Bearer ", "")
+
+    # Mobile API key — bypass JWT for the Android app running on a trusted device
+    mobile_key = os.getenv("MOBILE_API_KEY", "")
+    if mobile_key and token == mobile_key:
+        mobile_email = os.getenv("MOBILE_API_EMAIL", "")
+        user = db.query(User).filter(User.email == mobile_email, User.is_active == True).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Mobile API key valid but email not found")
+        return user
+
     try:
         payload = decode_jwt(token)
     except ValueError as e:

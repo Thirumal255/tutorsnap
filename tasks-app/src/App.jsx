@@ -112,6 +112,12 @@ export default function App() {
   const [checking, setChecking] = useState(true)
 
   useEffect(() => {
+    // On native, skip login entirely — mobile API key handles auth
+    if (isNative()) {
+      setChecking(false)
+      setUser({ name: 'Admin', role: 'admin' })
+      return
+    }
     const token = localStorage.getItem('tutorsnap_token')
     if (!token) { setChecking(false); return }
     getCurrentUser()

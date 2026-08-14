@@ -32,6 +32,7 @@ jobs:
         env:
           VITE_API_BASE: ${{ secrets.TASKS_APP_API_BASE }}
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID_WEB }}
+          VITE_MOBILE_API_KEY: ${{ secrets.MOBILE_API_KEY }}
         run: npm run build
 
       - name: Deploy to Firebase Hosting

@@ -5,9 +5,16 @@ const api = axios.create({
   timeout: 30000,
 })
 
+const MOBILE_API_KEY = import.meta.env.VITE_MOBILE_API_KEY || ''
+const isNative = () => typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()
+
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('tutorsnap_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  } else if (isNative() && MOBILE_API_KEY) {
+    config.headers.Authorization = `Bearer ${MOBILE_API_KEY}`
+  }
   return config
 })
 
