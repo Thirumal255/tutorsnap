@@ -1379,14 +1379,14 @@ function BudgetTab() {
                     <div key={item.id} className="px-4 py-3 space-y-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-white text-xs font-semibold leading-snug">{item.name}</p>
+                          <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
                           <p className="text-gray-500 text-[10px] mt-0.5">
                             {[item.category, item.sub_category].filter(Boolean).join(' › ')}
                             {item.planned_date && ` · ${fmtDate(item.planned_date)}`}
                           </p>
                         </div>
                         <div className="text-right flex-shrink-0 space-y-0.5">
-                          <p className="text-white text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
+                          <p className="text-gray-800 text-xs font-semibold">{fmtINR(item.planned_amount)}</p>
                           {editing ? (
                             <input
                               autoFocus
@@ -1395,7 +1395,7 @@ function BudgetTab() {
                               onChange={e => setEditVal(e.target.value)}
                               onBlur={() => saveActual(item.id)}
                               onKeyDown={e => { if (e.key === 'Enter') saveActual(item.id); if (e.key === 'Escape') setEditId(null) }}
-                              className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-white text-xs focus:outline-none text-right"
+                              className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
                               disabled={saving}
                             />
                           ) : (
@@ -1465,6 +1465,8 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const root = tasks.filter(t=>!t.parent_id)
   const [focusOpen, setFocusOpen]     = useState(false)
   const [comingOpen, setComingOpen]   = useState(false)
+  const [budgetItems, setBudgetItems] = useState([])
+  useEffect(() => { getBudgetItems().then(r => setBudgetItems(r.data)).catch(()=>{}) }, [])
 
   // Overdue in-progress tasks
   const overdueTasks = root.filter(t=>t.status==='in_progress'&&isOverdue(t))
@@ -1485,7 +1487,8 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const completed = byStatus.completed || 0
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0
   const totalAvail = accounts.reduce((s, a) => s + (a.live_balance ?? a.current_balance ?? 0), 0)
-  const totalSpent = accounts.reduce((s, a) => s + (a.paid_expenses || 0), 0)
+  const totalSpent = budgetItems.reduce((s, i) => s + (i.actual_amount || 0), 0)
+  const totalPlanned = budgetItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
 
   return (
     <div className="p-4 pb-28 space-y-4">
@@ -1504,7 +1507,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
               <div key={label} className={`flex items-center justify-between px-4 py-2.5 ${isNext ? 'bg-blue-50' : ''}`}>
                 <div className="flex items-center gap-2">
                   {isNext && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"/>}
-                  <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-white'}`}>{label}</span>
+                  <span className={`text-xs font-medium ${isPast ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
                 </div>
                 <span className={`text-xs font-bold ${isPast ? 'text-gray-400' : isNext ? 'text-blue-600' : 'text-gray-600'}`}>
                   {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -1552,14 +1555,18 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
           <span className="text-white text-sm">💰</span>
           <p className="text-white text-xs font-bold tracking-wide">BUDGET SNAPSHOT</p>
         </div>
-        <div className="grid grid-cols-2 divide-x divide-gray-100">
+        <div className="grid grid-cols-3 divide-x divide-gray-100">
           <div className="p-3 text-center">
-            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Funds Available</p>
-            <p className="text-gray-900 font-bold text-base mt-0.5">{fmtINR(totalAvail)}</p>
+            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Planned</p>
+            <p className="text-gray-900 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalPlanned)}</p>
           </div>
           <div className="p-3 text-center">
             <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Spent</p>
-            <p className="text-green-700 font-bold text-base mt-0.5">{fmtINR(totalSpent)}</p>
+            <p className="text-green-700 font-bold text-base mt-0.5 tabular-nums">{fmtINR(totalSpent)}</p>
+          </div>
+          <div className="p-3 text-center">
+            <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">Funds Avail</p>
+            <p className={`font-bold text-base mt-0.5 tabular-nums ${totalAvail > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{fmtINR(totalAvail)}</p>
           </div>
         </div>
       </div>
@@ -1586,7 +1593,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
         <button className="w-full flex items-center justify-between px-4 py-3"
           onClick={()=>setFocusOpen(o=>!o)}>
           <div className="flex items-center gap-2">
-            <h2 className="text-white font-bold text-sm">Today's Focus</h2>
+            <h2 className="text-gray-800 font-bold text-sm">Today's Focus</h2>
             {totalOngoing>0&&(
               <span className="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-0.5 rounded-full">{totalOngoing}</span>
             )}
@@ -1614,7 +1621,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                       className="border-l-4 border-l-red-500 bg-red-50 border border-red-100 rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all space-y-2 mt-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-white font-semibold text-sm leading-snug">{t.title}</p>
+                          <p className="text-gray-800 font-semibold text-sm leading-snug">{t.title}</p>
                           {t.notes&&<p className="text-gray-400 text-xs mt-0.5 truncate">{t.notes}</p>}
                         </div>
                         <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
@@ -1820,12 +1827,12 @@ function CalendarView({ tasks, onTaskClick }) {
 function TimelineView({ tasks, onTaskClick }) {
   const root = tasks.filter(t=>!t.parent_id)
 
-  // Build events: each task contributes a start event and/or end event
-  const events = [] // {date, type:'start'|'end'|'due', task}
+  // Build events: one entry per task, keyed by start_date (or end_date if no start)
+  const events = []
   root.forEach(t=>{
-    if (t.start_date) events.push({dateStr:t.start_date, type:'start', task:t})
-    if (t.end_date && t.end_date!==t.start_date) events.push({dateStr:t.end_date, type:'due', task:t})
-    else if (t.end_date && !t.start_date) events.push({dateStr:t.end_date, type:'due', task:t})
+    const anchor = t.start_date || t.end_date
+    if (!anchor) return
+    events.push({ dateStr: anchor, task: t })
   })
   events.sort((a,b)=>a.dateStr.localeCompare(b.dateStr))
 
@@ -1876,26 +1883,25 @@ function TimelineView({ tasks, onTaskClick }) {
               </div>
               <div className="space-y-2">
                 {evs.map((ev,ei)=>{
-                  const ts = TYPE_STYLE[ev.type]||TYPE_STYLE.due
-                  const over = ev.type==='due'&&isOverdue(ev.task)
+                  const over = isOverdue(ev.task)
+                  const t = ev.task
+                  const dateRange = t.start_date && t.end_date && t.start_date !== t.end_date
+                    ? `${fmtDate(t.start_date)} → ${fmtDate(t.end_date)}`
+                    : t.end_date ? `Due ${fmtDate(t.end_date)}` : `Starts ${fmtDate(t.start_date)}`
                   return (
-                    <div key={`${ev.task.id}-${ev.type}-${ei}`} onClick={()=>onTaskClick(ev.task)}
-                      className={`border-l-4 ${PRI_BORDER[ev.task.priority]||'border-l-gray-300'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all ${
+                    <div key={`${t.id}-${ei}`} onClick={()=>onTaskClick(t)}
+                      className={`border-l-4 ${PRI_BORDER[t.priority]||'border-l-gray-300'} rounded-xl p-3 cursor-pointer active:scale-[0.99] transition-all ${
                         over?'bg-red-50 border border-red-200':'bg-white border border-gray-200'
                       }`}>
                       <div className="flex items-start gap-2">
-                        <span className="text-sm flex-shrink-0">{over?'⚠️':ts.icon}</span>
+                        <span className="text-sm flex-shrink-0">{over?'⚠️':'📌'}</span>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-gray-800 text-xs font-semibold">{ev.task.title}</p>
-                            <span className={`text-xs font-semibold ${over?'text-red-600':ts.color}`}>
-                              · {over?'OVERDUE':ts.label}
-                            </span>
+                          <p className="text-gray-800 text-xs font-semibold">{t.title}</p>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <p className="text-gray-400 text-xs">{t.category}</p>
+                            <p className={`text-xs font-medium ${over?'text-red-500':'text-blue-500'}`}>{over?'OVERDUE · ':''}{dateRange}</p>
                           </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-gray-400 text-xs">{ev.task.category}</p>
-                            <StatusBadge status={ev.task.status}/>
-                          </div>
+                          <div className="mt-1"><StatusBadge status={t.status}/></div>
                         </div>
                       </div>
                     </div>
@@ -1915,6 +1921,7 @@ function TimelineView({ tasks, onTaskClick }) {
 function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus, setFilterStatus, filterCat, setFilterCat }) {
   const [view, setView] = useState('list')
   const [search, setSearch] = useState('')
+  const [collapsedPhases, setCollapsedPhases] = useState({})
   const root = tasks.filter(t=>!t.parent_id)
   const q = search.trim().toLowerCase()
   const filtered = root
@@ -2003,7 +2010,36 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
         <div className="px-4 space-y-3">
           {filtered.length===0
             ? <div className="text-center py-16"><p className="text-4xl mb-3">{q?'🔍':'✅'}</p><p className="text-gray-400 text-sm">{q?'No tasks match your search':'No tasks match this filter'}</p></div>
-            : filtered.map(t=><TaskCard key={t.id} task={t} onClick={onTaskClick} onStatusChange={onStatusChange}/>)}
+            : (() => {
+                // Group by category (phase)
+                const phaseMap = {}
+                filtered.forEach(t => {
+                  const ph = t.category || 'Uncategorized'
+                  if (!phaseMap[ph]) phaseMap[ph] = []
+                  phaseMap[ph].push(t)
+                })
+                return Object.entries(phaseMap).map(([phase, pTasks]) => {
+                  const isCollapsed = !!collapsedPhases[phase]
+                  const done = pTasks.filter(t=>t.status==='completed').length
+                  return (
+                    <div key={phase}>
+                      <button
+                        onClick={() => setCollapsedPhases(p => ({ ...p, [phase]: !p[phase] }))}
+                        className="w-full flex items-center justify-between px-3 py-2 bg-green-700 rounded-xl mb-2">
+                        <span className="text-white text-xs font-bold">{phase}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-green-200 text-[10px]">{done}/{pTasks.length}</span>
+                          <span className="text-white text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                        </div>
+                      </button>
+                      {!isCollapsed && pTasks.map(t =>
+                        <TaskCard key={t.id} task={t} onClick={onTaskClick} onStatusChange={onStatusChange}/>
+                      )}
+                    </div>
+                  )
+                })
+              })()
+          }
         </div>
       )}
 
@@ -2534,6 +2570,11 @@ export default function TasksPage({ onLogout }) {
 
   const overdueCount = tasks.filter(t=>!t.parent_id&&isOverdue(t)).length
 
+  // Derive current phase from in-progress tasks (most common category among active tasks)
+  const activeCats = tasks.filter(t=>!t.parent_id&&t.status==='in_progress').map(t=>t.category).filter(Boolean)
+  const catCount = activeCats.reduce((m,c)=>{m[c]=(m[c]||0)+1;return m},{})
+  const currentPhase = Object.keys(catCount).sort((a,b)=>catCount[b]-catCount[a])[0] || null
+
   const NAV = [
     {key:'home',    icon:'🏠', label:'Home',   badge: overdueCount},
     {key:'tasks',   icon:'📋', label:'Tasks'},
@@ -2548,7 +2589,12 @@ export default function TasksPage({ onLogout }) {
       {/* Header */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
         <div>
-          <h1 className="text-gray-900 font-fredoka font-bold text-xl leading-none">🌿 Polyhouse</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-gray-900 font-fredoka font-bold text-xl leading-none">🌿 Polyhouse</h1>
+            {currentPhase && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 leading-none">{currentPhase}</span>
+            )}
+          </div>
           <p className="text-gray-400 text-xs mt-0.5">Project Tracker</p>
         </div>
         <div className="flex items-center gap-1.5">
