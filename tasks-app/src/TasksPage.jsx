@@ -2101,6 +2101,7 @@ function FinanceTab() {
   const [subtab, setSubtab] = useState('accounts')
   const [addFundsFor, setAddFundsFor] = useState(null) // account object
   const [expandedInflows, setExpandedInflows] = useState({}) // {accountId: bool}
+  const [expandedMonths, setExpandedMonths] = useState({})  // {month: bool}
 
   const load = useCallback(async () => {
     const [a, b, r] = await Promise.all([getFinanceAccounts(), getBudgetItems(), getFinanceReceipts()])
@@ -2306,30 +2307,137 @@ function FinanceTab() {
             const barPct = maxFlow > 0 ? (planned / maxFlow) * 100 : 0
             const actPct = planned > 0 ? Math.min((actual / planned) * 100, 100) : 0
             const isCurrent = month === new Date().toISOString().slice(0, 7)
+            const isOpen = !!expandedMonths[month]
+
+            // Gather inflows and outflows for this month
+            const monthReceipts = receipts.filter(r => r.received_date && r.received_date.slice(0, 7) === month)
+            const monthItems    = budgetItems.filter(i => i.planned_date && i.planned_date.slice(0, 7) === month)
+
+            // Group by account
+            const acctIds = [...new Set([
+              ...monthReceipts.map(r => r.account_id),
+              ...monthItems.map(i => i.account_id),
+            ])].filter(Boolean)
+            const unlinked = { receipts: monthReceipts.filter(r => !r.account_id), items: monthItems.filter(i => !i.account_id) }
+
+            const totalIn  = monthReceipts.reduce((s, r) => s + (r.amount || 0), 0)
+            const totalOut = monthItems.reduce((s, i) => s + (i.actual_amount || i.planned_amount || 0), 0)
+
             return (
-              <div key={month} className={`bg-white border rounded-2xl p-4 space-y-2 ${isCurrent ? 'border-blue-300' : 'border-gray-200'}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-800 text-sm font-bold">{label}</span>
-                    {isCurrent && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">NOW</span>}
-                  </div>
-                  <span className="text-gray-800 text-sm font-bold">{fmtINR(planned)}</span>
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-600/40 rounded-full" style={{ width: `${barPct}%` }} />
-                </div>
-                {actual > 0 ? (
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] text-gray-400">
-                      <span>Actual: <span className="text-green-600 font-semibold">{fmtINR(actual)}</span></span>
-                      <span>{actPct.toFixed(0)}% of planned</span>
+              <div key={month} className={`bg-white border rounded-2xl overflow-hidden ${isCurrent ? 'border-blue-300' : 'border-gray-200'}`}>
+                {/* Header — tap to expand */}
+                <button
+                  className="w-full p-4 text-left space-y-2"
+                  onClick={() => setExpandedMonths(p => ({ ...p, [month]: !p[month] }))}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-800 text-sm font-bold">{label}</span>
+                      {isCurrent && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">NOW</span>}
                     </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${actPct >= 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${actPct}%` }} />
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-800 text-sm font-bold">{fmtINR(planned)}</span>
+                      <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
                     </div>
                   </div>
-                ) : (
-                  <p className="text-gray-500 text-[10px]">No actuals yet</p>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600/40 rounded-full" style={{ width: `${barPct}%` }} />
+                  </div>
+                  {actual > 0 ? (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-gray-400">
+                        <span>Actual: <span className="text-green-600 font-semibold">{fmtINR(actual)}</span></span>
+                        <span>{actPct.toFixed(0)}% of planned</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${actPct >= 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${actPct}%` }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-[10px]">No actuals yet</p>
+                  )}
+                  {/* Mini summary row */}
+                  {(totalIn > 0 || totalOut > 0) && (
+                    <div className="flex gap-3 pt-0.5">
+                      {totalIn > 0 && <span className="text-[10px] text-green-600 font-semibold">↑ {fmtINR(totalIn)} in</span>}
+                      {totalOut > 0 && <span className="text-[10px] text-red-500 font-semibold">↓ {fmtINR(totalOut)} out</span>}
+                    </div>
+                  )}
+                </button>
+
+                {/* Expandable detail */}
+                {isOpen && (
+                  <div className="border-t border-gray-100 divide-y divide-gray-100">
+                    {acctIds.map(aid => {
+                      const acctName = (monthReceipts.find(r => r.account_id === aid) || monthItems.find(i => i.account_id === aid))?.account_name || `Account ${aid}`
+                      const aIn  = monthReceipts.filter(r => r.account_id === aid)
+                      const aOut = monthItems.filter(i => i.account_id === aid)
+                      const netIn  = aIn.reduce((s, r) => s + (r.amount || 0), 0)
+                      const netOut = aOut.reduce((s, i) => s + (i.actual_amount || i.planned_amount || 0), 0)
+                      return (
+                        <div key={aid} className="px-4 py-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-gray-700">🏦 {acctName}</span>
+                            <div className="flex gap-2 text-[10px]">
+                              {netIn  > 0 && <span className="text-green-600 font-semibold">+{fmtINR(netIn)}</span>}
+                              {netOut > 0 && <span className="text-red-500 font-semibold">−{fmtINR(netOut)}</span>}
+                            </div>
+                          </div>
+                          {/* Inflows */}
+                          {aIn.map(r => (
+                            <div key={`in-${r.id}`} className="flex justify-between items-start pl-3">
+                              <div>
+                                <p className="text-[11px] text-green-700 font-medium">↑ {r.source_name || 'Inflow'}</p>
+                                {r.description && <p className="text-[10px] text-gray-400">{r.description}</p>}
+                                <p className="text-[10px] text-gray-400">{r.received_date}</p>
+                              </div>
+                              <span className="text-[11px] text-green-600 font-semibold whitespace-nowrap ml-2">{fmtINR(r.amount)}</span>
+                            </div>
+                          ))}
+                          {/* Outflows */}
+                          {aOut.map(i => (
+                            <div key={`out-${i.id}`} className="flex justify-between items-start pl-3">
+                              <div>
+                                <p className="text-[11px] text-red-600 font-medium">↓ {i.name}</p>
+                                {i.category && <p className="text-[10px] text-gray-400">{i.category}{i.sub_category ? ` › ${i.sub_category}` : ''}</p>}
+                                <p className="text-[10px] text-gray-400">{i.planned_date} {i.actual_amount ? '· paid' : '· planned'}</p>
+                              </div>
+                              <span className="text-[11px] text-red-500 font-semibold whitespace-nowrap ml-2">{fmtINR(i.actual_amount || i.planned_amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })}
+                    {/* Unlinked items (no account) */}
+                    {(unlinked.receipts.length > 0 || unlinked.items.length > 0) && (
+                      <div className="px-4 py-3 space-y-2">
+                        <span className="text-xs font-bold text-gray-500">No account linked</span>
+                        {unlinked.receipts.map(r => (
+                          <div key={`in-${r.id}`} className="flex justify-between items-start pl-3">
+                            <div>
+                              <p className="text-[11px] text-green-700 font-medium">↑ {r.source_name || 'Inflow'}</p>
+                              {r.description && <p className="text-[10px] text-gray-400">{r.description}</p>}
+                            </div>
+                            <span className="text-[11px] text-green-600 font-semibold whitespace-nowrap ml-2">{fmtINR(r.amount)}</span>
+                          </div>
+                        ))}
+                        {unlinked.items.map(i => (
+                          <div key={`out-${i.id}`} className="flex justify-between items-start pl-3">
+                            <div>
+                              <p className="text-[11px] text-red-600 font-medium">↓ {i.name}</p>
+                              {i.category && <p className="text-[10px] text-gray-400">{i.category}</p>}
+                            </div>
+                            <span className="text-[11px] text-red-500 font-semibold whitespace-nowrap ml-2">{fmtINR(i.actual_amount || i.planned_amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Month net */}
+                    <div className="px-4 py-2 bg-gray-50 flex justify-between text-[11px] font-bold">
+                      <span className="text-gray-500">Net this month</span>
+                      <span className={totalIn - totalOut >= 0 ? 'text-green-600' : 'text-red-500'}>{fmtINR(Math.abs(totalIn - totalOut))} {totalIn - totalOut >= 0 ? 'surplus' : 'deficit'}</span>
+                    </div>
+                  </div>
                 )}
               </div>
             )
