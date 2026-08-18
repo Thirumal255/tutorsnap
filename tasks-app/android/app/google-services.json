@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "427755538215",
+    "project_id": "tutorsnap-tasks",
+    "storage_bucket": "tutorsnap-tasks.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:427755538215:android:9739b8fa552f137cad0b02",
+        "android_client_info": {
+          "package_name": "com.tutorsnap.tasks"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCnBDcSICvoJGeKfN3t0jbNNF2TVwqomB4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

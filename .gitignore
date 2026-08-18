@@ -26,5 +26,7 @@ tasks-app/android/local.properties
 frontend/.env
 frontend/.env.local
 frontend/.env.production
+tasks-app/.env
+tasks-app/.env.local
 *.pdf
 .claude/
