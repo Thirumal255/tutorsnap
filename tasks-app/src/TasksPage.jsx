@@ -289,10 +289,17 @@ function TaskCard({ task, onClick, onStatusChange }) {
             <span className="text-xs font-bold leading-none">✓</span>
           </button>
 
-          {/* Title */}
-          <h3 className={`flex-1 min-w-0 font-semibold text-base leading-snug truncate ${isDone?'line-through text-gray-400':'text-gray-800'}`}>
-            {task.title}
-          </h3>
+          {/* Title + date */}
+          <div className="flex-1 min-w-0">
+            <h3 className={`font-semibold text-base leading-snug truncate ${isDone?'line-through text-gray-400':'text-gray-800'}`}>
+              {task.title}
+            </h3>
+            {(task.start_date||task.end_date) && (
+              <p className="text-[11px] text-gray-400 mt-0.5 truncate">
+                {fmtShort(task.start_date)||'—'} → {fmtShort(task.end_date)||'—'}
+              </p>
+            )}
+          </div>
 
           {/* Right: urgent hint + chevron */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -2071,13 +2078,23 @@ function TasksTab({ tasks, categories, onTaskClick, onStatusChange, filterStatus
                   // collapsed by default (undefined → not explicitly opened)
                   const isCollapsed = collapsedPhases[phase] !== false
                   const done = pTasks.filter(t=>t.status==='completed').length
+                  const allTasks = root.filter(t => (t.category||'Uncategorized') === phase)
+                  const phaseStart = allTasks.map(t=>t.start_date).filter(Boolean).sort()[0]
+                  const phaseEnd   = allTasks.map(t=>t.end_date).filter(Boolean).sort().reverse()[0]
                   return (
                     <div key={phase}>
                       <button
                         onClick={() => setCollapsedPhases(p => ({ ...p, [phase]: !isCollapsed }))}
                         className="w-full flex items-center justify-between px-3 py-2.5 bg-green-700 rounded-xl mb-2">
-                        <span className="text-white text-sm font-bold">{phase}</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-start min-w-0">
+                          <span className="text-white text-sm font-bold">{phase}</span>
+                          {(phaseStart||phaseEnd) && (
+                            <span className="text-green-200/80 text-[11px] font-normal mt-0.5">
+                              {fmtShort(phaseStart)||'—'} → {fmtShort(phaseEnd)||'—'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <span className="text-green-200 text-xs">{done}/{pTasks.length}</span>
                           <span className="text-white text-sm">{isCollapsed ? '▶' : '▼'}</span>
                         </div>
