@@ -44,6 +44,11 @@ function fmt(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function fmtShort(d) {
+  if (!d) return '—'
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
 function daysRemaining(endDate, status) {
   if (status === 'completed') return null
   if (!endDate) return null
@@ -499,13 +504,25 @@ function TaskTrackerTab({ tasks, onTaskClick, onStatusChange, onNewTask }) {
         const inProg = phaseAll.filter(t => t.status === 'in_progress').length
         const delayed = phaseAll.filter(t => t.status === 'on_hold').length
 
+        const phaseStartDates = phaseAll.map(t => t.start_date).filter(Boolean).sort()
+        const phaseEndDates   = phaseAll.map(t => t.end_date).filter(Boolean).sort()
+        const phaseStart = phaseStartDates[0]
+        const phaseEnd   = phaseEndDates[phaseEndDates.length - 1]
+
         return (
           <div key={phase} className="bg-[#16213E] border border-[#2D2B5A] rounded-2xl overflow-hidden">
             {/* Phase header */}
             <button
               onClick={() => toggle(phase)}
               className="w-full flex items-center gap-3 px-4 py-3 bg-[#1B3A2D] hover:bg-[#243B2D] transition-colors text-left">
-              <span className="text-[#74C69D] text-sm font-bold flex-1">{phase}</span>
+              <div className="flex-1 min-w-0">
+                <span className="text-[#74C69D] text-sm font-bold">{phase}</span>
+                {(phaseStart || phaseEnd) && (
+                  <span className="ml-3 text-[#74C69D]/55 text-xs font-mono">
+                    {fmtShort(phaseStart)} – {fmtShort(phaseEnd)}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-[#8892B0]">{phaseAll.length} tasks</span>
                 {done > 0    && <span className="bg-[#00CC88]/15 text-[#00CC88] px-2 py-0.5 rounded-full font-semibold">{done} done</span>}
@@ -537,6 +554,11 @@ function TaskTrackerTab({ tasks, onTaskClick, onStatusChange, onNewTask }) {
                           <td className="px-3 py-2.5 text-[#8892B0] text-xs whitespace-nowrap">{idx + 1}</td>
                           <td className="px-3 py-2.5 text-white font-medium max-w-[240px]">
                             <span className="line-clamp-2">{task.title}</span>
+                            {(task.start_date || task.end_date) && (
+                              <span className="block text-[10px] text-[#8892B0] font-mono mt-0.5">
+                                {fmtShort(task.start_date)} – {fmtShort(task.end_date)}
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-[#8892B0] text-xs whitespace-nowrap">{task.owner || '—'}</td>
                           <td className="px-3 py-2.5 text-[#8892B0] text-xs whitespace-nowrap">{fmt(task.start_date)}</td>
