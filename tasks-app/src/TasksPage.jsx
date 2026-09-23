@@ -1215,8 +1215,13 @@ function BudgetItemForm({ item, accounts, onSave, onClose }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={lbl}>Category</label>
-          <input value={form.category} onChange={e=>set('category',e.target.value)} className={inp} placeholder="Category"/>
+          <label className={lbl}>Phase (Category)</label>
+          <select value={form.category} onChange={e=>set('category',e.target.value)} className={inp}>
+            <option value="">— None —</option>
+            {['Pre-Construction','Construction','Pre-Plantation','Plantation & Crop Cycle 1','B2B & Market Setup','Harvest & Sales'].map(p=>(
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label className={lbl}>Sub Category</label>
@@ -1255,17 +1260,19 @@ function BudgetItemForm({ item, accounts, onSave, onClose }) {
 
 // ── Budget Tab ─────────────────────────────────────────────────────────────────
 
+const BUDGET_PHASES = [
+  'Pre-Construction', 'Construction', 'Pre-Plantation',
+  'Plantation & Crop Cycle 1', 'B2B & Market Setup', 'Harvest & Sales',
+]
+
 function BudgetTab() {
-  const [items, setItems]             = useState([])
-  const [accounts, setAccounts]       = useState([])
+  const [items, setItems]                 = useState([])
+  const [accounts, setAccounts]           = useState([])
   const [expByCategory, setExpByCategory] = useState({})
-  const [loading, setLoading]         = useState(true)
-  const [showForm, setShowForm]       = useState(false)
-  const [formItem, setFormItem]       = useState(null)
-  // collapsed by default: undefined → collapsed; false → open
-  const [collapsedComps, setCollapsedComps]  = useState({})
-  const [collapsedCats, setCollapsedCats]    = useState({})
-  const [collapsedSubs, setCollapsedSubs]    = useState({})
+  const [loading, setLoading]             = useState(true)
+  const [showForm, setShowForm]           = useState(false)
+  const [formItem, setFormItem]           = useState(null)
+  const [expandedPhases, setExpandedPhases] = useState({})
 
   const load = useCallback(async () => {
     const [b, a, s] = await Promise.all([getBudgetItems(), getFinanceAccounts(), getAdminTasksSummary()])
@@ -1278,16 +1285,17 @@ function BudgetTab() {
   const totalPlanned = items.reduce((s, i) => s + (i.planned_amount || 0), 0)
   const totalActual  = Object.values(expByCategory).reduce((s, v) => s + v, 0)
 
-  // Build component → category → sub_category → items tree (3 levels)
-  const tree = {}
+  // Group items by phase; anything not matching a phase → untagged
+  const phaseItems = {}
+  const untaggedItems = []
   items.forEach(item => {
-    const comp = item.component || 'General'
-    const cat  = item.category  || 'Uncategorized'
-    const sub  = item.sub_category || '—'
-    if (!tree[comp]) tree[comp] = {}
-    if (!tree[comp][cat]) tree[comp][cat] = {}
-    if (!tree[comp][cat][sub]) tree[comp][cat][sub] = []
-    tree[comp][cat][sub].push(item)
+    const cat = item.category || ''
+    if (BUDGET_PHASES.includes(cat)) {
+      if (!phaseItems[cat]) phaseItems[cat] = []
+      phaseItems[cat].push(item)
+    } else {
+      untaggedItems.push(item)
+    }
   })
 
   async function handleDelete(item) {
@@ -1296,8 +1304,9 @@ function BudgetTab() {
     catch(e) { alert(e.response?.data?.detail || 'Delete failed') }
   }
 
-  function openEdit(item) { setFormItem(item); setEditId(null); setShowForm(true) }
+  function openEdit(item) { setFormItem(item); setShowForm(true) }
   function openAdd()      { setFormItem(null); setShowForm(true) }
+  function togglePhase(key) { setExpandedPhases(p => ({ ...p, [key]: !p[key] })) }
 
   const accountMap = Object.fromEntries(accounts.map(a => [a.id, a.name]))
 
@@ -1310,17 +1319,19 @@ function BudgetTab() {
   return (
     <>
       <div className="p-4 pb-28 space-y-3">
-        {/* Totals + Add button */}
+
+        {/* Summary row */}
         <div className="flex items-center gap-2">
           <div className="flex-1 grid grid-cols-3 gap-2">
             {[
-              ['Planned', fmtINR(totalPlanned), 'text-gray-900'],
-              ['Actual',  fmtINR(totalActual),  'text-green-700'],
-              ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)), totalPlanned - totalActual < 0 ? 'text-red-600' : 'text-blue-600'],
-            ].map(([l, v, c]) => (
-              <div key={l} className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
-                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">{l}</p>
-                <p className={`font-bold text-lg mt-0.5 tabular-nums ${c}`}>{v}</p>
+              ['Planned', fmtINR(totalPlanned), 'text-blue-700', 'border-blue-100'],
+              ['Actual',  fmtINR(totalActual),  'text-green-700', 'border-green-100'],
+              ['Variance', fmtINR(Math.abs(totalPlanned - totalActual)),
+               totalPlanned - totalActual < 0 ? 'text-red-600' : 'text-blue-600', 'border-gray-200'],
+            ].map(([l, v, c, b]) => (
+              <div key={l} className={`bg-white border ${b} rounded-2xl p-3 text-center`}>
+                <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">{l}</p>
+                <p className={`font-bold text-base mt-0.5 tabular-nums ${c}`}>{v}</p>
               </div>
             ))}
           </div>
@@ -1329,28 +1340,6 @@ function BudgetTab() {
             + Add
           </button>
         </div>
-
-        {/* Task Expenses Summary — from actual task spending by phase */}
-        {Object.keys(expByCategory).length > 0 && (() => {
-          const phases = Object.entries(expByCategory).filter(([, v]) => v > 0)
-          if (phases.length === 0) return null
-          return (
-            <div className="bg-white border border-green-200 rounded-2xl overflow-hidden">
-              <div className="px-4 py-2.5 bg-green-700 flex items-center justify-between">
-                <span className="text-white font-bold text-sm">⚡ Task Expenses</span>
-                <span className="text-green-200 text-xs">{fmtINR(totalActual)} paid across tasks</span>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {phases.map(([phase, amt]) => (
-                  <div key={phase} className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-gray-700 text-sm">{phase}</span>
-                    <span className="text-green-700 text-sm font-semibold tabular-nums">{fmtINR(amt)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
 
         {items.length === 0 && (
           <div className="text-center py-16">
@@ -1362,120 +1351,138 @@ function BudgetTab() {
           </div>
         )}
 
-        {/* Component → Category → Sub-category → Items (3-level collapsible, collapsed by default) */}
-        {Object.entries(tree).map(([comp, cats]) => {
-          const compItems = Object.values(cats).flatMap(subs => Object.values(subs).flat())
-          const compPlanned = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-          const compOpen = collapsedComps[comp] !== false  // open by default
+        {/* Phase cards — one per phase */}
+        {BUDGET_PHASES.map(phase => {
+          const pItems   = phaseItems[phase] || []
+          const pPlanned = pItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
+          const pActual  = expByCategory[phase] || 0
+          const variance = pPlanned - pActual
+          const isExpanded = !!expandedPhases[phase]
+          const hasData = pPlanned > 0 || pActual > 0
 
           return (
-            <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-              {/* Level 1 — Component (dark green) */}
-              <button
-                onClick={() => setCollapsedComps(p => ({ ...p, [comp]: compOpen ? false : undefined }))}
-                className="w-full flex items-center justify-between px-4 py-3 bg-green-700">
-                <span className="text-white font-bold text-base">{comp}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-200 text-xs">{fmtINR(compPlanned)}</span>
-                  <span className="text-white text-sm">{compOpen ? '▼' : '▶'}</span>
+            <div key={phase} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+
+              {/* Phase header */}
+              <div className="px-4 py-2.5 bg-gray-800 flex items-center justify-between">
+                <span className="text-white font-bold text-sm">{phase}</span>
+                {pItems.length > 0 ? (
+                  <button onClick={() => togglePhase(phase)}
+                    className="text-gray-400 text-[11px] font-medium active:opacity-70">
+                    {pItems.length} items {isExpanded ? '▼' : '▶'}
+                  </button>
+                ) : (
+                  <span className="text-gray-600 text-[10px]">no budget items</span>
+                )}
+              </div>
+
+              {/* Two-column body: Planned (blue) | Actual (green) */}
+              <div className="grid grid-cols-2 divide-x divide-gray-200">
+                <div className="bg-blue-50 p-3">
+                  <p className="text-blue-500 text-[9px] font-bold uppercase tracking-widest mb-1.5">📒 Planned</p>
+                  <p className="text-blue-800 text-xl font-bold tabular-nums leading-none">{fmtINR(pPlanned)}</p>
+                  <p className="text-blue-400 text-[10px] mt-1.5">
+                    {pItems.length > 0 ? `${pItems.length} line item${pItems.length !== 1 ? 's' : ''}` : 'tag items to this phase'}
+                  </p>
                 </div>
-              </button>
+                <div className="bg-green-50 p-3">
+                  <p className="text-green-500 text-[9px] font-bold uppercase tracking-widest mb-1.5">⚡ Actual</p>
+                  <p className="text-green-800 text-xl font-bold tabular-nums leading-none">{fmtINR(pActual)}</p>
+                  <p className="text-green-400 text-[10px] mt-1.5">from task expenses</p>
+                </div>
+              </div>
 
-              {compOpen && (
-                <div className="divide-y divide-gray-100">
-                  {Object.entries(cats).map(([cat, subs]) => {
-                    const catItems = Object.values(subs).flat()
-                    const catPlanned = catItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-                    const catKey = `${comp}||${cat}`
-                    const catOpen = collapsedCats[catKey] === false
+              {/* Variance strip */}
+              {hasData && (
+                <div className={`px-4 py-1.5 flex items-center justify-between border-t ${
+                  variance < 0
+                    ? 'bg-red-50 border-red-100'
+                    : pActual === 0
+                      ? 'bg-gray-50 border-gray-100'
+                      : 'bg-blue-50 border-blue-100'
+                }`}>
+                  <span className={`text-[10px] font-bold ${variance < 0 ? 'text-red-600' : pActual === 0 ? 'text-gray-400' : 'text-blue-600'}`}>
+                    {variance < 0 ? '▲ Over budget' : pActual === 0 ? 'Not yet spent' : '▼ Under budget'}
+                  </span>
+                  {pActual > 0 && (
+                    <span className={`text-[10px] font-bold tabular-nums ${variance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                      {fmtINR(Math.abs(variance))}
+                    </span>
+                  )}
+                </div>
+              )}
 
-                    return (
-                      <div key={cat}>
-                        {/* Level 2 — Category (medium green) */}
-                        <button
-                          onClick={() => setCollapsedCats(p => ({ ...p, [catKey]: catOpen ? undefined : false }))}
-                          className="w-full flex items-center justify-between px-4 py-2.5 bg-green-50 border-b border-green-100">
-                          <span className="text-green-900 font-semibold text-sm">{cat}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-green-600 text-xs">{fmtINR(catPlanned)}</span>
-                            <span className="text-green-700 text-sm">{catOpen ? '▼' : '▶'}</span>
-                          </div>
-                        </button>
-
-                        {catOpen && (
-                          <div className="divide-y divide-gray-50">
-                            {Object.entries(subs).map(([sub, subItems]) => {
-                              const subKey = `${comp}||${cat}||${sub}`
-                              const subPlanned = subItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-                              const subOpen = collapsedSubs[subKey] === false
-                              const showSubHeader = sub !== '—'
-
-                              return (
-                                <div key={sub}>
-                                  {/* Level 3 — Sub-category (light gray, only if named) */}
-                                  {showSubHeader && (
-                                    <button
-                                      onClick={() => setCollapsedSubs(p => ({ ...p, [subKey]: subOpen ? undefined : false }))}
-                                      className="w-full flex items-center justify-between px-5 py-2 bg-gray-50 border-b border-gray-100">
-                                      <span className="text-gray-600 font-medium text-xs">{sub}</span>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-400 text-xs">{fmtINR(subPlanned)}</span>
-                                        <span className="text-gray-500 text-xs">{subOpen ? '▼' : '▶'}</span>
-                                      </div>
-                                    </button>
-                                  )}
-
-                                  {/* Items — show if sub has no header (single level) or sub is open */}
-                                  {(!showSubHeader || subOpen) && (
-                                    <div className="divide-y divide-gray-100">
-                                      {subItems.map(item => {
-                                        return (
-                                          <div key={item.id} className="px-4 py-3 space-y-1">
-                                            <div className="flex items-start justify-between gap-2">
-                                              <div className="flex-1 min-w-0">
-                                                <p className="text-gray-800 text-sm font-semibold leading-snug">{item.name}</p>
-                                                {item.planned_date && (
-                                                  <p className="text-gray-400 text-xs mt-0.5">{fmtDate(item.planned_date)}</p>
-                                                )}
-                                              </div>
-                                              <div className="text-right flex-shrink-0 space-y-0.5">
-                                                <p className="text-gray-800 text-sm font-semibold tabular-nums">{fmtINR(item.planned_amount)}</p>
-                                              </div>
-                                              <div className="flex flex-col gap-1 flex-shrink-0 ml-1">
-                                                <button onClick={() => openEdit(item)} className="text-gray-300 hover:text-blue-600 text-xs leading-none px-1">✏️</button>
-                                                <button onClick={() => handleDelete(item)} className="text-gray-300 hover:text-red-500 text-base leading-none px-1">×</button>
-                                              </div>
-                                            </div>
-                                            {(item.account_name || (item.account_id && accountMap[item.account_id])) && (
-                                              <p className="text-gray-400 text-xs">🏦 {item.account_name || accountMap[item.account_id]}</p>
-)}
-                                            {item.notes && <p className="text-gray-400 text-xs italic">{item.notes}</p>}
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
+              {/* Expandable line items */}
+              {isExpanded && pItems.length > 0 && (
+                <div className="divide-y divide-gray-100 border-t border-gray-200">
+                  {pItems.map(item => (
+                    <div key={item.id} className="px-4 py-2.5 flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-800 text-xs font-semibold leading-snug">{item.name}</p>
+                        {item.sub_category && <p className="text-gray-400 text-[10px] mt-0.5">{item.sub_category}</p>}
+                        {item.planned_date && <p className="text-gray-400 text-[10px]">{fmtDate(item.planned_date)}</p>}
+                        {(item.account_name || accountMap[item.account_id]) && (
+                          <p className="text-gray-400 text-[10px]">🏦 {item.account_name || accountMap[item.account_id]}</p>
                         )}
+                        {item.notes && <p className="text-gray-400 text-[10px] italic">{item.notes}</p>}
                       </div>
-                    )
-                  })}
+                      <p className="text-blue-700 text-xs font-bold tabular-nums flex-shrink-0 mt-0.5">{fmtINR(item.planned_amount)}</p>
+                      <div className="flex flex-col gap-0.5 flex-shrink-0">
+                        <button onClick={() => openEdit(item)} className="text-gray-300 hover:text-blue-600 text-xs px-1">✏️</button>
+                        <button onClick={() => handleDelete(item)} className="text-gray-300 hover:text-red-500 text-sm px-1 leading-none">×</button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           )
         })}
+
+        {/* Untagged items — budget items not linked to any phase */}
+        {untaggedItems.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+            <button
+              onClick={() => togglePhase('__untagged__')}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-600">
+              <span className="text-white font-bold text-sm">Other / Untagged</span>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-300 text-xs tabular-nums">
+                  {fmtINR(untaggedItems.reduce((s, i) => s + (i.planned_amount || 0), 0))}
+                </span>
+                <span className="text-white text-xs">{expandedPhases['__untagged__'] ? '▼' : '▶'}</span>
+              </div>
+            </button>
+            {expandedPhases['__untagged__'] && (
+              <div className="divide-y divide-gray-100">
+                {untaggedItems.map(item => (
+                  <div key={item.id} className="px-4 py-2.5 flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-800 text-xs font-semibold">{item.name}</p>
+                      {item.category && <p className="text-gray-400 text-[10px]">{item.category}</p>}
+                      {item.sub_category && <p className="text-gray-400 text-[10px]">{item.sub_category}</p>}
+                      {item.planned_date && <p className="text-gray-400 text-[10px]">{fmtDate(item.planned_date)}</p>}
+                    </div>
+                    <p className="text-gray-700 text-xs font-bold tabular-nums flex-shrink-0 mt-0.5">{fmtINR(item.planned_amount)}</p>
+                    <div className="flex flex-col gap-0.5 flex-shrink-0">
+                      <button onClick={() => openEdit(item)} className="text-gray-300 hover:text-blue-600 text-xs px-1">✏️</button>
+                      <button onClick={() => handleDelete(item)} className="text-gray-300 hover:text-red-500 text-sm px-1 leading-none">×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
-      <BottomSheet show={showForm} onClose={()=>setShowForm(false)} title={formItem ? 'Edit Budget Item' : 'Add Budget Item'}>
+      <BottomSheet show={showForm} onClose={() => setShowForm(false)} title={formItem ? 'Edit Budget Item' : 'Add Budget Item'}>
         <BudgetItemForm
           item={formItem}
           accounts={accounts}
           onSave={load}
-          onClose={()=>setShowForm(false)}
+          onClose={() => setShowForm(false)}
         />
       </BottomSheet>
     </>
