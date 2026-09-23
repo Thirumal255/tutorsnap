@@ -37,6 +37,7 @@ export const getCurrentUser    = ()            => api.get('/auth/me')
 // Tasks
 export const getAdminTasks         = (params = {}) => api.get('/admin/tasks', { params })
 export const getAdminTasksSummary  = ()             => api.get('/admin/tasks/summary')
+export const getExpensesByAccount  = ()             => api.get('/admin/tasks/expense-by-account')
 export const getAdminTaskCategories = ()            => api.get('/admin/tasks/categories')
 export const getAdminTask          = (id)           => api.get(`/admin/tasks/${id}`)
 export const createAdminTask       = (data)         => api.post('/admin/tasks', data)

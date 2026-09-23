@@ -12,6 +12,7 @@ import {
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
   getCategoryAccounts, getAccountBreakdown,
   getBudgetItems, createBudgetItem, updateBudgetItem, deleteBudgetItem,
+  getExpensesByAccount,
 } from './api/client'
 
 
@@ -2291,6 +2292,7 @@ function FinanceTab() {
   const [budgetItems, setBudgetItems] = useState([])
   const [receipts, setReceipts] = useState([])
   const [allocations, setAllocations] = useState([])
+  const [expByAccount, setExpByAccount] = useState({})
   const [loading, setLoading] = useState(true)
   const [subtab, setSubtab] = useState('accounts')
   const [addFundsFor, setAddFundsFor] = useState(null) // account object
@@ -2298,8 +2300,9 @@ function FinanceTab() {
   const [expandedMonths, setExpandedMonths] = useState({})  // {month: bool}
 
   const load = useCallback(async () => {
-    const [a, b, r, al] = await Promise.all([getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(), getFinanceAllocations()])
-    setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setAllocations(al.data); setLoading(false)
+    const [a, b, r, al, ex] = await Promise.all([getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(), getFinanceAllocations(), getExpensesByAccount()])
+    setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setAllocations(al.data)
+    setExpByAccount(ex.data || {}); setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -2365,7 +2368,7 @@ function FinanceTab() {
             const live      = a.live_balance != null ? a.live_balance : (a.current_balance || 0)
             const acctItems = budgetItems.filter(i => i.account_id === a.id)
             const proposed  = acctItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-            const spent     = acctItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+            const spent     = expByAccount[String(a.id)] || 0
             const remaining = live - (proposed - spent)
             const sufficient = (live + spent) >= proposed
             const spentPct  = proposed > 0 ? Math.min((spent / proposed) * 100, 100) : 0
@@ -2465,7 +2468,7 @@ function FinanceTab() {
           {accounts.length > 1 && (() => {
             const totLive  = accounts.reduce((s, a) => s + (a.live_balance != null ? a.live_balance : (a.current_balance || 0)), 0)
             const totAlloc = accounts.reduce((s, a) => s + budgetItems.filter(i => i.account_id === a.id).reduce((t, i) => t + (i.planned_amount || 0), 0), 0)
-            const totPaid  = accounts.reduce((s, a) => s + budgetItems.filter(i => i.account_id === a.id).reduce((t, i) => t + (i.actual_amount  || 0), 0), 0)
+            const totPaid  = accounts.reduce((s, a) => s + (expByAccount[String(a.id)] || 0), 0)
             return (
               <div className="bg-white border border-green-100 rounded-2xl overflow-hidden">
                 <div className="px-4 py-2 bg-green-700">

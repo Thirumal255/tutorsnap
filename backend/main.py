@@ -5920,6 +5920,20 @@ def delete_expense(
     db.commit()
 
 
+@app.get("/api/admin/tasks/expense-by-account")
+def expense_by_account(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(AdminTaskExpense.account_id, func.sum(AdminTaskExpense.amount))
+        .filter(AdminTaskExpense.status == 'paid', AdminTaskExpense.account_id.isnot(None))
+        .group_by(AdminTaskExpense.account_id)
+        .all()
+    )
+    return {str(acct_id): round(total, 2) for acct_id, total in rows}
+
+
 # ── Telegram Daily Digest ──────────────────────────────────────────────────────
 
 def _fmt_inr(amount: float) -> str:
