@@ -5695,6 +5695,20 @@ def tasks_summary(
     }
 
 
+@app.get("/api/admin/tasks/expense-by-account")
+def expense_by_account(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(AdminTaskExpense.account_id, func.sum(AdminTaskExpense.amount))
+        .filter(AdminTaskExpense.status == 'paid', AdminTaskExpense.account_id.isnot(None))
+        .group_by(AdminTaskExpense.account_id)
+        .all()
+    )
+    return {str(acct_id): round(total, 2) for acct_id, total in rows}
+
+
 @app.get("/api/admin/tasks/{task_id}")
 def get_task(
     task_id: int,
@@ -5918,20 +5932,6 @@ def delete_expense(
     _audit_log(db, current_user, action="delete_expense", target_type="task",
                target_id=task_id, details=f"Rs.{expense.amount}")
     db.commit()
-
-
-@app.get("/api/admin/tasks/expense-by-account")
-def expense_by_account(
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    rows = (
-        db.query(AdminTaskExpense.account_id, func.sum(AdminTaskExpense.amount))
-        .filter(AdminTaskExpense.status == 'paid', AdminTaskExpense.account_id.isnot(None))
-        .group_by(AdminTaskExpense.account_id)
-        .all()
-    )
-    return {str(acct_id): round(total, 2) for acct_id, total in rows}
 
 
 # ── Telegram Daily Digest ──────────────────────────────────────────────────────
