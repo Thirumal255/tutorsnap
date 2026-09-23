@@ -94,7 +94,9 @@ jobs:
           TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest,\
           TASK_TELEGRAM_BOT_TOKEN=TASK_TELEGRAM_BOT_TOKEN:latest,\
           TASK_TELEGRAM_CHAT_ID=TASK_TELEGRAM_CHAT_ID:latest,\
-          SEED_SECRET=SEED_SECRET:latest" \
+          SEED_SECRET=SEED_SECRET:latest,\
+          MOBILE_API_KEY=MOBILE_API_KEY:latest,\
+          MOBILE_API_EMAIL=MOBILE_API_EMAIL:latest" \
             --set-env-vars="\
           ENVIRONMENT=production,\
           CLAUDE_MODEL=claude-sonnet-4-5-20250929,\
