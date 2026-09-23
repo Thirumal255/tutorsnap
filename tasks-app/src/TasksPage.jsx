@@ -2517,7 +2517,9 @@ function FinanceTab() {
         Object.values(acctMap).forEach(g => {
           g.items.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
         })
-        const totalOut = taskExpenses.reduce((s, e) => s + (e.amount || 0), 0)
+        const totalPaid    = taskExpenses.filter(e=>e.status==='paid').reduce((s,e)=>s+(e.amount||0),0)
+        const totalPlanned = taskExpenses.filter(e=>e.status==='planned').reduce((s,e)=>s+(e.amount||0),0)
+        const totalOut = totalPaid
         const net = totalIn - totalOut
 
         return (
@@ -2525,8 +2527,8 @@ function FinanceTab() {
             {/* Net summary strip */}
             <div className="grid grid-cols-3 gap-2">
               {[
-                ['Total In',  fmtINR(totalIn),  'text-green-700'],
-                ['Total Out', fmtINR(totalOut), 'text-red-600'],
+                ['Total In',   fmtINR(totalIn),      'text-green-700'],
+                ['Paid Out',   fmtINR(totalPaid),    'text-red-600'],
                 [net >= 0 ? 'Surplus' : 'Deficit', fmtINR(Math.abs(net)), net >= 0 ? 'text-blue-600' : 'text-red-600'],
               ].map(([lbl, val, cls]) => (
                 <div key={lbl} className="bg-white border border-gray-200 rounded-xl p-2.5 text-center">
@@ -2565,11 +2567,16 @@ function FinanceTab() {
             {/* Outflows panel */}
             <div className="bg-white border border-red-200 rounded-2xl overflow-hidden">
               <div className="flex items-center justify-between px-4 py-2.5 bg-red-700">
-                <span className="text-white text-xs font-bold uppercase tracking-wide">💸 Outflows (Paid)</span>
-                <span className="text-white text-xs font-bold tabular-nums">{fmtINR(totalOut)}</span>
+                <div>
+                  <span className="text-white text-xs font-bold uppercase tracking-wide">💸 Outflows</span>
+                  {totalPlanned > 0 && (
+                    <span className="ml-2 text-red-200 text-[10px]">{fmtINR(totalPlanned)} planned</span>
+                  )}
+                </div>
+                <span className="text-white text-xs font-bold tabular-nums">{fmtINR(totalPaid)} paid</span>
               </div>
               {taskExpenses.length === 0 ? (
-                <p className="text-gray-400 text-xs text-center py-6">No paid task expenses yet.</p>
+                <p className="text-gray-400 text-xs text-center py-6">No task expenses recorded yet.</p>
               ) : (
                 <div className="divide-y divide-gray-100">
                   {Object.entries(acctMap).map(([key, group]) => (
@@ -2579,12 +2586,18 @@ function FinanceTab() {
                           🏦 {group.name || (key === '__none__' ? 'No Account' : `Account ${key}`)}
                         </span>
                         <span className="text-[11px] font-bold text-red-500 tabular-nums">
-                          {fmtINR(group.items.reduce((s, e) => s + e.amount, 0))}
+                          {fmtINR(group.items.filter(e=>e.status==='paid').reduce((s,e)=>s+e.amount,0))} paid
                         </span>
                       </div>
                       {group.items.map(e => (
-                        <div key={e.id} className="flex items-start justify-between px-4 py-2.5 gap-3 pl-8">
+                        <div key={e.id} className={`flex items-start justify-between px-4 py-2.5 gap-3 pl-8 ${e.status==='planned'?'opacity-60':''}`}>
                           <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              {e.status==='paid'
+                                ? <span className="text-[9px] font-bold text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full">✓ Paid</span>
+                                : <span className="text-[9px] font-bold text-amber-500 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">Planned</span>
+                              }
+                            </div>
                             <p className="text-xs font-medium text-gray-800 truncate">{e.task_name}</p>
                             {e.description && <p className="text-[10px] text-gray-400 truncate">{e.description}</p>}
                             <p className="text-[10px] text-gray-400">
