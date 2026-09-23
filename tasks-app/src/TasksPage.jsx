@@ -2203,19 +2203,25 @@ const PHASES = [
 
 function LinkPhasesSection({ account, allocations, onRefresh }) {
   const [open, setOpen] = useState(false)
-  const [selPhase, setSelPhase] = useState('')
+  const [selected, setSelected] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const linked = allocations.filter(al => al.account_id === account.id)
-  const unlinkedPhases = PHASES.filter(p => !linked.some(l => l.category === p))
+  const linkedPhases = linked.map(l => l.category)
+
+  function toggle(phase) {
+    setSelected(s => s.includes(phase) ? s.filter(p => p !== phase) : [...s, phase])
+  }
 
   async function handleLink() {
-    if (!selPhase) return setError('Pick a phase')
+    if (selected.length === 0) return setError('Select at least one phase')
     setSaving(true); setError('')
     try {
-      await upsertFinanceAllocation({ category: selPhase, account_id: account.id, allocated_amount: 0 })
-      setSelPhase('')
+      await Promise.all(selected.map(p =>
+        upsertFinanceAllocation({ category: p, account_id: account.id, allocated_amount: 0 })
+      ))
+      setSelected([])
       await onRefresh()
     } catch(e) { setError(e.response?.data?.detail || 'Failed') }
     finally { setSaving(false) }
@@ -2244,31 +2250,48 @@ function LinkPhasesSection({ account, allocations, onRefresh }) {
 
       {open && (
         <div className="px-4 pb-3 space-y-2">
-          {linked.length === 0 && (
-            <p className="text-gray-400 text-xs italic py-1">No phases linked yet.</p>
-          )}
-          {linked.map(al => (
-            <div key={al.id} className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-              <p className="text-gray-800 text-xs font-semibold">{al.category}</p>
-              <button onClick={() => handleUnlink(al.category)}
-                className="text-gray-300 hover:text-red-500 text-lg leading-none">×</button>
-            </div>
-          ))}
+          {PHASES.map(phase => {
+            const isLinked = linkedPhases.includes(phase)
+            const isChecked = selected.includes(phase)
+            return (
+              <div key={phase}
+                onClick={() => !isLinked && toggle(phase)}
+                className={`flex items-center justify-between rounded-xl px-3 py-2.5 border transition-all ${
+                  isLinked
+                    ? 'bg-blue-50 border-blue-200 cursor-default'
+                    : isChecked
+                    ? 'bg-blue-50 border-blue-400 cursor-pointer'
+                    : 'bg-gray-50 border-gray-200 cursor-pointer hover:border-blue-300'
+                }`}>
+                <div className="flex items-center gap-2.5">
+                  {isLinked ? (
+                    <span className="text-blue-500 text-sm">✓</span>
+                  ) : (
+                    <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
+                      isChecked ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                    }`}>
+                      {isChecked && <span className="text-white text-[10px] font-bold">✓</span>}
+                    </div>
+                  )}
+                  <span className={`text-xs font-semibold ${isLinked ? 'text-blue-700' : 'text-gray-700'}`}>
+                    {phase}
+                  </span>
+                </div>
+                {isLinked && (
+                  <button onClick={e => { e.stopPropagation(); handleUnlink(phase) }}
+                    className="text-gray-300 hover:text-red-500 text-lg leading-none">×</button>
+                )}
+              </div>
+            )
+          })}
 
-          {unlinkedPhases.length > 0 && (
-            <div className="pt-1 space-y-2">
-              <p className="text-gray-400 text-[10px] font-semibold uppercase">Link a phase</p>
-              <select value={selPhase} onChange={e => setSelPhase(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-800 text-xs focus:outline-none focus:border-blue-500">
-                <option value="">— Select phase —</option>
-                {unlinkedPhases.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              {error && <p className="text-red-600 text-xs">{error}</p>}
-              <button onClick={handleLink} disabled={saving || !selPhase}
-                className="w-full bg-blue-600 text-white text-xs font-bold py-2.5 rounded-xl disabled:opacity-50">
-                {saving ? 'Linking…' : 'Link Phase'}
-              </button>
-            </div>
+          {error && <p className="text-red-600 text-xs">{error}</p>}
+
+          {selected.length > 0 && (
+            <button onClick={handleLink} disabled={saving}
+              className="w-full bg-blue-600 text-white text-xs font-bold py-2.5 rounded-xl disabled:opacity-50 mt-1">
+              {saving ? 'Linking…' : `Link ${selected.length} Phase${selected.length > 1 ? 's' : ''}`}
+            </button>
           )}
         </div>
       )}
