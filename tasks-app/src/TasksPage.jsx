@@ -1516,8 +1516,8 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const isStarted = t => t.start_date && new Date(t.start_date+'T00:00:00') <= today
   // Overdue: end_date passed, not completed
   const overdueTasks = root.filter(t=>t.status!=='completed'&&isOverdue(t))
-  // Active: started OR overdue, not completed
-  const activeTasks  = root.filter(t=>t.status!=='completed'&&(isStarted(t)||isOverdue(t)))
+  // Active: started (start_date <= today), not completed
+  const activeTasks  = root.filter(t=>t.status!=='completed'&&isStarted(t))
   // Pending: not completed, not yet started (or no start date)
   const pendingTasks = root.filter(t=>t.status!=='completed'&&!isStarted(t)&&!isOverdue(t))
   // Upcoming: starting within 7 days (subset of pending)
@@ -1611,7 +1611,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
       <div className="grid grid-cols-4 gap-2">
         {[
           ['✅', 'Closed',  completed,            'text-green-700', 'bg-green-50  border-green-200'],
-          ['🔄', 'In Progress',  activeTasks.length,   'text-blue-600',  'bg-blue-50   border-blue-200'],
+          ['🔄', 'In Progress',  activeTasks.length + overdueTasks.length,   'text-blue-600',  'bg-blue-50   border-blue-200'],
           ['⚠️', 'Overdue', overdueTasks.length,  'text-red-600',   'bg-red-50    border-red-200'],
           ['⏳', 'Pending', pendingTasks.length,  'text-gray-600',  'bg-gray-100  border-gray-200'],
         ].map(([icon, label, val, cls, bg]) => (
