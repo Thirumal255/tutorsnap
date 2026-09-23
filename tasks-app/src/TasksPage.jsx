@@ -1174,7 +1174,6 @@ function BudgetItemForm({ item, accounts, onSave, onClose }) {
     category:       item?.category       || '',
     sub_category:   item?.sub_category   || '',
     planned_amount: item?.planned_amount != null ? String(item.planned_amount) : '',
-    actual_amount:  item?.actual_amount  != null ? String(item.actual_amount)  : '',
     account_id:     item?.account_id     != null ? String(item.account_id)     : '',
     planned_date:   item?.planned_date   || '',
     notes:          item?.notes          || '',
@@ -1192,7 +1191,6 @@ function BudgetItemForm({ item, accounts, onSave, onClose }) {
       category:       form.category.trim()     || null,
       sub_category:   form.sub_category.trim() || null,
       planned_amount: form.planned_amount !== '' ? (parseFloat(form.planned_amount) || 0) : null,
-      actual_amount:  form.actual_amount  !== '' ? (parseFloat(form.actual_amount)  || 0) : null,
       account_id:     form.account_id ? parseInt(form.account_id) : null,
       planned_date:   form.planned_date || null,
       notes:          form.notes.trim() || null,
@@ -1225,15 +1223,9 @@ function BudgetItemForm({ item, accounts, onSave, onClose }) {
           <input value={form.sub_category} onChange={e=>set('sub_category',e.target.value)} className={inp} placeholder="Sub category"/>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={lbl}>Planned Amount (₹)</label>
-          <input type="number" value={form.planned_amount} onChange={e=>set('planned_amount',e.target.value)} className={inp} placeholder="0" min="0"/>
-        </div>
-        <div>
-          <label className={lbl}>Actual Amount (₹)</label>
-          <input type="number" value={form.actual_amount} onChange={e=>set('actual_amount',e.target.value)} className={inp} placeholder="0" min="0"/>
-        </div>
+      <div>
+        <label className={lbl}>Planned Amount (₹)</label>
+        <input type="number" value={form.planned_amount} onChange={e=>set('planned_amount',e.target.value)} className={inp} placeholder="0" min="0"/>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -1264,27 +1256,27 @@ function BudgetItemForm({ item, accounts, onSave, onClose }) {
 // ── Budget Tab ─────────────────────────────────────────────────────────────────
 
 function BudgetTab() {
-  const [items, setItems]       = useState([])
-  const [accounts, setAccounts] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [editId, setEditId]     = useState(null)
-  const [editVal, setEditVal]   = useState('')
-  const [saving, setSaving]     = useState(false)
-  const [showForm, setShowForm] = useState(false)
-  const [formItem, setFormItem] = useState(null)
+  const [items, setItems]             = useState([])
+  const [accounts, setAccounts]       = useState([])
+  const [expByCategory, setExpByCategory] = useState({})
+  const [loading, setLoading]         = useState(true)
+  const [showForm, setShowForm]       = useState(false)
+  const [formItem, setFormItem]       = useState(null)
   // collapsed by default: undefined → collapsed; false → open
   const [collapsedComps, setCollapsedComps]  = useState({})
   const [collapsedCats, setCollapsedCats]    = useState({})
   const [collapsedSubs, setCollapsedSubs]    = useState({})
 
   const load = useCallback(async () => {
-    const [b, a] = await Promise.all([getBudgetItems(), getFinanceAccounts()])
-    setItems(b.data); setAccounts(a.data); setLoading(false)
+    const [b, a, s] = await Promise.all([getBudgetItems(), getFinanceAccounts(), getAdminTasksSummary()])
+    setItems(b.data); setAccounts(a.data)
+    setExpByCategory(s.data.expense_by_category || {})
+    setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
 
   const totalPlanned = items.reduce((s, i) => s + (i.planned_amount || 0), 0)
-  const totalActual  = items.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+  const totalActual  = Object.values(expByCategory).reduce((s, v) => s + v, 0)
 
   // Build component → category → sub_category → items tree (3 levels)
   const tree = {}
@@ -1297,14 +1289,6 @@ function BudgetTab() {
     if (!tree[comp][cat][sub]) tree[comp][cat][sub] = []
     tree[comp][cat][sub].push(item)
   })
-
-  async function saveActual(id) {
-    const val = parseFloat(editVal)
-    if (isNaN(val)) return setEditId(null)
-    setSaving(true)
-    try { await updateBudgetItem(id, { actual_amount: val >= 0 ? val : null }); await load() }
-    finally { setSaving(false); setEditId(null) }
-  }
 
   async function handleDelete(item) {
     if (!confirm(`Delete "${item.name}"?`)) return
@@ -1360,7 +1344,8 @@ function BudgetTab() {
         {Object.entries(tree).map(([comp, cats]) => {
           const compItems = Object.values(cats).flatMap(subs => Object.values(subs).flat())
           const compPlanned = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-          const compActual  = compItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+          const compCats = Object.keys(cats)
+          const compExpense = compCats.reduce((s, c) => s + (expByCategory[c] || 0), 0)
           const compOpen = collapsedComps[comp] !== false  // open by default
 
           return (
@@ -1371,7 +1356,7 @@ function BudgetTab() {
                 className="w-full flex items-center justify-between px-4 py-3 bg-green-700">
                 <span className="text-white font-bold text-base">{comp}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-green-200 text-xs">{fmtINR(compPlanned)}{compActual > 0 ? ` · ${fmtINR(compActual)} spent` : ''}</span>
+                  <span className="text-green-200 text-xs">{fmtINR(compPlanned)}{compExpense > 0 ? ` · ${fmtINR(compExpense)} spent` : ''}</span>
                   <span className="text-white text-sm">{compOpen ? '▼' : '▶'}</span>
                 </div>
               </button>
@@ -1381,7 +1366,7 @@ function BudgetTab() {
                   {Object.entries(cats).map(([cat, subs]) => {
                     const catItems = Object.values(subs).flat()
                     const catPlanned = catItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-                    const catActual  = catItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
+                    const catExpense = expByCategory[cat] || 0
                     const catKey = `${comp}||${cat}`
                     const catOpen = collapsedCats[catKey] === false
 
@@ -1393,7 +1378,10 @@ function BudgetTab() {
                           className="w-full flex items-center justify-between px-4 py-2.5 bg-green-50 border-b border-green-100">
                           <span className="text-green-900 font-semibold text-sm">{cat}</span>
                           <div className="flex items-center gap-2">
-                            <span className="text-green-600 text-xs">{fmtINR(catPlanned)}{catActual > 0 ? ` · ${fmtINR(catActual)}` : ''}</span>
+                            <span className="text-green-600 text-xs">{fmtINR(catPlanned)}</span>
+                            {catExpense > 0 && (
+                              <span className="text-[10px] font-semibold text-green-700 bg-green-100 rounded-md px-1.5 py-0.5">⚡ {fmtINR(catExpense)}</span>
+                            )}
                             <span className="text-green-700 text-sm">{catOpen ? '▼' : '▶'}</span>
                           </div>
                         </button>
@@ -1403,7 +1391,6 @@ function BudgetTab() {
                             {Object.entries(subs).map(([sub, subItems]) => {
                               const subKey = `${comp}||${cat}||${sub}`
                               const subPlanned = subItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-                              const subActual  = subItems.reduce((s, i) => s + (i.actual_amount  || 0), 0)
                               const subOpen = collapsedSubs[subKey] === false
                               const showSubHeader = sub !== '—'
 
@@ -1416,7 +1403,7 @@ function BudgetTab() {
                                       className="w-full flex items-center justify-between px-5 py-2 bg-gray-50 border-b border-gray-100">
                                       <span className="text-gray-600 font-medium text-xs">{sub}</span>
                                       <div className="flex items-center gap-2">
-                                        <span className="text-gray-400 text-xs">{fmtINR(subPlanned)}{subActual > 0 ? ` · ${fmtINR(subActual)}` : ''}</span>
+                                        <span className="text-gray-400 text-xs">{fmtINR(subPlanned)}</span>
                                         <span className="text-gray-500 text-xs">{subOpen ? '▼' : '▶'}</span>
                                       </div>
                                     </button>
@@ -1426,8 +1413,6 @@ function BudgetTab() {
                                   {(!showSubHeader || subOpen) && (
                                     <div className="divide-y divide-gray-100">
                                       {subItems.map(item => {
-                                        const variance = (item.planned_amount || 0) - (item.actual_amount || 0)
-                                        const editing = editId === item.id
                                         return (
                                           <div key={item.id} className="px-4 py-3 space-y-1">
                                             <div className="flex items-start justify-between gap-2">
@@ -1439,27 +1424,6 @@ function BudgetTab() {
                                               </div>
                                               <div className="text-right flex-shrink-0 space-y-0.5">
                                                 <p className="text-gray-800 text-sm font-semibold tabular-nums">{fmtINR(item.planned_amount)}</p>
-                                                {editing ? (
-                                                  <input
-                                                    autoFocus type="number" value={editVal}
-                                                    onChange={e => setEditVal(e.target.value)}
-                                                    onBlur={() => saveActual(item.id)}
-                                                    onKeyDown={e => { if (e.key==='Enter') saveActual(item.id); if (e.key==='Escape') setEditId(null) }}
-                                                    className="w-24 bg-gray-100 border border-blue-500 rounded-lg px-2 py-0.5 text-gray-800 text-xs focus:outline-none text-right"
-                                                    disabled={saving}
-                                                  />
-                                                ) : (
-                                                  <button
-                                                    onClick={() => { setEditId(item.id); setEditVal(item.actual_amount != null ? String(item.actual_amount) : '') }}
-                                                    className={`text-xs px-2 py-0.5 rounded-lg ${item.actual_amount != null ? 'text-green-600 bg-green-50' : 'text-gray-400 bg-gray-100'}`}>
-                                                    {item.actual_amount != null ? fmtINR(item.actual_amount) : '+ actual'}
-                                                  </button>
-                                                )}
-                                                {item.actual_amount != null && (
-                                                  <p className={`text-[10px] font-semibold ${variance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                                                    {variance < 0 ? '▲' : '▼'} {fmtINR(Math.abs(variance))}
-                                                  </p>
-                                                )}
                                               </div>
                                               <div className="flex flex-col gap-1 flex-shrink-0 ml-1">
                                                 <button onClick={() => openEdit(item)} className="text-gray-300 hover:text-blue-600 text-xs leading-none px-1">✏️</button>
@@ -1543,7 +1507,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const completed = byStatus.completed || 0
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0
   const totalAvail = accounts.reduce((s, a) => s + (a.live_balance ?? a.current_balance ?? 0), 0)
-  const totalSpent = budgetItems.reduce((s, i) => s + (i.actual_amount || 0), 0)
+  const totalSpent = Object.values(summary?.expense_by_category || {}).reduce((s, v) => s + v, 0)
   const totalPlanned = budgetItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
 
   // Reusable card components for the key date and budget sections
