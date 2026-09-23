@@ -2309,12 +2309,16 @@ function FinanceTab() {
 
   const load = useCallback(async () => {
     try {
-      const [a, b, r, al, ex, te] = await Promise.all([
+      const [a, b, r, al, ex, te] = await Promise.allSettled([
         getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(),
         getFinanceAllocations(), getExpensesByAccount(), getTaskExpensesList(),
       ])
-      setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setAllocations(al.data)
-      setExpByAccount(ex.data || {}); setTaskExpenses(te.data || [])
+      if (a.status==='fulfilled')  setAccounts(a.value.data)
+      if (b.status==='fulfilled')  setBudgetItems(b.value.data)
+      if (r.status==='fulfilled')  setReceipts(r.value.data)
+      if (al.status==='fulfilled') setAllocations(al.value.data)
+      if (ex.status==='fulfilled') setExpByAccount(ex.value.data || {})
+      if (te.status==='fulfilled') setTaskExpenses(te.value.data || [])
     } finally {
       setLoading(false)
     }
