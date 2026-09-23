@@ -2308,12 +2308,16 @@ function FinanceTab() {
   const [expandedMonths, setExpandedMonths] = useState({})  // {month: bool}
 
   const load = useCallback(async () => {
-    const [a, b, r, al, ex, te] = await Promise.all([
-      getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(),
-      getFinanceAllocations(), getExpensesByAccount(), getTaskExpensesList(),
-    ])
-    setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setAllocations(al.data)
-    setExpByAccount(ex.data || {}); setTaskExpenses(te.data || []); setLoading(false)
+    try {
+      const [a, b, r, al, ex, te] = await Promise.all([
+        getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(),
+        getFinanceAllocations(), getExpensesByAccount(), getTaskExpensesList(),
+      ])
+      setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setAllocations(al.data)
+      setExpByAccount(ex.data || {}); setTaskExpenses(te.data || [])
+    } finally {
+      setLoading(false)
+    }
   }, [])
   useEffect(() => { load() }, [load])
 
