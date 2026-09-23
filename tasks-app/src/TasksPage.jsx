@@ -1330,6 +1330,28 @@ function BudgetTab() {
           </button>
         </div>
 
+        {/* Task Expenses Summary — from actual task spending by phase */}
+        {Object.keys(expByCategory).length > 0 && (() => {
+          const phases = Object.entries(expByCategory).filter(([, v]) => v > 0)
+          if (phases.length === 0) return null
+          return (
+            <div className="bg-white border border-green-200 rounded-2xl overflow-hidden">
+              <div className="px-4 py-2.5 bg-green-700 flex items-center justify-between">
+                <span className="text-white font-bold text-sm">⚡ Task Expenses</span>
+                <span className="text-green-200 text-xs">{fmtINR(totalActual)} paid across tasks</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {phases.map(([phase, amt]) => (
+                  <div key={phase} className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-gray-700 text-sm">{phase}</span>
+                    <span className="text-green-700 text-sm font-semibold tabular-nums">{fmtINR(amt)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {items.length === 0 && (
           <div className="text-center py-16">
             <p className="text-4xl mb-3">📒</p>
@@ -1344,8 +1366,6 @@ function BudgetTab() {
         {Object.entries(tree).map(([comp, cats]) => {
           const compItems = Object.values(cats).flatMap(subs => Object.values(subs).flat())
           const compPlanned = compItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-          const compCats = Object.keys(cats)
-          const compExpense = compCats.reduce((s, c) => s + (expByCategory[c] || 0), 0)
           const compOpen = collapsedComps[comp] !== false  // open by default
 
           return (
@@ -1356,7 +1376,7 @@ function BudgetTab() {
                 className="w-full flex items-center justify-between px-4 py-3 bg-green-700">
                 <span className="text-white font-bold text-base">{comp}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-green-200 text-xs">{fmtINR(compPlanned)}{compExpense > 0 ? ` · ${fmtINR(compExpense)} spent` : ''}</span>
+                  <span className="text-green-200 text-xs">{fmtINR(compPlanned)}</span>
                   <span className="text-white text-sm">{compOpen ? '▼' : '▶'}</span>
                 </div>
               </button>
@@ -1366,7 +1386,6 @@ function BudgetTab() {
                   {Object.entries(cats).map(([cat, subs]) => {
                     const catItems = Object.values(subs).flat()
                     const catPlanned = catItems.reduce((s, i) => s + (i.planned_amount || 0), 0)
-                    const catExpense = expByCategory[cat] || 0
                     const catKey = `${comp}||${cat}`
                     const catOpen = collapsedCats[catKey] === false
 
@@ -1379,9 +1398,6 @@ function BudgetTab() {
                           <span className="text-green-900 font-semibold text-sm">{cat}</span>
                           <div className="flex items-center gap-2">
                             <span className="text-green-600 text-xs">{fmtINR(catPlanned)}</span>
-                            {catExpense > 0 && (
-                              <span className="text-[10px] font-semibold text-green-700 bg-green-100 rounded-md px-1.5 py-0.5">⚡ {fmtINR(catExpense)}</span>
-                            )}
                             <span className="text-green-700 text-sm">{catOpen ? '▼' : '▶'}</span>
                           </div>
                         </button>
