@@ -1604,21 +1604,14 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
       {/* ── Date strip ── */}
       <div className="flex items-center justify-between">
         <p className="text-gray-600 text-sm font-semibold">{today_str}</p>
-        <div className="flex items-center gap-2">
-          {totalOngoing>0&&(
-            <span className="bg-blue-100 text-blue-600 text-sm font-bold px-3 py-1 rounded-full">{totalOngoing} in progress</span>
-          )}
-          {overdueTasks.length>0&&(
-            <span className="bg-red-100 text-red-600 text-sm font-bold px-3 py-1 rounded-full">⚠ {overdueTasks.length} overdue</span>
-          )}
-        </div>
+        <div />
       </div>
 
       {/* ── KPI chips ── */}
       <div className="grid grid-cols-4 gap-2">
         {[
           ['✅', 'Closed',  completed,            'text-green-700', 'bg-green-50  border-green-200'],
-          ['🔄', 'Active',  activeTasks.length,   'text-blue-600',  'bg-blue-50   border-blue-200'],
+          ['🔄', 'In Progress',  activeTasks.length,   'text-blue-600',  'bg-blue-50   border-blue-200'],
           ['⚠️', 'Overdue', overdueTasks.length,  'text-red-600',   'bg-red-50    border-red-200'],
           ['⏳', 'Pending', pendingTasks.length,  'text-gray-600',  'bg-gray-100  border-gray-200'],
         ].map(([icon, label, val, cls, bg]) => (
