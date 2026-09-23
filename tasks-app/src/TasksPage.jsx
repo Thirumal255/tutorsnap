@@ -12,7 +12,7 @@ import {
   getFinanceTransfers, createFinanceTransfer, deleteFinanceTransfer,
   getCategoryAccounts, getAccountBreakdown,
   getBudgetItems, createBudgetItem, updateBudgetItem, deleteBudgetItem,
-  getExpensesByAccount,
+  getExpensesByAccount, getTaskExpensesList,
 } from './api/client'
 
 
@@ -2293,6 +2293,7 @@ function FinanceTab() {
   const [receipts, setReceipts] = useState([])
   const [allocations, setAllocations] = useState([])
   const [expByAccount, setExpByAccount] = useState({})
+  const [taskExpenses, setTaskExpenses] = useState([])
   const [loading, setLoading] = useState(true)
   const [subtab, setSubtab] = useState('accounts')
   const [addFundsFor, setAddFundsFor] = useState(null) // account object
@@ -2300,9 +2301,12 @@ function FinanceTab() {
   const [expandedMonths, setExpandedMonths] = useState({})  // {month: bool}
 
   const load = useCallback(async () => {
-    const [a, b, r, al, ex] = await Promise.all([getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(), getFinanceAllocations(), getExpensesByAccount()])
+    const [a, b, r, al, ex, te] = await Promise.all([
+      getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(),
+      getFinanceAllocations(), getExpensesByAccount(), getTaskExpensesList(),
+    ])
     setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setAllocations(al.data)
-    setExpByAccount(ex.data || {}); setLoading(false)
+    setExpByAccount(ex.data || {}); setTaskExpenses(te.data || []); setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -2321,25 +2325,6 @@ function FinanceTab() {
       <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/>
     </div>
   )
-
-  const cashFlowMonths = (() => {
-    const map = {}
-    budgetItems.forEach(item => {
-      if (!item.planned_date) return
-      const m = item.planned_date.slice(0, 7)
-      if (!map[m]) map[m] = { planned: 0, actual: 0 }
-      map[m].planned += item.planned_amount || 0
-      map[m].actual  += item.actual_amount  || 0
-    })
-    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).map(([month, v]) => ({
-      month,
-      label: new Date(month + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
-      planned: v.planned,
-      actual:  v.actual,
-    }))
-  })()
-
-  const maxFlow = Math.max(...cashFlowMonths.map(m => m.planned), 1)
 
   const SUBTABS = [
     { key: 'accounts', label: 'Accounts' },
@@ -2497,172 +2482,112 @@ function FinanceTab() {
         {addFundsFor && <AddFundsForm account={addFundsFor} onSave={load} onClose={() => setAddFundsFor(null)}/>}
       </BottomSheet>
 
-      {subtab === 'cashflow' && (
-        <div className="px-4 space-y-3">
-          <p className="text-gray-400 text-xs">Monthly outflow from budget line items</p>
-          {cashFlowMonths.length === 0 && (
-            <p className="text-gray-400 text-sm text-center py-12">No budget items with dates.</p>
-          )}
-          {cashFlowMonths.map(({ month, label, planned, actual }) => {
-            const barPct = maxFlow > 0 ? (planned / maxFlow) * 100 : 0
-            const actPct = planned > 0 ? Math.min((actual / planned) * 100, 100) : 0
-            const isCurrent = month === new Date().toISOString().slice(0, 7)
-            const isOpen = !!expandedMonths[month]
+      {subtab === 'cashflow' && (() => {
+        const sortedReceipts = [...receipts].sort((a, b) =>
+          (b.received_date || '').localeCompare(a.received_date || '')
+        )
+        const totalIn = sortedReceipts.reduce((s, r) => s + (r.amount || 0), 0)
 
-            // Gather inflows and outflows for this month
-            const monthReceipts = receipts.filter(r => r.received_date && r.received_date.slice(0, 7) === month)
-            const monthItems    = budgetItems.filter(i => i.planned_date && i.planned_date.slice(0, 7) === month)
+        // Group task expenses by account then sort by date desc within each group
+        const acctMap = {}
+        taskExpenses.forEach(e => {
+          const key = e.account_id ? String(e.account_id) : '__none__'
+          if (!acctMap[key]) acctMap[key] = { name: null, items: [] }
+          acctMap[key].items.push(e)
+        })
+        // resolve account names
+        accounts.forEach(a => {
+          if (acctMap[String(a.id)]) acctMap[String(a.id)].name = a.name
+        })
+        Object.values(acctMap).forEach(g => {
+          g.items.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        })
+        const totalOut = taskExpenses.reduce((s, e) => s + (e.amount || 0), 0)
+        const net = totalIn - totalOut
 
-            // Group by account
-            const acctIds = [...new Set([
-              ...monthReceipts.map(r => r.account_id),
-              ...monthItems.map(i => i.account_id),
-            ])].filter(Boolean)
-            const unlinked = { receipts: monthReceipts.filter(r => !r.account_id), items: monthItems.filter(i => !i.account_id) }
-
-            const totalIn  = monthReceipts.reduce((s, r) => s + (r.amount || 0), 0)
-            const totalOut = monthItems.reduce((s, i) => s + (i.actual_amount || i.planned_amount || 0), 0)
-
-            return (
-              <div key={month} className={`bg-white border rounded-2xl overflow-hidden ${isCurrent ? 'border-blue-300' : 'border-gray-200'}`}>
-                {/* Header — tap to expand */}
-                <button
-                  className="w-full p-4 text-left space-y-2"
-                  onClick={() => setExpandedMonths(p => ({ ...p, [month]: !p[month] }))}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-800 text-sm font-bold">{label}</span>
-                      {isCurrent && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">NOW</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-800 text-sm font-bold">{fmtINR(planned)}</span>
-                      <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
-                    </div>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600/40 rounded-full" style={{ width: `${barPct}%` }} />
-                  </div>
-                  {actual > 0 ? (
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] text-gray-400">
-                        <span>Actual: <span className="text-green-600 font-semibold">{fmtINR(actual)}</span></span>
-                        <span>{actPct.toFixed(0)}% of planned</span>
-                      </div>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${actPct >= 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${actPct}%` }} />
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 text-[10px]">No actuals yet</p>
-                  )}
-                  {/* Mini summary row */}
-                  {(totalIn > 0 || totalOut > 0) && (
-                    <div className="flex gap-3 pt-0.5">
-                      {totalIn > 0 && <span className="text-[10px] text-green-600 font-semibold">↑ {fmtINR(totalIn)} in</span>}
-                      {totalOut > 0 && <span className="text-[10px] text-red-500 font-semibold">↓ {fmtINR(totalOut)} out</span>}
-                    </div>
-                  )}
-                </button>
-
-                {/* Expandable detail */}
-                {isOpen && (
-                  <div className="border-t border-gray-100 divide-y divide-gray-100">
-                    {acctIds.map(aid => {
-                      const acctName = (monthReceipts.find(r => r.account_id === aid) || monthItems.find(i => i.account_id === aid))?.account_name || `Account ${aid}`
-                      const aIn  = monthReceipts.filter(r => r.account_id === aid)
-                      const aOut = monthItems.filter(i => i.account_id === aid)
-                      const netIn  = aIn.reduce((s, r) => s + (r.amount || 0), 0)
-                      const netOut = aOut.reduce((s, i) => s + (i.actual_amount || i.planned_amount || 0), 0)
-                      return (
-                        <div key={aid} className="px-4 py-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-700">🏦 {acctName}</span>
-                            <div className="flex gap-2 text-[10px]">
-                              {netIn  > 0 && <span className="text-green-600 font-semibold">+{fmtINR(netIn)}</span>}
-                              {netOut > 0 && <span className="text-red-500 font-semibold">−{fmtINR(netOut)}</span>}
-                            </div>
-                          </div>
-                          {/* Inflows */}
-                          {aIn.map(r => (
-                            <div key={`in-${r.id}`} className="flex justify-between items-start pl-3">
-                              <div>
-                                <p className="text-[11px] text-green-700 font-medium">↑ {r.source_name || 'Inflow'}</p>
-                                {r.description && <p className="text-[10px] text-gray-400">{r.description}</p>}
-                                <p className="text-[10px] text-gray-400">{r.received_date}</p>
-                              </div>
-                              <span className="text-[11px] text-green-600 font-semibold whitespace-nowrap ml-2">{fmtINR(r.amount)}</span>
-                            </div>
-                          ))}
-                          {/* Outflows */}
-                          {aOut.map(i => (
-                            <div key={`out-${i.id}`} className="flex justify-between items-start pl-3">
-                              <div>
-                                <p className="text-[11px] text-red-600 font-medium">↓ {i.name}</p>
-                                {i.category && <p className="text-[10px] text-gray-400">{i.category}{i.sub_category ? ` › ${i.sub_category}` : ''}</p>}
-                                <p className="text-[10px] text-gray-400">{i.planned_date} {i.actual_amount ? '· paid' : '· planned'}</p>
-                              </div>
-                              <span className="text-[11px] text-red-500 font-semibold whitespace-nowrap ml-2">{fmtINR(i.actual_amount || i.planned_amount)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })}
-                    {/* Unlinked items (no account) */}
-                    {(unlinked.receipts.length > 0 || unlinked.items.length > 0) && (
-                      <div className="px-4 py-3 space-y-2">
-                        <span className="text-xs font-bold text-gray-500">No account linked</span>
-                        {unlinked.receipts.map(r => (
-                          <div key={`in-${r.id}`} className="flex justify-between items-start pl-3">
-                            <div>
-                              <p className="text-[11px] text-green-700 font-medium">↑ {r.source_name || 'Inflow'}</p>
-                              {r.description && <p className="text-[10px] text-gray-400">{r.description}</p>}
-                            </div>
-                            <span className="text-[11px] text-green-600 font-semibold whitespace-nowrap ml-2">{fmtINR(r.amount)}</span>
-                          </div>
-                        ))}
-                        {unlinked.items.map(i => (
-                          <div key={`out-${i.id}`} className="flex justify-between items-start pl-3">
-                            <div>
-                              <p className="text-[11px] text-red-600 font-medium">↓ {i.name}</p>
-                              {i.category && <p className="text-[10px] text-gray-400">{i.category}</p>}
-                            </div>
-                            <span className="text-[11px] text-red-500 font-semibold whitespace-nowrap ml-2">{fmtINR(i.actual_amount || i.planned_amount)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {/* Month net */}
-                    <div className="px-4 py-2 bg-gray-50 flex justify-between text-[11px] font-bold">
-                      <span className="text-gray-500">Net this month</span>
-                      <span className={totalIn - totalOut >= 0 ? 'text-green-600' : 'text-red-500'}>{fmtINR(Math.abs(totalIn - totalOut))} {totalIn - totalOut >= 0 ? 'surplus' : 'deficit'}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-          {cashFlowMonths.length > 0 && (() => {
-            const tp = cashFlowMonths.reduce((s, m) => s + m.planned, 0)
-            const ta = cashFlowMonths.reduce((s, m) => s + m.actual, 0)
-            return (
-              <div className="bg-green-600 border border-green-200/40 rounded-2xl p-4">
-                <p className="text-gray-800 text-[10px] font-bold mb-2">PROJECT TOTAL</p>
-                <div className="flex justify-between">
-                  <div>
-                    <p className="text-gray-500 text-[10px]">Total Planned</p>
-                    <p className="text-gray-800 font-bold text-base">{fmtINR(tp)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-gray-500 text-[10px]">Total Actual</p>
-                    <p className="text-green-600 font-bold text-base">{fmtINR(ta)}</p>
-                  </div>
+        return (
+          <div className="px-4 space-y-3">
+            {/* Net summary strip */}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ['Total In',  fmtINR(totalIn),  'text-green-700'],
+                ['Total Out', fmtINR(totalOut), 'text-red-600'],
+                [net >= 0 ? 'Surplus' : 'Deficit', fmtINR(Math.abs(net)), net >= 0 ? 'text-blue-600' : 'text-red-600'],
+              ].map(([lbl, val, cls]) => (
+                <div key={lbl} className="bg-white border border-gray-200 rounded-xl p-2.5 text-center">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{lbl}</p>
+                  <p className={`font-bold text-sm mt-0.5 tabular-nums ${cls}`}>{val}</p>
                 </div>
+              ))}
+            </div>
+
+            {/* Inflows panel */}
+            <div className="bg-white border border-green-200 rounded-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-green-700">
+                <span className="text-white text-xs font-bold uppercase tracking-wide">💵 Inflows</span>
+                <span className="text-white text-xs font-bold tabular-nums">{fmtINR(totalIn)}</span>
               </div>
-            )
-          })()}
-        </div>
-      )}
+              {sortedReceipts.length === 0 ? (
+                <p className="text-gray-400 text-xs text-center py-6">No fund receipts recorded yet.</p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {sortedReceipts.map(r => (
+                    <div key={r.id} className="flex items-start justify-between px-4 py-2.5 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{r.description || r.source_name || 'Inflow'}</p>
+                        {r.source_name && r.description && (
+                          <p className="text-[10px] text-gray-400 truncate">{r.source_name}</p>
+                        )}
+                        <p className="text-[10px] text-gray-400">{fmtShort(r.received_date)}</p>
+                      </div>
+                      <span className="text-green-700 text-xs font-bold tabular-nums whitespace-nowrap">+{fmtINR(r.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Outflows panel */}
+            <div className="bg-white border border-red-200 rounded-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-red-700">
+                <span className="text-white text-xs font-bold uppercase tracking-wide">💸 Outflows (Paid)</span>
+                <span className="text-white text-xs font-bold tabular-nums">{fmtINR(totalOut)}</span>
+              </div>
+              {taskExpenses.length === 0 ? (
+                <p className="text-gray-400 text-xs text-center py-6">No paid task expenses yet.</p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {Object.entries(acctMap).map(([key, group]) => (
+                    <div key={key}>
+                      <div className="flex items-center justify-between px-4 py-2 bg-gray-50">
+                        <span className="text-[11px] font-bold text-gray-600">
+                          🏦 {group.name || (key === '__none__' ? 'No Account' : `Account ${key}`)}
+                        </span>
+                        <span className="text-[11px] font-bold text-red-500 tabular-nums">
+                          {fmtINR(group.items.reduce((s, e) => s + e.amount, 0))}
+                        </span>
+                      </div>
+                      {group.items.map(e => (
+                        <div key={e.id} className="flex items-start justify-between px-4 py-2.5 gap-3 pl-8">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-gray-800 truncate">{e.task_name}</p>
+                            {e.description && <p className="text-[10px] text-gray-400 truncate">{e.description}</p>}
+                            <p className="text-[10px] text-gray-400">
+                              {e.task_category && <span className="text-gray-500">{e.task_category} · </span>}
+                              {fmtShort(e.date)}
+                            </p>
+                          </div>
+                          <span className="text-red-600 text-xs font-bold tabular-nums whitespace-nowrap">−{fmtINR(e.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

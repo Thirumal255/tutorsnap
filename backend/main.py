@@ -5709,6 +5709,33 @@ def expense_by_account(
     return {str(acct_id): round(total, 2) for acct_id, total in rows}
 
 
+@app.get("/api/admin/tasks/expenses/list")
+def list_task_expenses(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(AdminTaskExpense, AdminTask.name, AdminTask.category)
+        .join(AdminTask, AdminTask.id == AdminTaskExpense.task_id)
+        .filter(AdminTaskExpense.status == 'paid')
+        .order_by(AdminTaskExpense.date.desc())
+        .all()
+    )
+    return [
+        {
+            "id": exp.id,
+            "task_id": exp.task_id,
+            "task_name": task_name,
+            "task_category": task_category,
+            "account_id": exp.account_id,
+            "amount": round(exp.amount, 2),
+            "date": str(exp.date) if exp.date else None,
+            "description": exp.description,
+        }
+        for exp, task_name, task_category in rows
+    ]
+
+
 @app.get("/api/admin/tasks/{task_id}")
 def get_task(
     task_id: int,
