@@ -2196,10 +2196,100 @@ function AddFundsForm({ account, onSave, onClose }) {
   )
 }
 
+const PHASES = [
+  'Pre-Construction', 'Construction', 'Pre-Plantation',
+  'Plantation & Crop Cycle 1', 'B2B & Market Setup', 'Harvest & Sales',
+]
+
+function LinkPhasesSection({ account, allocations, onRefresh }) {
+  const [open, setOpen] = useState(false)
+  const [selPhase, setSelPhase] = useState('')
+  const [amount, setAmount] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const linked = allocations.filter(al => al.account_id === account.id)
+  const unlinkedPhases = PHASES.filter(p => !linked.some(l => l.category === p))
+
+  async function handleLink() {
+    if (!selPhase) return setError('Pick a phase')
+    const amt = parseFloat(amount)
+    if (!amount || isNaN(amt) || amt <= 0) return setError('Enter a valid amount')
+    setSaving(true); setError('')
+    try {
+      await upsertFinanceAllocation({ category: selPhase, account_id: account.id, allocated_amount: amt })
+      setSelPhase(''); setAmount('')
+      await onRefresh()
+    } catch(e) { setError(e.response?.data?.detail || 'Failed') }
+    finally { setSaving(false) }
+  }
+
+  async function handleUnlink(category) {
+    if (!confirm(`Unlink "${category}" from this account?`)) return
+    try { await unlinkFinanceAllocation(category, account.id); await onRefresh() }
+    catch(e) { alert(e.response?.data?.detail || 'Failed') }
+  }
+
+  return (
+    <div className="border-t border-gray-100">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-600">🔗 Linked Phases</span>
+          {linked.length > 0 && (
+            <span className="bg-blue-100 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
+              {linked.length}
+            </span>
+          )}
+        </div>
+        <span className="text-gray-300 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-3 space-y-2">
+          {linked.length === 0 && (
+            <p className="text-gray-400 text-xs italic py-1">No phases linked yet.</p>
+          )}
+          {linked.map(al => (
+            <div key={al.id} className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+              <div>
+                <p className="text-gray-800 text-xs font-semibold">{al.category}</p>
+                <p className="text-gray-500 text-[10px]">Allocated: {fmtINR(al.allocated_amount)}</p>
+              </div>
+              <button onClick={() => handleUnlink(al.category)}
+                className="text-gray-300 hover:text-red-500 text-lg leading-none">×</button>
+            </div>
+          ))}
+
+          {unlinkedPhases.length > 0 && (
+            <div className="pt-1 space-y-2">
+              <p className="text-gray-400 text-[10px] font-semibold uppercase">Link a phase</p>
+              <select value={selPhase} onChange={e => setSelPhase(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-800 text-xs focus:outline-none focus:border-blue-500">
+                <option value="">— Select phase —</option>
+                {unlinkedPhases.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
+                placeholder="Allocated amount (₹)" min="0"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-800 text-xs focus:outline-none focus:border-blue-500"/>
+              {error && <p className="text-red-600 text-xs">{error}</p>}
+              <button onClick={handleLink} disabled={saving}
+                className="w-full bg-blue-600 text-white text-xs font-bold py-2.5 rounded-xl disabled:opacity-50">
+                {saving ? 'Linking…' : 'Link Phase'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FinanceTab() {
   const [accounts, setAccounts] = useState([])
   const [budgetItems, setBudgetItems] = useState([])
   const [receipts, setReceipts] = useState([])
+  const [allocations, setAllocations] = useState([])
   const [loading, setLoading] = useState(true)
   const [subtab, setSubtab] = useState('accounts')
   const [addFundsFor, setAddFundsFor] = useState(null) // account object
@@ -2207,8 +2297,8 @@ function FinanceTab() {
   const [expandedMonths, setExpandedMonths] = useState({})  // {month: bool}
 
   const load = useCallback(async () => {
-    const [a, b, r] = await Promise.all([getFinanceAccounts(), getBudgetItems(), getFinanceReceipts()])
-    setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setLoading(false)
+    const [a, b, r, al] = await Promise.all([getFinanceAccounts(), getBudgetItems(), getFinanceReceipts(), getFinanceAllocations()])
+    setAccounts(a.data); setBudgetItems(b.data); setReceipts(r.data); setAllocations(al.data); setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -2322,6 +2412,9 @@ function FinanceTab() {
                     </div>
                   </div>
                 )}
+
+                {/* Linked Phases */}
+                <LinkPhasesSection account={a} allocations={allocations} onRefresh={load}/>
 
                 {/* Fund Inflows section */}
                 <div className="border-t border-gray-100">
