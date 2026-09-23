@@ -2310,6 +2310,7 @@ function FinanceTab() {
   const [addFundsFor, setAddFundsFor] = useState(null) // account object
   const [expandedInflows, setExpandedInflows] = useState({}) // {accountId: bool}
   const [expandedMonths, setExpandedMonths] = useState({})  // {month: bool}
+  const [renamingAccount, setRenamingAccount] = useState(null) // {id, name}
 
   const load = useCallback(async () => {
     try {
@@ -2337,6 +2338,12 @@ function FinanceTab() {
     if (!confirm('Remove this fund inflow?')) return
     try { await deleteFinanceReceipt(id); await load() }
     catch(e) { alert(e.response?.data?.detail || 'Delete failed') }
+  }
+
+  async function handleRenameAccount(id, name) {
+    if (!name.trim()) return
+    try { await updateFinanceAccount(id, { name: name.trim() }); setRenamingAccount(null); await load() }
+    catch(e) { alert(e.response?.data?.detail || 'Rename failed') }
   }
 
   if (loading) return (
@@ -2383,11 +2390,28 @@ function FinanceTab() {
               <div key={a.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
                 {/* Account header */}
                 <div className="flex items-center justify-between px-4 py-3 bg-green-700">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-white text-[10px] font-bold uppercase">Account</p>
-                    <p className="text-white font-bold text-base">{a.name}</p>
+                    {renamingAccount?.id === a.id ? (
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <input
+                          autoFocus
+                          className="flex-1 text-sm font-bold rounded-lg px-2 py-1 text-gray-900 bg-white min-w-0"
+                          value={renamingAccount.name}
+                          onChange={e => setRenamingAccount(r => ({ ...r, name: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') handleRenameAccount(a.id, renamingAccount.name); if (e.key === 'Escape') setRenamingAccount(null) }}
+                        />
+                        <button onClick={() => handleRenameAccount(a.id, renamingAccount.name)} className="text-white text-xs font-bold bg-white/20 px-2 py-1 rounded-lg">✓</button>
+                        <button onClick={() => setRenamingAccount(null)} className="text-white/70 text-xs font-bold">✕</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <p className="text-white font-bold text-base truncate">{a.name}</p>
+                        <button onClick={() => setRenamingAccount({ id: a.id, name: a.name })} className="text-white/60 hover:text-white text-xs flex-shrink-0">✏️</button>
+                      </div>
+                    )}
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${sufficient ? 'bg-white/20 text-white' : 'bg-red-100 text-red-600'}`}>
+                  <span className={`ml-2 flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold ${sufficient ? 'bg-white/20 text-white' : 'bg-red-100 text-red-600'}`}>
                     {sufficient ? '✓ Sufficient' : '⚠ Shortfall'}
                   </span>
                 </div>
