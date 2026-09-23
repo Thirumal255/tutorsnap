@@ -1516,8 +1516,8 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const isStarted = t => t.start_date && new Date(t.start_date+'T00:00:00') <= today
   // Overdue: end_date passed, not completed
   const overdueTasks = root.filter(t=>t.status!=='completed'&&isOverdue(t))
-  // Active: started (start_date <= today) and not completed — includes overdue ones
-  const activeTasks  = root.filter(t=>t.status!=='completed'&&isStarted(t))
+  // Active: started OR overdue, not completed
+  const activeTasks  = root.filter(t=>t.status!=='completed'&&(isStarted(t)||isOverdue(t)))
   // Pending: not completed, not yet started (or no start date)
   const pendingTasks = root.filter(t=>t.status!=='completed'&&!isStarted(t)&&!isOverdue(t))
   // Upcoming: starting within 7 days (subset of pending)
