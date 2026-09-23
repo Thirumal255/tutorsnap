@@ -5715,7 +5715,7 @@ def list_task_expenses(
     db: Session = Depends(get_db),
 ):
     rows = (
-        db.query(AdminTaskExpense, AdminTask.name, AdminTask.category)
+        db.query(AdminTaskExpense, AdminTask.title, AdminTask.category)
         .join(AdminTask, AdminTask.id == AdminTaskExpense.task_id)
         .order_by(AdminTaskExpense.expense_date.desc())
         .all()
@@ -5724,7 +5724,7 @@ def list_task_expenses(
         {
             "id": exp.id,
             "task_id": exp.task_id,
-            "task_name": task_name,
+            "task_name": task_title,
             "task_category": task_category,
             "account_id": exp.account_id,
             "amount": round(exp.amount, 2),
@@ -5732,7 +5732,7 @@ def list_task_expenses(
             "date": str(exp.expense_date) if exp.expense_date else None,
             "description": exp.description,
         }
-        for exp, task_name, task_category in rows
+        for exp, task_title, task_category in rows
     ]
 
 
