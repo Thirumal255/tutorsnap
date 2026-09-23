@@ -1613,10 +1613,10 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
       {/* ── KPI chips ── */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          ['✅', 'Done',    completed,                 'text-green-700',  'bg-green-50  border-green-200'],
-          ['🔄', 'Active',  byStatus.in_progress || 0, 'text-blue-600',   'bg-blue-50   border-blue-200'],
-          ['⚠️', 'On Hold', byStatus.on_hold || 0,     'text-amber-700',  'bg-amber-50  border-amber-200'],
-          ['⏳', 'Pending', byStatus.not_started || 0, 'text-gray-600',   'bg-gray-100  border-gray-200'],
+          ['✅', 'Closed',  completed,            'text-green-700', 'bg-green-50  border-green-200'],
+          ['🔄', 'Active',  activeTasks.length,   'text-blue-600',  'bg-blue-50   border-blue-200'],
+          ['⚠️', 'Overdue', overdueTasks.length,  'text-red-600',   'bg-red-50    border-red-200'],
+          ['⏳', 'Pending', root.filter(t=>t.status==='not_started').length, 'text-gray-600', 'bg-gray-100 border-gray-200'],
         ].map(([icon, label, val, cls, bg]) => (
           <div key={label} className={`${bg} border rounded-xl p-3 text-center shadow-sm`}>
             <span className="text-xl">{icon}</span>
@@ -1665,10 +1665,13 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                       className="border-l-4 border-l-red-500 bg-red-50 border border-red-100 rounded-xl p-3.5 cursor-pointer active:scale-[0.99] transition-all space-y-2 mt-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">Overdue</span>
+                            {days!=null&&<span className="text-red-500 text-[10px] font-semibold">{Math.abs(days)}d late</span>}
+                          </div>
                           <p className="text-gray-800 font-semibold text-base leading-snug">{t.title}</p>
                           {t.notes&&<p className="text-gray-400 text-sm mt-0.5 truncate">{t.notes}</p>}
                         </div>
-                        <span className="bg-red-100 text-red-600 text-sm font-bold px-2.5 py-0.5 rounded-full flex-shrink-0">{Math.abs(days)}d late</span>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full">{t.category}</span>
@@ -1695,6 +1698,10 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
                     <div key={t.id} onClick={()=>onTaskClick(t)}
                       className="border-l-4 border-l-blue-500 bg-white border border-gray-100 rounded-xl p-3.5 cursor-pointer active:scale-[0.99] transition-all space-y-2">
                       <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">Ongoing</span>
+                          {days!=null&&days<=3&&<span className="text-amber-500 text-[10px] font-semibold">{days}d left</span>}
+                        </div>
                         <p className="text-gray-800 font-semibold text-base leading-snug">{t.title}</p>
                         {t.notes&&<p className="text-gray-400 text-sm mt-0.5 truncate">{t.notes}</p>}
                       </div>
