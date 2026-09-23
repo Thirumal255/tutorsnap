@@ -2204,7 +2204,6 @@ const PHASES = [
 function LinkPhasesSection({ account, allocations, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [selPhase, setSelPhase] = useState('')
-  const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -2213,12 +2212,10 @@ function LinkPhasesSection({ account, allocations, onRefresh }) {
 
   async function handleLink() {
     if (!selPhase) return setError('Pick a phase')
-    const amt = parseFloat(amount)
-    if (!amount || isNaN(amt) || amt <= 0) return setError('Enter a valid amount')
     setSaving(true); setError('')
     try {
-      await upsertFinanceAllocation({ category: selPhase, account_id: account.id, allocated_amount: amt })
-      setSelPhase(''); setAmount('')
+      await upsertFinanceAllocation({ category: selPhase, account_id: account.id, allocated_amount: 0 })
+      setSelPhase('')
       await onRefresh()
     } catch(e) { setError(e.response?.data?.detail || 'Failed') }
     finally { setSaving(false) }
@@ -2252,10 +2249,7 @@ function LinkPhasesSection({ account, allocations, onRefresh }) {
           )}
           {linked.map(al => (
             <div key={al.id} className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-              <div>
-                <p className="text-gray-800 text-xs font-semibold">{al.category}</p>
-                <p className="text-gray-500 text-[10px]">Allocated: {fmtINR(al.allocated_amount)}</p>
-              </div>
+              <p className="text-gray-800 text-xs font-semibold">{al.category}</p>
               <button onClick={() => handleUnlink(al.category)}
                 className="text-gray-300 hover:text-red-500 text-lg leading-none">×</button>
             </div>
@@ -2269,11 +2263,8 @@ function LinkPhasesSection({ account, allocations, onRefresh }) {
                 <option value="">— Select phase —</option>
                 {unlinkedPhases.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
-                placeholder="Allocated amount (₹)" min="0"
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-800 text-xs focus:outline-none focus:border-blue-500"/>
               {error && <p className="text-red-600 text-xs">{error}</p>}
-              <button onClick={handleLink} disabled={saving}
+              <button onClick={handleLink} disabled={saving || !selPhase}
                 className="w-full bg-blue-600 text-white text-xs font-bold py-2.5 rounded-xl disabled:opacity-50">
                 {saving ? 'Linking…' : 'Link Phase'}
               </button>
