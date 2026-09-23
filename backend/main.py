@@ -5718,7 +5718,7 @@ def list_task_expenses(
         db.query(AdminTaskExpense, AdminTask.name, AdminTask.category)
         .join(AdminTask, AdminTask.id == AdminTaskExpense.task_id)
         .filter(AdminTaskExpense.status == 'paid')
-        .order_by(AdminTaskExpense.date.desc())
+        .order_by(AdminTaskExpense.expense_date.desc())
         .all()
     )
     return [
@@ -5729,7 +5729,7 @@ def list_task_expenses(
             "task_category": task_category,
             "account_id": exp.account_id,
             "amount": round(exp.amount, 2),
-            "date": str(exp.date) if exp.date else None,
+            "date": str(exp.expense_date) if exp.expense_date else None,
             "description": exp.description,
         }
         for exp, task_name, task_category in rows
