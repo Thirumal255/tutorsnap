@@ -1512,13 +1512,17 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
   const [budgetItems, setBudgetItems] = useState([])
   useEffect(() => { getBudgetItems().then(r => setBudgetItems(r.data)).catch(()=>{}) }, [])
 
-  // Overdue in-progress tasks
-  const overdueTasks = root.filter(t=>t.status==='in_progress'&&isOverdue(t))
-  // In-progress, not overdue
-  const activeTasks  = root.filter(t=>t.status==='in_progress'&&!isOverdue(t))
-  // Not started, starting within 7 days
-  const upcoming = root.filter(t=>{
-    if (t.status!=='not_started'||!t.start_date) return false
+  // A task is "started" if start_date <= today, regardless of status field
+  const isStarted = t => t.start_date && new Date(t.start_date+'T00:00:00') <= today
+  // Overdue: end_date passed, not completed
+  const overdueTasks = root.filter(t=>t.status!=='completed'&&isOverdue(t))
+  // Active/ongoing: started but not overdue and not completed
+  const activeTasks  = root.filter(t=>t.status!=='completed'&&!isOverdue(t)&&isStarted(t))
+  // Pending: not completed, not yet started (or no start date)
+  const pendingTasks = root.filter(t=>t.status!=='completed'&&!isStarted(t)&&!isOverdue(t))
+  // Upcoming: starting within 7 days (subset of pending)
+  const upcoming = pendingTasks.filter(t=>{
+    if (!t.start_date) return false
     const sd = new Date(t.start_date+'T00:00:00')
     return sd>=today && sd<=in7days
   }).sort((a,b)=>new Date(a.start_date)-new Date(b.start_date))
@@ -1616,7 +1620,7 @@ function HomeTab({ tasks, summary, accounts, onTaskClick }) {
           ['✅', 'Closed',  completed,            'text-green-700', 'bg-green-50  border-green-200'],
           ['🔄', 'Active',  activeTasks.length,   'text-blue-600',  'bg-blue-50   border-blue-200'],
           ['⚠️', 'Overdue', overdueTasks.length,  'text-red-600',   'bg-red-50    border-red-200'],
-          ['⏳', 'Pending', root.filter(t=>t.status==='not_started').length, 'text-gray-600', 'bg-gray-100 border-gray-200'],
+          ['⏳', 'Pending', pendingTasks.length,  'text-gray-600',  'bg-gray-100  border-gray-200'],
         ].map(([icon, label, val, cls, bg]) => (
           <div key={label} className={`${bg} border rounded-xl p-3 text-center shadow-sm`}>
             <span className="text-xl">{icon}</span>
