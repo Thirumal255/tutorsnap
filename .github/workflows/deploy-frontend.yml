@@ -7,6 +7,7 @@ on:
       - 'frontend/**'
       - '!frontend/android/**'
       - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
 
 jobs:
   deploy:
