@@ -4,6 +4,27 @@ All notable changes to StudyBlox are documented here in reverse chronological or
 
 ---
 
+## [2026-09-24] — GCP Account Migration (cloudforthiru → cloudforthirudec26)
+
+### Infrastructure
+- Migrated all GCP resources from `cloudforthiru@gmail.com` (project `project-726f0196-ff7a-4360-ad1`) to `cloudforthirudec26@gmail.com` (project `tutorsnap-dec26`, number `844741348720`)
+- New Cloud Run URL: `https://tutorsnap-api-5k4my6zffa-el.a.run.app`
+- New Cloud SQL instance: `tutorsnap-db` in `asia-south1` (PostgreSQL 15, `db-f1-micro`)
+- New GCS bucket: `gs://tutorsnap-dec26`
+- New Artifact Registry: `asia-south1-docker.pkg.dev/tutorsnap-dec26/tutorsnap/api`
+- New service account: `tutorsnap-api@tutorsnap-dec26.iam.gserviceaccount.com`
+- Workload Identity Federation pool `github-pool` recreated with pool-wide `/*` binding
+- All 16 Secret Manager secrets copied from old project
+- DB password changed to alphanumeric-only (`TutorSnap2026`) — avoids Alembic configparser `%` interpolation issue
+- Firebase projects (`tutorsnap`, `tutorsnap-tasks`) — `cloudforthirudec26@gmail.com` added as Owner (transfer UI unavailable)
+- Old project billing disabled (`billingEnabled: false`)
+
+### Bug fixes
+- `VITE_API_BASE` GitHub secret updated to new Cloud Run URL (was pointing to an older dead URL)
+- `https://tutorsnap.web.app` added to CORS `_ALLOWED_ORIGINS` in `backend/main.py` (was missing, caused login failures)
+
+---
+
 ## [2026-05-13] — Parent/Admin Tools + UX/Quality of Life
 
 ### Added

@@ -6,21 +6,26 @@
 
 ---
 
-## STATUS — DEPLOYED (2025-05-07)
+## STATUS — DEPLOYED (migrated to tutorsnap-dec26, Sep 2026)
 
-All three GitHub Actions workflows pass green. Live URLs:
-- **Backend API**: https://tutorsnap-api-yfxhelshwq-el.a.run.app
+All GitHub Actions workflows pass green. Live URLs:
+- **Backend API**: https://tutorsnap-api-5k4my6zffa-el.a.run.app
 - **Frontend**: https://tutorsnap.web.app
 - **Android APK**: GitHub → Actions → "Build Android APK" → latest run → Artifacts
 
-**Actual values for all placeholders in this spec:**
-- `tutorsnap` → `tutorsnap`
-- `PROJECT_NUMBER` → `322472504855`
+**Current GCP account**: `cloudforthirudec26@gmail.com` · **Project**: `tutorsnap-dec26` · **Project number**: `844741348720`
+
+**Actual values for all placeholders in this spec (post-migration):**
+- `PROJECT_ID` → `tutorsnap-dec26`
+- `PROJECT_NUMBER` → `844741348720`
 - `Thirumal255` → `Thirumal255`
-- `STRONG_PASSWORD` → stored in Secret Manager (`DATABASE_URL` secret)
-- `YOUR_CLOUD_RUN_URL` → `https://tutorsnap-api-yfxhelshwq-el.a.run.app`
+- `STRONG_PASSWORD` → stored in Secret Manager (`DATABASE_URL` secret) — alphanumeric only, no special chars
+- `YOUR_CLOUD_RUN_URL` → `https://tutorsnap-api-5k4my6zffa-el.a.run.app`
 - `YOUR_FIREBASE_PROJECT_ID` → `tutorsnap`
-- `192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com` → `192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com`
+- Service account → `tutorsnap-api@tutorsnap-dec26.iam.gserviceaccount.com`
+
+> **Old project** `project-726f0196-ff7a-4360-ad1` (cloudforthiru@gmail.com) — billing disabled. Old Cloud Run URL `https://tutorsnap-api-yfxhelshwq-el.a.run.app` is no longer active.
+> Commands below use old project IDs — substitute `tutorsnap-dec26` when re-running.
 
 See `README.md` for the canonical project reference going forward.
 
@@ -58,7 +63,7 @@ See `README.md` for the canonical project reference going forward.
 | Firebase Hosting | Frontend static hosting (free) |
 
 ### Final URLs + artifacts
-- Backend API: https://tutorsnap-api-yfxhelshwq-el.a.run.app
+- Backend API: https://tutorsnap-api-5k4my6zffa-el.a.run.app
 - Frontend web: https://tutorsnap.web.app
 - Android APK: downloadable from GitHub Actions → Artifacts on every push
 
@@ -414,7 +419,7 @@ JWT_EXPIRY_HOURS=72" \
   --port=8080
 
 # Save the deployed URL — looks like:
-# https://tutorsnap-api-yfxhelshwq-el.a.run.app
+# https://tutorsnap-api-5k4my6zffa-el.a.run.app  (current, tutorsnap-dec26)
 ```
 
 ### Run Alembic migrations via Cloud Run Job
@@ -437,7 +442,7 @@ gcloud run jobs execute tutorsnap-migrate \
 
 ### Verify backend is live
 ```bash
-curl https://tutorsnap-api-yfxhelshwq-el.a.run.app/api/books
+curl https://tutorsnap-api-5k4my6zffa-el.a.run.app/api/books
 # Should return: {"detail": "Not authenticated"} or [] — either means it's running
 ```
 
@@ -448,7 +453,7 @@ curl https://tutorsnap-api-yfxhelshwq-el.a.run.app/api/books
 ### frontend/.env.production (create this file)
 ```
 VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-VITE_API_BASE=https://tutorsnap-api-yfxhelshwq-el.a.run.app
+VITE_API_BASE=https://tutorsnap-api-5k4my6zffa-el.a.run.app
 ```
 Replace with your actual Cloud Run URL.
 
@@ -928,10 +933,13 @@ Go to: GitHub repo → Settings → Secrets and variables → Actions → New re
 
 | Secret name | Value |
 |---|---|
-| WIF_PROVIDER | `projects/322472504855/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
-| WIF_SERVICE_ACCOUNT | `tutorsnap-api@tutorsnap.iam.gserviceaccount.com` |
-| VITE_GOOGLE_CLIENT_ID | `192962241571-8702lt5p3qbrmhhdgobkmdn4dil27mdu.apps.googleusercontent.com` |
-| VITE_API_BASE | `https://tutorsnap-api-yfxhelshwq-el.a.run.app` |
+| WIF_PROVIDER | `projects/844741348720/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| WIF_SERVICE_ACCOUNT | `tutorsnap-api@tutorsnap-dec26.iam.gserviceaccount.com` |
+| VITE_GOOGLE_CLIENT_ID | `1042995821844-9vc7caio5at6cv4hkm0j4mvu30snet56.apps.googleusercontent.com` |
+| VITE_API_BASE | `https://tutorsnap-api-5k4my6zffa-el.a.run.app` |
+| TASKS_APP_API_BASE | `https://tutorsnap-api-5k4my6zffa-el.a.run.app` |
+| FIREBASE_TOKEN | CI token from `firebase login:ci` (cloudforthirudec26@gmail.com) |
+| FIREBASE_SERVICE_ACCOUNT_TASKS | JSON key from tutorsnap-tasks Firebase project |
 
 **Note:** `FIREBASE_SERVICE_ACCOUNT` is NOT used in the actual implementation.
 The `deploy-frontend.yml` workflow uses `firebase-tools` CLI with Application Default

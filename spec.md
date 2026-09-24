@@ -3,13 +3,16 @@
 
 ---
 
-## STATUS — IMPLEMENTED AND DEPLOYED (2025-05-07)
+## STATUS — IMPLEMENTED AND DEPLOYED (2025-05-07, migrated to tutorsnap-dec26 Sep 2026)
 
 All phases of this spec have been built and deployed. The app is live at:
 - **Frontend**: https://tutorsnap.web.app
-- **Backend API**: https://tutorsnap-api-yfxhelshwq-el.a.run.app
+- **Backend API**: https://tutorsnap-api-5k4my6zffa-el.a.run.app
 - **Admin panel**: https://tutorsnap.web.app/admin
 - **Android APK**: GitHub → Actions → "Build Android APK" → Artifacts
+
+> **GCP account**: `cloudforthirudec26@gmail.com` · **Project**: `tutorsnap-dec26`
+> Old project `project-726f0196-ff7a-4360-ad1` (cloudforthiru@gmail.com) — billing disabled, resources intact.
 
 See `auth_spec.md` for the auth/admin/parent layer built on top of this spec.
 See `deploy_spec_v2.md` for the GCP deployment details and CI/CD setup.
