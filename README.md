@@ -11,7 +11,8 @@ Students practice curriculum topics in a Roblox-inspired interface with escalati
 | Service | URL |
 |---|---|
 | Frontend (web) | https://tutorsnap.web.app |
-| Backend API | https://tutorsnap-api-yfxhelshwq-el.a.run.app |
+| Backend API | https://tutorsnap-api-5k4my6zffa-el.a.run.app |
+| Tasks App | https://tutorsnap-tasks.web.app |
 | Admin panel | https://tutorsnap.web.app/admin |
 | Parent portal | https://tutorsnap.web.app/parent |
 | Android APK | GitHub → Actions → "Build Android APK" → Artifacts |
@@ -35,7 +36,9 @@ Cloud Run  (FastAPI, Python 3.11, Docker)
 ```
 
 ### GCP Project
-- **Project ID**: `tutorsnap`
+- **GCP Account**: `cloudforthirudec26@gmail.com`
+- **Project ID**: `tutorsnap-dec26`
+- **Project Number**: `844741348720`
 - **Region**: `asia-south1`
 - **GitHub repo**: `Thirumal255/tutorsnap`
 
@@ -48,16 +51,16 @@ Cloud Run  (FastAPI, Python 3.11, Docker)
 | Backend | FastAPI 0.115, Python 3.11, Uvicorn |
 | ORM | SQLAlchemy 2.0, Alembic migrations |
 | Database | Cloud SQL PostgreSQL 15 (`tutorsnap-db`) |
-| File storage | Cloud Storage (`tutorsnap-uploads-tutorsnap`) |
-| AI | Anthropic Claude (`claude-sonnet-4-20250514` + Haiku for fast ops) |
+| File storage | Cloud Storage (`tutorsnap-dec26`) |
+| AI | Anthropic Claude (`claude-sonnet-4-5-20250929` + `claude-haiku-4-5-20251001`) |
 | PDF parsing | PyMuPDF |
 | Auth | Google OAuth 2.0 + HS256 JWT |
 | Frontend | React 18, Vite 5, Tailwind CSS 3 |
 | Fonts | Fredoka One (headings), Nunito (body) |
 | Mobile | Capacitor 8 (Android wrapper) |
-| CI/CD | GitHub Actions (3 workflows) |
-| Hosting | Firebase Hosting |
-| Container registry | Artifact Registry |
+| CI/CD | GitHub Actions (5 workflows) |
+| Hosting | Firebase Hosting (2 projects: `tutorsnap` + `tutorsnap-tasks`) |
+| Container registry | Artifact Registry (`asia-south1-docker.pkg.dev/tutorsnap-dec26/tutorsnap/api`) |
 
 ---
 
@@ -140,12 +143,12 @@ Cloud Run  (FastAPI, Python 3.11, Docker)
 ```env
 DATABASE_URL=postgresql+psycopg2://postgres:yourpassword@localhost/tutorsnap
 ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_CLIENT_ID=322472504855-1fsal4q80mm9dgijvutqdrnboprjkr27.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=...
+GOOGLE_CLIENT_ID=<your-oauth-client-id>
+GOOGLE_CLIENT_SECRET=<your-oauth-client-secret>
 JWT_SECRET=<random 32-char hex>
 JWT_EXPIRY_HOURS=72
 ADMIN_EMAILS=thirumalreddym1982@gmail.com
-CLAUDE_MODEL=claude-sonnet-4-20250514
+CLAUDE_MODEL=claude-sonnet-4-5-20250929
 CLAUDE_FAST_MODEL=claude-haiku-4-5-20251001
 MAX_HINT_TIERS=5
 USE_GCS=false
@@ -179,26 +182,33 @@ Returns a JWT token. Paste it into DevTools → Application → Local Storage �
 
 ## CI/CD — GitHub Actions
 
-| Workflow | Trigger path | What it does |
+| Workflow | Trigger | What it does |
 |---|---|---|
-| `deploy-backend.yml` | `backend/**` | Docker build → Artifact Registry → Alembic migrations → Cloud Run deploy |
-| `deploy-frontend.yml` | `frontend/**` (excl. `android/`) | `npm run build` → Firebase Hosting |
-| `build-android.yml` | `frontend/**` | `npm run build` → Capacitor sync → Gradle assembleDebug → APK artifact |
+| `deploy-backend.yml` | `backend/**` push or manual | Docker build → Artifact Registry → Alembic migrations → Cloud Run deploy |
+| `deploy-frontend.yml` | `frontend/**` push or manual | `npm run build` → Firebase Hosting (`tutorsnap`) |
+| `deploy-tasks-app.yml` | `tasks-app/**` push or manual | `npm run build` → Firebase Hosting (`tutorsnap-tasks`) |
+| `build-android.yml` | `tasks-app/**` push or manual | `npm run build` → Capacitor sync → Gradle assembleDebug → APK artifact |
+| `test.yml` | `backend/**` push | Backend test suite |
 
 ### Workload Identity Federation (keyless auth)
 No service-account JSON keys in GitHub. OIDC-based:
 - **Pool**: `github-pool`
 - **Provider**: `github-provider`
-- **WIF resource**: `projects/322472504855/locations/global/workloadIdentityPools/github-pool/providers/github-provider`
-- **Service account**: `tutorsnap-api@tutorsnap.iam.gserviceaccount.com`
+- **WIF resource**: `projects/844741348720/locations/global/workloadIdentityPools/github-pool/providers/github-provider`
+- **Service account**: `tutorsnap-api@tutorsnap-dec26.iam.gserviceaccount.com`
 
 ### Required GitHub Secrets
 | Secret | Value |
 |---|---|
-| `WIF_PROVIDER` | WIF provider resource name |
-| `WIF_SERVICE_ACCOUNT` | `tutorsnap-api@tutorsnap.iam.gserviceaccount.com` |
-| `VITE_GOOGLE_CLIENT_ID` | OAuth client ID |
-| `VITE_API_BASE` | `https://tutorsnap-api-yfxhelshwq-el.a.run.app` |
+| `WIF_PROVIDER` | `projects/844741348720/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `WIF_SERVICE_ACCOUNT` | `tutorsnap-api@tutorsnap-dec26.iam.gserviceaccount.com` |
+| `VITE_GOOGLE_CLIENT_ID` | OAuth client ID (web) |
+| `VITE_API_BASE` | `https://tutorsnap-api-5k4my6zffa-el.a.run.app` |
+| `TASKS_APP_API_BASE` | `https://tutorsnap-api-5k4my6zffa-el.a.run.app` |
+| `GOOGLE_CLIENT_ID_WEB` | OAuth client ID (web) |
+| `MOBILE_API_KEY` | Mobile API bearer token |
+| `FIREBASE_TOKEN` | Firebase CI token (`cloudforthirudec26@gmail.com`) |
+| `FIREBASE_SERVICE_ACCOUNT_TASKS` | Firebase SA JSON for `tutorsnap-tasks` project |
 
 ---
 
@@ -206,64 +216,46 @@ No service-account JSON keys in GitHub. OIDC-based:
 
 ```
 tutorsnap/
-├── backend/
+├── backend/                           — FastAPI backend
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── alembic.ini
-│   ├── alembic/versions/          — 8 migration files
-│   ├── main.py                    — FastAPI app + all 55 API routes
-│   ├── auth.py                    — Google OAuth 2.0 + HS256 JWT
-│   ├── database.py                — SQLAlchemy engine + session factory
-│   ├── models.py                  — 13 ORM models
-│   ├── ingestion.py               — PDF parse + Claude structuring
-│   ├── session_engine.py          — adaptive Q&A + hint + vision logic
-│   ├── storage.py                 — GCS / local dual-mode storage
-│   └── progress.py                — in-memory ingestion progress tracker
-├── frontend/
+│   ├── alembic/versions/              — migration files
+│   ├── main.py                        — FastAPI app + all API routes
+│   ├── auth.py                        — Google OAuth 2.0 + HS256 JWT + mobile API key
+│   ├── database.py                    — SQLAlchemy engine + session factory
+│   ├── models.py                      — ORM models
+│   ├── ingestion.py                   — PDF parse + Claude structuring
+│   ├── session_engine.py              — adaptive Q&A + hint + vision logic
+│   ├── storage.py                     — GCS / local dual-mode storage
+│   └── progress.py                    — in-memory ingestion progress tracker
+├── frontend/                          — TutorSnap web app (StudyBlox)
 │   ├── src/
-│   │   ├── api/client.js          — Axios instance + all API call functions
-│   │   ├── auth/
-│   │   │   ├── AuthContext.jsx    — user state, login, logout, refreshUser
-│   │   │   └── ProtectedRoute.jsx — role-based route guard
-│   │   ├── context/
-│   │   │   ├── ToastContext.jsx   — global toast system
-│   │   │   └── UploadContext.jsx  — PDF upload progress state
-│   │   ├── components/
-│   │   │   ├── BuddyCustomizer.jsx — avatar + name picker modal
-│   │   │   ├── ChatBubble.jsx     — message bubble with buddy emoji
-│   │   │   ├── HintButton.jsx     — progressive hint reveal
-│   │   │   ├── ProgressBadge.jsx  — mastery level badge
-│   │   │   └── WritingCanvas.jsx  — HTML5 Canvas handwriting input
-│   │   └── pages/
-│   │       ├── Chat.jsx           — live session (Q&A + hints + canvas)
-│   │       ├── Summary.jsx        — post-session summary with XP
-│   │       ├── ExamMode.jsx       — full-screen timed exam (3 phases)
-│   │       ├── FlashcardMode.jsx  — full-screen flashcard review
-│   │       ├── Login.jsx          — Google OAuth sign-in
-│   │       ├── TopicSelect.jsx    — topic browser (legacy)
-│   │       ├── admin/             — 8 admin pages
-│   │       ├── parent/            — 4 parent pages
-│   │       └── student/           — 7 student pages
-│   ├── android/                   — Capacitor Android project
+│   │   ├── api/client.js              — Axios instance + all API call functions
+│   │   ├── auth/                      — AuthContext + ProtectedRoute
+│   │   ├── context/                   — Toast + Upload context
+│   │   ├── components/                — BuddyCustomizer, HintButton, WritingCanvas …
+│   │   └── pages/                     — admin/, parent/, student/ pages
+│   ├── android/                       — Capacitor Android project
 │   ├── capacitor.config.ts
 │   ├── firebase.json
-│   └── .firebaserc
+│   └── .firebaserc                    — Firebase project: tutorsnap
+├── tasks-app/                         — Polyhouse Tracker app
+│   ├── src/TasksPage.jsx              — main tasks + finance UI
+│   ├── android/                       — Capacitor Android project
+│   └── .firebaserc                    — Firebase project: tutorsnap-tasks
 ├── .github/workflows/
 │   ├── deploy-backend.yml
 │   ├── deploy-frontend.yml
-│   └── build-android.yml
-├── README.md                      — this file
-├── CHANGELOG.md                   — full feature changelog
-├── backend/README.md              — API reference
-├── frontend/README.md             — frontend component reference
-├── spec.md                        — original MVP build spec
-├── auth_spec.md                   — auth + admin + parent spec
-└── deploy_spec_v2.md              — GCP deployment spec
+│   ├── deploy-tasks-app.yml
+│   ├── build-android.yml
+│   └── test.yml
+└── README.md                          — this file
 ```
 
 ---
 
-## Database Schema (13 models)
+## Database Schema
 
 | Model | Purpose |
 |---|---|
@@ -285,8 +277,31 @@ tutorsnap/
 
 ## GCP Infrastructure
 
-### IAM roles for `tutorsnap-api@tutorsnap.iam.gserviceaccount.com`
-`artifactregistry.writer`, `cloudsql.client`, `firebase.admin`, `run.admin`, `run.developer`, `secretmanager.secretAccessor`, `storage.objectAdmin`
+### Cloud SQL
+- **Instance**: `tutorsnap-db` (PostgreSQL 15, `db-f1-micro`, `asia-south1`)
+- **Database**: `tutorsnap`
+- **User**: `tutorsnap-user`
+- **Connection**: `/cloudsql/tutorsnap-dec26:asia-south1:tutorsnap-db`
+
+### Cloud Storage
+- **Bucket**: `gs://tutorsnap-dec26` (region: `asia-south1`)
+- Used for: PDF textbook uploads, DB migration backups
+
+### Artifact Registry
+- **Repo**: `asia-south1-docker.pkg.dev/tutorsnap-dec26/tutorsnap/api`
+
+### IAM roles for `tutorsnap-api@tutorsnap-dec26.iam.gserviceaccount.com`
+| Role | Purpose |
+|---|---|
+| `roles/run.admin` | Deploy Cloud Run services |
+| `roles/cloudsql.client` | Connect to Cloud SQL |
+| `roles/secretmanager.secretAccessor` | Read secrets |
+| `roles/storage.objectAdmin` | Read/write GCS bucket |
+| `roles/cloudscheduler.admin` | Manage Cloud Scheduler jobs |
+| `roles/artifactregistry.writer` | Push Docker images |
+| `roles/iam.workloadIdentityUser` | WIF token exchange |
+| `roles/iam.serviceAccountTokenCreator` | SA impersonation |
+| `roles/iam.serviceAccountUser` | actAs permission for Cloud Run |
 
 ### Secret Manager secrets
 | Secret | Purpose |
@@ -294,26 +309,37 @@ tutorsnap/
 | `DATABASE_URL` | Cloud SQL socket connection string |
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `GOOGLE_CLIENT_ID` | OAuth client ID |
+| `GOOGLE_CLIENT_IDS` | Additional OAuth client IDs |
 | `GOOGLE_CLIENT_SECRET` | OAuth client secret |
 | `JWT_SECRET` | HS256 signing key |
+| `SEED_SECRET` | DB seed endpoint secret |
 | `ADMIN_EMAILS` | Comma-separated admin emails |
-| `GCS_BUCKET_NAME` | `tutorsnap-uploads-tutorsnap` |
-| `FRONTEND_URL` | `https://tutorsnap.web.app` (CORS) |
-| `CLAUDE_MODEL` | Primary model name |
-| `CLAUDE_FAST_MODEL` | Fast/cheap model for hints & sub-questions |
+| `GCS_BUCKET_NAME` | `tutorsnap-dec26` |
+| `FRONTEND_URL` | `https://tutorsnap-tasks.web.app` (CORS) |
+| `MOBILE_API_KEY` | Bearer token for Android app auth |
+| `MOBILE_API_EMAIL` | Email to look up user for mobile auth |
+| `TELEGRAM_BOT_TOKEN` | TutorSnap Telegram bot |
+| `TELEGRAM_CHAT_ID` | TutorSnap Telegram chat |
+| `TASK_TELEGRAM_BOT_TOKEN` | Tasks app Telegram bot |
+| `TASK_TELEGRAM_CHAT_ID` | Tasks app Telegram chat |
 
-### Cloud SQL
-- Instance: `tutorsnap-db` (PostgreSQL 15, `db-f1-micro`, `asia-south1`)
-- Database: `tutorsnap` / User: `tutorsnap_user`
+### Cloud Scheduler
+- **Job**: `tutorsnap-task-digest` — daily at 07:00 IST → `POST /api/admin/tasks/notify`
+
+### Firebase Projects
+| Project ID | App | URL |
+|---|---|---|
+| `tutorsnap` | StudyBlox (TutorSnap frontend) | https://tutorsnap.web.app |
+| `tutorsnap-tasks` | Polyhouse Tracker (tasks app) | https://tutorsnap-tasks.web.app |
 
 ---
 
 ## Download Android APK
 
-After every push to `main`:
+After every push to `tasks-app/` or manual trigger:
 1. Go to GitHub → Actions → **Build Android APK** → latest run
-2. Scroll to **Artifacts** → click `tutorsnap-debug-<sha>`
-3. Unzip → install `app-debug.apk` (enable "Install from unknown sources")
+2. Scroll to **Artifacts** → click `PolyhouseTracker-<sha>`
+3. Unzip → install `PolyhouseTracker.apk` (enable "Install from unknown sources")
 
 ---
 
@@ -324,7 +350,7 @@ After every push to `main`:
 | Cloud Run (scales to zero) | $0–5 |
 | Cloud SQL `db-f1-micro` | $7–10 |
 | Cloud Storage (<1 GB) | $0 |
-| Firebase Hosting | $0 |
+| Firebase Hosting (2 projects) | $0 |
 | Artifact Registry (<1 GB) | $0 |
 | GitHub Actions (free tier) | $0 |
 | **Total** | **~$7–15 / month** |
