@@ -1,4 +1,5 @@
 # Sensitive / local files
+TutorSnap_Credentials.pdf
 firebase-sa-key.json
 migration/secrets/
 migration/db_password.txt
